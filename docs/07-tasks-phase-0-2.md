@@ -87,7 +87,7 @@ flowchart LR
 
 ### DATA — `il_data` (minimal)
 
-- [ ] **T0-020 JSON5 parsing and a minimal `Registry<UnitType>`** · M · Refs TDD §3.2, §3.3 steps 3–4, REQ-TECH-005
+- [x] **T0-020 JSON5 parsing and a minimal `Registry<UnitType>`** · M · Refs TDD §3.2, §3.3 steps 3–4, REQ-TECH-005
   Implement `ContentId`, `Handle<T>`, `Registry<T>`, `ContentKind`, and `Diagnostic`. Load `content/units/*.json5` from a single root (no manifests, no load order, no overrides yet) into `Registry<UnitType>` with only the fields Phase 0 needs: `id`, `name_key`, `category`, `soldier_radius`, `mass`, `hp`, `speed_walk`, `speed_run`, `speed_march`, `morale_base`, `los_radius`. Unknown fields are accepted and ignored in Phase 0 (schema validation arrives in T1-020).
   **Done when** a malformed file produces a `Diagnostic` with file, line, column, and loading `game/content/units/` gives handles that `Registry::get` resolves.
 
