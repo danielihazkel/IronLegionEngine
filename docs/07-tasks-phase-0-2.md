@@ -133,7 +133,7 @@ flowchart LR
   `tests/determinism.rs`: for every file in `tests/scenarios/`, run 10,000 ticks with 1 thread and with 8 threads and compare per-tick hash vectors; snapshot at tick 5,000, restore in a fresh `BattleWorld`, run to 10,000, and compare the tail. Report the first divergent tick on failure.
   **Done when** the test passes for `idle_1000` and fails if you deliberately hash a `HashMap` iteration order.
 
-- [ ] **T0-051 CI workflow** · S · Refs REQ-TEST-002, REQ-TEST-005
+- [x] **T0-051 CI workflow** · S · Refs REQ-TEST-002, REQ-TEST-005
   GitHub Actions (or your host of choice): `cargo fmt --check`, `cargo clippy --workspace -D warnings`, `cargo test --workspace`, on Windows. Cache the target directory.
   **Done when** the badge is green on `main`.
 
@@ -145,10 +145,10 @@ flowchart LR
 
 - [x] `il_cli run tests/scenarios/idle_1000.json5 --ticks 10000` twice gives identical hash logs.
 - [x] Snapshot at tick 5,000 and continue gives the same hashes as the uninterrupted run (T0-050 passes).
-- [ ] `cargo clippy --workspace -D warnings` is clean and CI is green.
-- [ ] Every Phase 0 Must requirement is satisfied: REQ-VIS-020, REQ-PLAT-001, REQ-PLAT-003, REQ-TECH-001, 002, 008, 009, 010, REQ-SIM-001, 003..009, 021, REQ-NET-001..003, REQ-TOOL-001, REQ-TEST-002.
+- [x] `cargo clippy --workspace -D warnings` is clean and CI is green.
+- [x] Every Phase 0 Must requirement is satisfied: REQ-VIS-020, REQ-PLAT-001, REQ-PLAT-003, REQ-TECH-001, 002, 008, 009, 010, REQ-SIM-001, 003..009, 021, REQ-NET-001..003, REQ-TOOL-001, REQ-TEST-002.
 
-Status 2026-09-02: every Phase 0 code task is done and verified locally (`cargo clippy --workspace --all-targets -D warnings` clean, the workspace test suite green, the two hash-log checks above pass). The two unticked boxes wait on the first push to a remote: T0-051's badge and the CI half of box 3, and REQ-TEST-002 in box 4 (the determinism test must run in CI). Nothing else is outstanding.
+Phase 0 completed 2026-09-02: CI run 33666395967 on `main` (commit 2ff247b) is green; every box above is ticked.
 
 ---
 
