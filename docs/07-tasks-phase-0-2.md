@@ -129,7 +129,7 @@ flowchart LR
 
 ### TEST — tests and CI
 
-- [ ] **T0-050 Determinism integration test** · M · Refs REQ-TEST-002, TDD §17
+- [x] **T0-050 Determinism integration test** · M · Refs REQ-TEST-002, TDD §17
   `tests/determinism.rs`: for every file in `tests/scenarios/`, run 10,000 ticks with 1 thread and with 8 threads and compare per-tick hash vectors; snapshot at tick 5,000, restore in a fresh `BattleWorld`, run to 10,000, and compare the tail. Report the first divergent tick on failure.
   **Done when** the test passes for `idle_1000` and fails if you deliberately hash a `HashMap` iteration order.
 

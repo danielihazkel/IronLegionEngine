@@ -37,6 +37,14 @@ float_arithmetic = "deny"       # re-allowed only inside il_core::scalar
 [workspace.lints.rust]
 unsafe_code = "forbid"          # il_render will opt out locally in Phase 1
 
+# Debug builds run the 10,000-tick determinism test; optimise dependencies
+# (bevy_ecs) so it takes seconds, keep our own crates debuggable.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 lto = "thin"
