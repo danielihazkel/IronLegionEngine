@@ -1,5 +1,9 @@
 # Rust
 /target/
+
+# il_cli run --snapshot-at output and hash logs
+snapshot.bin
+*.hashlog
 **/*.rs.bk
 Cargo.lock.bak
 

@@ -119,7 +119,7 @@ flowchart LR
 
 ### CLI — `il_cli`
 
-- [ ] **T0-040 `il_cli run`** · M · Refs REQ-TOOL-001, TDD §17
+- [x] **T0-040 `il_cli run`** · M · Refs REQ-TOOL-001, TDD §17
   `il_cli run <scenario.json5> --ticks N [--hash-every K] [--threads T] [--snapshot-at T] [--restore-from file] [--hash-log file] [--content-root dir]`. The scenario file is a `BattleSetup` in JSON5. Prints `tick,hash` lines at the chosen cadence to stdout or the hash log; `--snapshot-at` writes `snapshot.bin` and continues.
   **Done when** `il_cli run tests/scenarios/idle_1000.json5 --ticks 10000 --hash-every 1000` prints ten hashes.
 
