@@ -1,6 +1,6 @@
 # Iron Legion Engine — Documentation
 
-[![ci](https://github.com/OWNER/IronLegionEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/IronLegionEngine/actions/workflows/ci.yml) <!-- replace OWNER after the first push -->
+[![ci](https://github.com/danielihazkel/IronLegionEngine/actions/workflows/ci.yml/badge.svg)](https://github.com/danielihazkel/IronLegionEngine/actions/workflows/ci.yml)
 
 Design documents for the Iron Legion Engine, a Rust 2D strategy engine for turn-based grand campaigns with real-time battles of tens of thousands of individually simulated soldiers.
 
