@@ -29,6 +29,7 @@ pub trait Scalar:
     + Debug
     + Serialize
     + DeserializeOwned
+    + crate::hash::Hashable
     + Send
     + Sync
     + 'static

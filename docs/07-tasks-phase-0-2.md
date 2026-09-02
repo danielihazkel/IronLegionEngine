@@ -73,7 +73,7 @@ flowchart LR
   Implement the trait exactly as in the TDD, including `mul_add` as `a * b + self` (no `fma`), `from_f32_data`, `to_f32_render`. `Vec2<T>` with length, normalise-or-zero, clamp length, rotate, dot, perp. `Angle<T>` normalised to `(−π, π]` with `delta`, `turn_toward`, `to_facing8`. Add `#![deny(clippy::float_arithmetic)]` to every crate except inside `scalar.rs`.
   **Done when** tests cover `to_facing8` boundaries at every multiple of 45°, `turn_toward` never overshoots, and `Vec2::rotate` by `TAU` returns the input bit-exactly.
 
-- [ ] **T0-012 `StateHasher` and `Hashable`** · M · Refs TDD §2.2 `hash.rs`, SIM-DET-004
+- [x] **T0-012 `StateHasher` and `Hashable`** · M · Refs TDD §2.2 `hash.rs`, SIM-DET-004
   `StateHasher` over xxh3-64; `Hashable` for all ints, `f32` by bit pattern, `Vec2`, `Angle`, `Option`, `Vec` (length-prefixed), tuples; a `#[derive(Hashable)]` proc macro in `il_core_derive` (or a manual impl helper if you want to avoid a proc-macro crate for now; record the choice in TDD §2).
   **Done when** golden test: hashing a fixed struct produces a hash constant checked into the test, so any hasher change is caught.
 
