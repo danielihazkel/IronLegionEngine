@@ -109,7 +109,7 @@ flowchart LR
   Define `BattleSetup`, `SideSetup`, `RegimentSetup`, `GeneralSetup`, `ReinforcementGroup`, `BattleResult` types. `BattleWorld::new` validates (cap 32,768, unit types exist, one general per side; map validation stubbed until T1-060) and spawns regiment entities with `Regiment`, `Anchor`, `Morale` (value only), `Order::Idle`, and soldier entities with `Soldier`, `Pos`, `PrevPos`, `Vel`, `Facing`, `PrevFacing`, `Body`, `Health`, `FatigueC`, `SlotRef(None)`, `Fsm::Idle`. Soldiers are placed in a plain grid around the anchor (real formations arrive in T1-040). Deployment zones are ignored in Phase 0 (anchor from `RegimentSetup` position field, add a temporary `position` field and remove it in Phase 2).
   **Done when** a setup with two sides of 500 soldiers each spawns 1,000 soldier entities with ascending ids and a setup of 40,000 soldiers is rejected with `SetupError::OverCap`.
 
-- [ ] **T0-033 Stage 17: state hash and interpolation buffer swap** · M · Refs SIM-DET-004, TDD §4.5, REQ-SIM-005
+- [x] **T0-033 Stage 17: state hash and interpolation buffer swap** · M · Refs SIM-DET-004, TDD §4.5, REQ-SIM-005
   Maintain a `Vec<Entity>` sorted by `SoldierId` and one by `RegimentId` in the `Ids` resource. Stage 17 copies `Pos → PrevPos`, `Facing → PrevFacing`, drains events into `StepOutput`, and hashes exactly the fields listed in SIM-DET-004 in that order.
   **Done when** the hash of a freshly spawned world is stable across process runs (golden test) and changes when any hashed field changes.
 

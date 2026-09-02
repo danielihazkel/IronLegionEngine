@@ -32,8 +32,8 @@ pub struct StepOutput {
 pub struct BattleWorld {
     pub(crate) world: World,
     pub(crate) schedule: Schedule,
-    tick: Tick,
-    phase: BattlePhase,
+    pub(crate) tick: Tick,
+    pub(crate) phase: BattlePhase,
 }
 
 impl core::fmt::Debug for BattleWorld {
@@ -172,6 +172,21 @@ impl BattleWorld {
     /// Read-only access for tests, tools and (Phase 1) the renderer.
     pub fn ecs(&self) -> &World {
         &self.world
+    }
+
+    /// Mutable access for tests and tools only. Gameplay never mutates the
+    /// world from outside `step` (REQ-SIM-003); call [`recompute_hash`]
+    /// after using this so `hash()` is honest again.
+    ///
+    /// [`recompute_hash`]: Self::recompute_hash
+    pub fn ecs_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+
+    /// Recomputes and returns the hash of the current state.
+    pub fn recompute_hash(&mut self) -> StateHash {
+        self.refresh_hash();
+        self.hash()
     }
 }
 
