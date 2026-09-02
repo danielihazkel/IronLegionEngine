@@ -10,5 +10,8 @@ description = "Iron Legion core: ids, Scalar, Vec2/Angle, deterministic hash and
 serde.workspace = true
 xxhash-rust.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true

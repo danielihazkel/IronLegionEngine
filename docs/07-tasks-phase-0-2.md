@@ -65,7 +65,7 @@ flowchart LR
 
 ### CORE — `il_core`
 
-- [ ] **T0-010 Ids, tick, turn** · S · Refs TDD §2.2 `ids.rs`, `time.rs`
+- [x] **T0-010 Ids, tick, turn** · S · Refs TDD §2.2 `ids.rs`, `time.rs`
   `SoldierId`, `RegimentId`, `ArmyId`, `FactionId`, `PlayerId`, `ProjectileId`, `ProvinceId` as newtypes deriving `Copy, Ord, Hash, Serialize, Deserialize`; `IdAllocator<T>` that never reuses ids and serialises its counter; `Tick`, `Turn`, `TICK_SECONDS`, `TICKS_PER_SECOND`.
   **Done when** unit tests cover allocator monotonicity and serde round trip.
 
