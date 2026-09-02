@@ -70,6 +70,14 @@ impl<'de> Deserialize<'de> for ContentId {
     }
 }
 
+impl il_core::hash::Hashable for ContentId {
+    /// Length-prefixed UTF-8 bytes.
+    fn hash_state(&self, h: &mut il_core::hash::StateHasher) {
+        h.write_u32(self.0.len() as u32);
+        h.write_bytes(self.0.as_bytes());
+    }
+}
+
 impl core::str::FromStr for ContentId {
     type Err = InvalidContentId;
     fn from_str(s: &str) -> Result<Self, Self::Err> {

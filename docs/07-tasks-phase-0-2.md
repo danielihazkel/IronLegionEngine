@@ -97,7 +97,7 @@ flowchart LR
 
 ### SIM — `il_sim_battle`
 
-- [ ] **T0-030 `BattleWorld` skeleton with the 18-stage schedule** · M · Refs TDD §4.2, §4.5, SAD §6.2
+- [x] **T0-030 `BattleWorld` skeleton with the 18-stage schedule** · M · Refs TDD §4.2, §4.5, SAD §6.2
   `BattleWorld { world, schedule, tick, phase }`; 18 `SystemSet`s chained in SAD §6.2 order, each initially containing a no-op system named after the stage; `Clock`, `Phase`, `Rng`, `Ids`, `Events`, `Regs`, `Rules` resources (rules as an empty struct for now); `step(&[Command]) -> StepOutput`; `set_threads(n)` building the task pool.
   **Done when** `step` on an empty world advances the tick and returns a hash that changes with the tick.
 
