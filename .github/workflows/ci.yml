@@ -1,0 +1,47 @@
+# T0-051 (REQ-TEST-002, REQ-TEST-005). Windows is the only MVP platform
+# (REQ-PLAT-001), so CI runs there. The last step is the Phase 0 exit
+# checklist proof: two runs of the idle scenario must print identical hashes.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: fmt, clippy, test (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Determinism proof (exit checklist)
+        shell: pwsh
+        run: |
+          cargo run --release -p il_cli -- run tests/scenarios/idle_1000.json5 --ticks 10000 --hash-every 1000 --hash-log a.hashlog
+          cargo run --release -p il_cli -- run tests/scenarios/idle_1000.json5 --ticks 10000 --hash-every 1000 --hash-log b.hashlog
+          if ((Get-Content a.hashlog | Measure-Object -Line).Lines -ne 10) { throw "expected ten hash lines" }
+          if ((Compare-Object (Get-Content a.hashlog) (Get-Content b.hashlog)).Count -ne 0) { throw "hash logs differ" }
+          Get-Content a.hashlog
