@@ -91,7 +91,7 @@ flowchart LR
   Implement `ContentId`, `Handle<T>`, `Registry<T>`, `ContentKind`, and `Diagnostic`. Load `content/units/*.json5` from a single root (no manifests, no load order, no overrides yet) into `Registry<UnitType>` with only the fields Phase 0 needs: `id`, `name_key`, `category`, `soldier_radius`, `mass`, `hp`, `speed_walk`, `speed_run`, `speed_march`, `morale_base`, `los_radius`. Unknown fields are accepted and ignored in Phase 0 (schema validation arrives in T1-020).
   **Done when** a malformed file produces a `Diagnostic` with file, line, column, and loading `game/content/units/` gives handles that `Registry::get` resolves.
 
-- [ ] **T0-021 Phase 0 content: one unit type** · S · Refs Simulation Spec §15.2, CONTENT
+- [x] **T0-021 Phase 0 content: one unit type** · S · Refs Simulation Spec §15.2, CONTENT
   Add `game/content/units/hastati.json5` with the `rome:hastati` values from Simulation Spec §15.2 (all fields, even those not yet read).
   **Done when** T0-020 loads it.
 

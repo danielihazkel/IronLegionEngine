@@ -70,6 +70,7 @@
     "charge_bonus": { "type": "number", "minimum": 0, "maximum": 100, "default": 0, "description": "Attack bonus on first contact after a charge." },
     "anti_cavalry_bonus": { "type": "number", "minimum": 0, "maximum": 100, "default": 0, "description": "Attack and defence bonus versus cavalry when braced in formation." },
     "second_rank_attack": { "type": "boolean", "default": false, "description": "Second rank may attack over the first (spears, pikes)." },
+    "shield": { "type": "boolean", "default": false, "description": "Carries a shield: halves ranged hit chance from the front (combat.shield_mult) and is part of the anti-cavalry brace." },
     "frontal_arc_deg": { "type": "number", "minimum": 10, "maximum": 360, "default": 120, "description": "Arc in degrees inside which incoming attacks count as frontal." },
 
     "ranged": {

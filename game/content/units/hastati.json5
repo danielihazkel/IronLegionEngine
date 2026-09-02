@@ -1,0 +1,57 @@
+// rome:hastati — Simulation Spec §15.2. Every field is present even though
+// Phase 0 reads only id, name_key, category, soldier_radius, mass, hp,
+// speed_walk, speed_run, speed_march, morale_base and los_radius.
+{
+  id: "rome:hastati",
+  name_key: "rome.units.hastati.name",
+  category: "infantry",
+
+  soldier_radius: 0.4,
+  mass: 80,
+  hp: 100,
+
+  speed_walk: 1.6,
+  speed_run: 4.0,
+  speed_march: 1.6,
+
+  attack: 35,
+  defence: 30,
+  armour: 8,
+  damage: 30,
+  attack_interval_ticks: 30,
+  reach: 0.6,
+  charge_bonus: 0.3,
+  anti_cavalry_bonus: 0,
+  second_rank_attack: false,
+  shield: true,
+  frontal_arc_deg: 120,
+
+  // Pilum: one or two throws before contact.
+  ranged: {
+    range: 25,
+    min_range: 5,
+    accuracy: 0.6,
+    projectile_speed: 20,
+    reload_ticks: 120,
+    ammo: 2,
+    damage: 40,
+    armour_penetration: 0.5,
+    arc: "direct",
+  },
+
+  morale_base: 60,
+  fatigue_rate_mult: 1.0,
+  los_radius: 200,
+
+  abilities: [],
+  formations: ["rome:line", "rome:column", "rome:loose"],
+
+  sprite_set: "sprites/units/hastati",
+  sounds: {},
+
+  cost: 400,
+  upkeep: 60,
+  recruit_turns: 1,
+  tier: 1,
+  experience_tiers: [],
+}
