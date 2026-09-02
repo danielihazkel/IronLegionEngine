@@ -13,6 +13,7 @@ Design documents for the Iron Legion Engine, a Rust 2D strategy engine for turn-
 | 04 | [Technical Design Document](04-tdd.md) | *How*. Rust types, traits, components, systems, schedule, schemas, budgets, tests, per subsystem. | v0.1 |
 | 05 | [Networking Architecture Spec](05-networking-spec.md) | Future lockstep multiplayer and what the single-player code must already do for it. | v0.1 |
 | 06 | [Modding SDK Spec](06-modding-sdk-spec.md) | Mod packages, manifests, override semantics, content reference, Lua API, editors. | v0.1 |
+| 07 | [Task List, Phases 0–2](07-tasks-phase-0-2.md) | Implementation tasks with done-criteria, sizes, dependencies, and per-phase exit checklists. | active |
 | — | [schemas/](schemas/) | JSON Schema drafts for content files referenced by the TDD and Modding SDK. | draft |
 
 The original LaTeX PRD (`../iron_legion_engine_prd.tex`) is v0.1 and is kept for history only.
