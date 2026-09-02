@@ -101,7 +101,7 @@ flowchart LR
   `BattleWorld { world, schedule, tick, phase }`; 18 `SystemSet`s chained in SAD §6.2 order, each initially containing a no-op system named after the stage; `Clock`, `Phase`, `Rng`, `Ids`, `Events`, `Regs`, `Rules` resources (rules as an empty struct for now); `step(&[Command]) -> StepOutput`; `set_threads(n)` building the task pool.
   **Done when** `step` on an empty world advances the tick and returns a hash that changes with the tick.
 
-- [ ] **T0-031 Command types and Stage 0 application** · M · Refs TDD §4.2 `Command`, `CommandKind`, SIM-CMD-001, SIM-CMD-003, REQ-NET-001
+- [x] **T0-031 Command types and Stage 0 application** · M · Refs TDD §4.2 `Command`, `CommandKind`, SIM-CMD-001, SIM-CMD-003, REQ-NET-001
   Define the full `CommandKind` enum from the TDD (all variants, including `TransferControl`), `Command`, `RejectReason`. Stage 0 sorts by `(player, seq)`, rejects commands whose `tick` is not the current tick, rejects commands touching regiments not owned by the player, and applies only `Pause`, `SetSpeed` (no-ops per SIM-DET-008), `Halt`, and `TransferControl` in Phase 0. Unhandled variants return `RejectReason::NotImplemented` so nothing silently disappears.
   **Done when** tests: out-of-order commands are applied in `(player, seq)` order; a stale command is rejected; ownership rejection works.
 
