@@ -137,16 +137,18 @@ flowchart LR
   GitHub Actions (or your host of choice): `cargo fmt --check`, `cargo clippy --workspace -D warnings`, `cargo test --workspace`, on Windows. Cache the target directory.
   **Done when** the badge is green on `main`.
 
-- [ ] **T0-052 Docs update** · S
+- [x] **T0-052 Docs update** · S
   Record in TDD §2 the proc-macro decision from T0-012, in TDD §1.2 the actual pinned versions, and in SAD §12 any new debt. Add the `RegimentSetup.position` temporary field to the PRD open questions if it survives the phase.
   **Done when** the docs match the code.
 
 ### Phase 0 exit checklist
 
-- [ ] `il_cli run tests/scenarios/idle_1000.json5 --ticks 10000` twice gives identical hash logs.
-- [ ] Snapshot at tick 5,000 and continue gives the same hashes as the uninterrupted run (T0-050 passes).
+- [x] `il_cli run tests/scenarios/idle_1000.json5 --ticks 10000` twice gives identical hash logs.
+- [x] Snapshot at tick 5,000 and continue gives the same hashes as the uninterrupted run (T0-050 passes).
 - [ ] `cargo clippy --workspace -D warnings` is clean and CI is green.
 - [ ] Every Phase 0 Must requirement is satisfied: REQ-VIS-020, REQ-PLAT-001, REQ-PLAT-003, REQ-TECH-001, 002, 008, 009, 010, REQ-SIM-001, 003..009, 021, REQ-NET-001..003, REQ-TOOL-001, REQ-TEST-002.
+
+Status 2026-09-02: every Phase 0 code task is done and verified locally (`cargo clippy --workspace --all-targets -D warnings` clean, the workspace test suite green, the two hash-log checks above pass). The two unticked boxes wait on the first push to a remote: T0-051's badge and the CI half of box 3, and REQ-TEST-002 in box 4 (the determinism test must run in CI). Nothing else is outstanding.
 
 ---
 

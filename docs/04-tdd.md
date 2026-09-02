@@ -48,21 +48,30 @@ As in SAD §5.1. Root `Cargo.toml`:
 ```toml
 [workspace]
 members = ["crates/*", "game/rules", "tests", "benches"]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
-edition = "2021"
-rust-version = "1.80"          # MSRV, bumped only at phase boundaries
+edition = "2024"
+rust-version = "1.95"          # MSRV (bevy_ecs 0.19 needs 1.95); toolchain pinned to 1.98.0 in rust-toolchain.toml; bumped only at phase boundaries
 
 [workspace.lints.clippy]
-float_arithmetic = "deny"       # sim crates re-allow only inside il_core::scalar
-# (per-crate: il_core, il_data, il_ai, il_sim_* also deny std::time, std::fs via clippy disallowed_methods)
+float_arithmetic = "deny"       # allowed only inside il_core::scalar; `S` is a newtype so the lint bites (§2)
+# (workspace clippy.toml bans Instant::now, SystemTime::now, std::fs and HashMap/HashSet in sim crates;
+#  il_data, il_cli, il_app, tests and benches carry a local clippy.toml that keeps only the wall-clock bans;
+#  f32::mul_add is banned everywhere in favour of Scalar::mul_add_rounded)
+
+[profile.dev]
+opt-level = 1                   # the 10,000-tick determinism test runs under cargo test
+[profile.dev.package."*"]
+opt-level = 3
 
 [profile.release]
 codegen-units = 1
 lto = "thin"
 # never: -C target-cpu=native, never fast-math (Rust has none by default; keep it that way)
 ```
+
+Dependency rules are enforced by `tests/tests/dep_rules.rs`, which parses every `crates/il_*/Cargo.toml`; cargo-deny is not used (T0-002).
 
 Feature flags:
 
@@ -75,17 +84,20 @@ Feature flags:
 
 ### 1.2 Dependencies (pinned per phase)
 
+Phase 0 pins (T0-003) are the versions in the table; later phases pin their own crates when they arrive and update this table.
+
 | Crate | Version (initial) | Why | Used by |
 |---|---|---|---|
-| `bevy_ecs` | 0.14 | standalone ECS with schedules and parallel executor | il_sim_*, il_render (read) |
+| `bevy_ecs` | 0.19.1 (feature `multi_threaded`) | standalone ECS with schedules and parallel executor | il_sim_*, il_render (read) |
+| `bevy_tasks` | 0.19.1 | `ComputeTaskPool` for `BattleWorld::set_threads` | il_sim_battle |
 | `wgpu` | 22 | GPU API | il_render |
 | `winit` | 0.30 | window and input events | il_app |
 | `egui`, `egui-wgpu`, `egui-winit` | 0.29 | UI | il_ui, il_app |
 | `serde`, `serde_derive` | 1 | serialisation | all |
-| `json5` | 0.4 | JSON5 parse to `serde_json::Value` then typed (OQ-7: chosen for maturity) | il_data |
+| `json5` | 1.3 | JSON5 parse to `serde_json::Value` then typed (OQ-7 resolved in Phase 0: errors carry line and column) | il_data, il_cli |
 | `serde_json` | 1 | save headers, schema validation input | il_data, il_save |
 | `jsonschema` | 0.18 | content validation | il_data |
-| `postcard` | 1 | snapshot encoding (OQ-2: chosen for `no_std`-style compactness and stability) | il_save, il_sim_* |
+| `postcard` | 1.1 | snapshot encoding (OQ-2 resolved in Phase 0) | il_save, il_sim_* |
 | `mlua` (`lua54`, `vendored`) | 0.10 | Lua | il_script |
 | `glam` | 0.29 | render-side math only (never in sim) | il_render, il_ui |
 | `rayon` | 1 | not used directly; bevy_ecs task pool only | — |
@@ -94,7 +106,9 @@ Feature flags:
 | `criterion` | 0.5 | benchmarks | benches |
 | `kira` | 0.9 | audio (OQ-8: chosen for game-oriented mixing) | il_audio |
 | `notify` | 6 | hot reload file watcher (dev) | il_data |
-| `thiserror`, `anyhow` | 1 | errors (anyhow only in binaries) | all |
+| `thiserror`, `anyhow` | 2 / 1 | errors (anyhow only in binaries and their libs) | all |
+| `clap` | 4 (`derive`) | command-line parsing | il_cli, il_app |
+| `toml` | 0.8 | manifest parsing in the dependency-rule test | tests |
 
 ## 2. Core (`il_core`)
 
@@ -120,7 +134,7 @@ pub struct IdAllocator<T> { next: u32, _m: PhantomData<T> }   // serialised in s
 // time.rs
 pub struct Tick(pub u32);            // 20 Hz; wraps never (2^32 ticks = 6.8 years)
 pub struct Turn(pub u32);
-pub const TICK_SECONDS: f32 = 0.05;  // the only f32 constant allowed outside scalar.rs
+pub const TICK_SECONDS: f32 = 0.05;  // the only f32 constant allowed outside scalar.rs (app-side accumulator only)
 pub const TICKS_PER_SECOND: u32 = 20;
 
 // scalar.rs
@@ -137,12 +151,17 @@ pub trait Scalar:
     fn abs(self) -> Self; fn min(self, o: Self) -> Self; fn max(self, o: Self) -> Self;
     fn clamp(self, lo: Self, hi: Self) -> Self;
     fn floor_i32(self) -> i32;
-    fn mul_add(self, a: Self, b: Self) -> Self;  // implemented as a*b+self without fma intrinsic on f32
+    fn mul_add_rounded(self, a: Self, b: Self) -> Self;  // a*b+self as two roundings; named so it cannot be shadowed by the fused inherent f32::mul_add (banned by clippy)
 }
-impl Scalar for f32 { /* uses libm-free std ops; sin/cos via std; documented as platform-deterministic on one OS */ }
+impl Scalar for f32 { /* sin/cos/atan2/sqrt via std; documented as platform-deterministic on one OS */ }
+pub struct F32(f32);      // transparent newtype; delegates to the f32 impl; serde as a plain number; Hashable by bits
+impl Scalar for F32 {}
 pub struct Fixed32(i32);  // Phase 7; 16.16, table sin/cos, integer sqrt
 
-pub type S = f32; // selected by feature `fixed`
+pub type S = F32; // a newtype, not an alias: clippy's float_arithmetic sees through aliases, so `S = f32` would
+                  // fire on every sim expression; the newtype keeps the lint on and makes a stray f32 a type error.
+                  // Constants are written S::from_i32(n), S::HALF, S::ONE; content values enter via from_f32_data.
+                  // Fixed32 replaces it behind feature `fixed`.
 
 // vec.rs
 #[derive(Copy, Clone, Default, Serialize, Deserialize)]
@@ -160,7 +179,11 @@ impl<T: Scalar> Angle<T> { pub fn delta(self, to: Self) -> T; pub fn turn_toward
 
 // hash.rs
 pub struct StateHasher(xxh3::Xxh3);
-pub trait Hashable { fn hash_state(&self, h: &mut StateHasher); }   // derive macro `#[derive(Hashable)]`
+pub trait Hashable { fn hash_state(&self, h: &mut StateHasher); }
+// Phase 0 decision (T0-012): no proc-macro crate. Structs use `impl_hashable_struct!(Ty { a, b })`, field-less enums
+// `impl_hashable_fieldless_enum!(Ty)` (discriminant as u8); enums with payloads implement the trait by hand with a
+// discriminant byte first. Option is tag byte + payload, slices are u32-length-prefixed, usize hashes as 64 bits.
+// Revisit a derive macro when Phase 2 adds many components.
 impl Hashable for f32 { fn hash_state(&self, h) { h.write_u32(self.to_bits()) } }
 #[derive(Copy, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct StateHash(pub u64);
@@ -186,6 +209,7 @@ pub struct EventQueue<E: Event> { items: Vec<(Tick, E)> }  // ordered by inserti
 - `hash_draw` distribution test (chi-square over 1e6 draws) and stability test (golden values checked into the repo so a hash function change is caught).
 - `RngStream` golden sequence test.
 - `Angle::to_facing8` boundaries.
+- Golden hash of a fixed struct (`hash.rs`) and golden empty-world hashes (`il_sim_battle`) so any hasher or layout change is caught.
 
 Budget: hashing 32k soldiers × ~40 bytes ≈ 1.3 MB per tick through xxh3 ≈ 0.5 ms; full Stage 17 budget 3 ms includes event flush.
 
@@ -269,7 +293,9 @@ pub mod interface {
     pub struct SideSetup { pub faction: ContentId, pub player: PlayerId, pub deployment_zone: u8,
         pub general: GeneralSetup, pub regiments: Vec<RegimentSetup>, pub reinforcements: Vec<ReinforcementGroup> }
     pub struct RegimentSetup { pub id: u32 /* campaign regiment id, echoed in result */, pub unit_type: ContentId,
-        pub count: u16, pub experience: u8, pub fatigue: f32 /* data-side f32, converted */, pub formation: Option<ContentId> }
+        pub count: u16, pub experience: u8, pub fatigue: f32 /* data-side f32, converted */, pub formation: Option<ContentId>,
+        pub position: Option<[f32; 2]>, pub facing_deg: Option<f32> /* TEMPORARY Phase 0 anchor (SAD T-7); removed in T2-070 */ }
+    // `map_id` is `Option<ContentId>` until map loading (T1-030) makes it required.
     pub struct BattleResult { pub winner: Option<u8>, pub duration_ticks: u32, pub sides: Vec<SideResult>, pub summary: BattleSummary }
     pub struct SideResult { pub regiments: Vec<RegimentResult>, pub general_fate: GeneralFate, pub loot: i64 }
     pub struct RegimentResult { pub id: u32, pub initial: u16, pub survivors: u16, pub fled: u16, pub killed: u16, pub experience_gain: u16, pub ammo_left: u16 }
@@ -278,16 +304,18 @@ pub mod interface {
 
 pub struct BattleWorld { world: bevy_ecs::World, schedule: Schedule, tick: Tick, phase: BattlePhase }
 impl BattleWorld {
-    pub fn new(setup: &BattleSetup, regs: &Registries) -> Result<Self, SetupError>;   // validates SIM-FLOW-019
-    pub fn step(&mut self, commands: &[Command]) -> StepOutput;   // exactly one tick
-    pub fn tick(&self) -> Tick;
+    pub fn new(setup: &BattleSetup, regs: Arc<Registries>) -> Result<Self, SetupError>;   // validates SIM-FLOW-019; the world keeps the Arc
+    pub fn step(&mut self, commands: &[Command]) -> StepOutput;   // exactly one tick: simulates tick() + 1; commands must be stamped with that tick
+    pub fn tick(&self) -> Tick;                                    // completed ticks; the app gathers commands for tick() + 1 (§15)
     pub fn phase(&self) -> BattlePhase;
     pub fn snapshot(&self) -> Snapshot;                            // postcard bytes of all Hashable+Serialize components and resources
-    pub fn restore(snapshot: &Snapshot, regs: &Registries) -> Result<Self, RestoreError>;  // rebuilds derived data (paths, flow fields, grid)
-    pub fn hash(&self) -> StateHash;                               // same value as StepOutput.hash of the last step
+    pub fn restore(snapshot: &Snapshot, regs: Arc<Registries>) -> Result<Self, RestoreError>;  // rebuilds derived data (paths, flow fields, grid)
+    pub fn hash(&self) -> StateHash;                               // same value as StepOutput.hash of the last step (or of the initial state)
     pub fn result(&self) -> Option<BattleResult>;                  // Some once phase == Ended
-    pub fn view(&self) -> BattleView<'_>;                          // read-only accessors for render/ui/ai
-    pub fn set_threads(&mut self, n: usize);                       // determinism test runs 1 and N
+    pub fn view(&self) -> BattleView<'_>;                          // read-only accessors for render/ui/ai (Phase 1); Phase 0 has ecs(), soldier_ids(), regiment_ids()
+    pub fn set_threads(&mut self, n: usize);                       // n <= 1: SingleThreadedExecutor; else MultiThreadedExecutor on the process-global
+                                                                   // ComputeTaskPool (sized by the first such call). Determinism test runs 1 and 8.
+    pub fn ecs_mut(&mut self) -> &mut World;                       // tests and tools only; call recompute_hash() afterwards
 }
 pub struct StepOutput { pub hash: StateHash, pub events: Vec<BattleEvent>, pub rejected: Vec<(Command, RejectReason)> }
 
@@ -298,14 +326,16 @@ pub enum CommandKind {
     AttackRegiment { regiments: Vec<RegimentId>, target: RegimentId },
     AttackMove { regiments: Vec<RegimentId>, target: V2 },
     Halt { regiments: Vec<RegimentId> },
-    SetFormation { regiments: Vec<RegimentId>, template: Handle<FormationTemplate>, ranks: Option<u8> },
+    // Content references in commands are ContentIds, not handles: a command stream must be self-describing in replays
+    // and on the wire, and handles are not serialised. Stage 0 resolves them against the registries.
+    SetFormation { regiments: Vec<RegimentId>, template: ContentId, ranks: Option<u8> },
     SetFacing { regiments: Vec<RegimentId>, facing: Angle<S> },
     SetSpeedMode { regiments: Vec<RegimentId>, mode: SpeedMode },
-    GroupFormation { regiments: Vec<RegimentId>, template: Handle<GroupFormationTemplate>, anchor: V2, facing: Angle<S>, width: S },
+    GroupFormation { regiments: Vec<RegimentId>, template: ContentId, anchor: V2, facing: Angle<S>, width: S },
     FireMode { regiments: Vec<RegimentId>, mode: FireMode },
-    UseAbility { regiment: RegimentId, ability: Handle<Ability>, target: AbilityTarget },
+    UseAbility { regiment: RegimentId, ability: ContentId, target: AbilityTarget },
     Withdraw { regiments: Vec<RegimentId> },
-    Deploy { regiment: RegimentId, position: V2, facing: Angle<S>, template: Option<Handle<FormationTemplate>> },
+    Deploy { regiment: RegimentId, position: V2, facing: Angle<S>, template: Option<ContentId> },
     ConfirmDeployment,
     Pause, SetSpeed { mult_x100: u16 },
     Surrender,
@@ -363,7 +393,7 @@ Stage 17 `flush_events_and_hash`: copy `Pos→PrevPos`, `Facing→PrevFacing`; h
 
 ### 4.6 Snapshot
 
-`Snapshot { version: u32, tick, phase, setup: BattleSetup, ids, rng, sides, regiments: Vec<RegimentSnap>, soldiers: Vec<SoldierSnap>, projectiles: Vec<ProjectileSnap>, pending_damage, timer }` encoded with postcard. `restore` rebuilds: `SpatialGrid` (from positions), `NavGrid`/`HpaGraph`/`FlowFields` (from map plus gate states), `Path` (re-requested), `Rank` (from slots). Snapshot of 32k soldiers ≈ 32k × 36 B ≈ 1.2 MB.
+`Snapshot { version: u32, tick, phase, setup: BattleSetup, ids, rng, sides, regiments: Vec<RegimentSnap>, soldiers: Vec<SoldierSnap>, projectiles: Vec<ProjectileSnap>, pending_damage, timer }` encoded with postcard (`SNAPSHOT_VERSION = 1`). Phase 0 layout: `RegimentSnap { id, side, setup_id, unit_type: ContentId, anchor_pos, anchor_facing, morale, morale_state, order, ammo }`, `SoldierSnap { id, regiment, p, v, facing, hp, fatigue, slot, fsm_state, fsm_since }`, `IdsSnap { soldiers_next, regiments_next, projectiles_next }`; `PrevPos`/`PrevFacing` and `Body` are rebuilt on restore. `restore` rebuilds: `SpatialGrid` (from positions), `NavGrid`/`HpaGraph`/`FlowFields` (from map plus gate states), `Path` (re-requested), `Rank` (from slots). Snapshot of 32k soldiers ≈ 32k × 36 B ≈ 1.2 MB.
 
 ### 4.7 Tests
 
@@ -667,7 +697,7 @@ Tests: accumulator never runs more than the cap; pause records a `Pause` command
 | Test | Location | Runs | Requirement |
 |---|---|---|---|
 | Unit tests per formula | each crate | every push | REQ-TEST-001 |
-| Determinism: each scenario twice, 1 thread and 8 threads, snapshot/restore at mid-point | `tests/determinism.rs` via `il_cli run --hash-every 1` | every push | REQ-TEST-002 |
+| Determinism: each scenario twice, 1 thread and 8 threads, snapshot/restore at mid-point | `tests/tests/determinism.rs`, in-process on `BattleWorld` (`set_threads(1)` and `set_threads(8)`), plus an in-process `il_cli::run` twice comparison; CI also diffs two `il_cli run --hash-every 1000` logs | every push | REQ-TEST-002 |
 | Content validation of `game/` | `tests/content.rs` | every push | REQ-TEST-005 |
 | Scenario outcome bands (Simulation Spec §15.3), 50 seeds | `tests/scenarios.rs` | nightly | REQ-TEST-004 |
 | Benchmarks per system at 2k/10k/20k, budgets from the table at the top; fail at +20 % | `benches/` via criterion, compared against a checked-in baseline | nightly | REQ-TEST-003, REQ-PERF-005 |
@@ -678,7 +708,7 @@ Tests: accumulator never runs more than the cap; pause records a `Pause` command
 
 ## 18. Coding conventions and determinism checklist
 
-Conventions: `rustfmt` default; `clippy -D warnings`; no `unsafe` outside `il_render`; public items documented with the rule ID they implement (`/// SIM-CMBT-011`); errors via `thiserror`; every tunable read from `Rules`, never a literal (clippy lint `disallowed_types` on float literals in sim crates except `0`, `1`, `0.5` via `Scalar` constants).
+Conventions: `rustfmt` default; `clippy -D warnings`; no `unsafe` outside `il_render` (`unsafe_code = "forbid"` workspace-wide until then); public items documented with the rule ID they implement (`/// SIM-CMBT-011`); errors via `thiserror`; every tunable read from `Rules`, never a literal. `S` is a newtype, so sim constants are `S::from_i32(n)`, `S::HALF`, `S::ONE`; content and scenario values enter through `from_f32_data`; `f32::mul_add` is a clippy disallowed method (use `Scalar::mul_add_rounded`).
 
 Determinism checklist for review of any sim change:
 

@@ -46,7 +46,7 @@ Conventions:
 
 | Rule | Statement | Satisfies |
 |---|---|---|
-| SIM-DET-001 | The battle seed is a `u64` from `BattleSetup.seed`. Each system owns a stream seeded as `hash(seed, stream_id)`. Streams: `combat_melee`, `combat_ranged`, `morale`, `ai_regiment`, `ai_army`, `abilities`, `deployment`, `weather`. | REQ-SIM-004 |
+| SIM-DET-001 | The battle seed is a `u64` from `BattleSetup.seed`. Each system owns a stream seeded as `hash(seed, stream_id)`. Streams: `combat_melee`, `combat_ranged`, `morale`, `ai_regiment`, `ai_army`, `abilities`, `deployment`, `weather`, `campaign`. | REQ-SIM-004 |
 | SIM-DET-002 | Per-entity randomness that must not depend on entity iteration order is drawn as `hash(stream_seed, tick, entity_id, draw_index)` rather than from the sequential stream. Melee hit rolls and ranged scatter use this form. | REQ-SIM-004, REQ-SIM-007 |
 | SIM-DET-003 | Every system that iterates entities and produces order-dependent results iterates in ascending stable id (`SoldierId`, `RegimentId`), never in ECS storage order. | REQ-SIM-007 |
 | SIM-DET-004 | The state hash at the end of a tick covers, in this order: tick number; battle phase; per Regiment (ascending id) `morale`, morale state, soldier count, anchor, order kind, ammo; per Soldier (ascending id) `p`, `v`, `hp`, `fatigue`, FSM state, slot; per Projectile (ascending id) `p`, `v`; RNG stream states. Positions are hashed by their `S` bit pattern. | REQ-SIM-005 |

@@ -372,3 +372,5 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 | T-4 | Hash cost per tick at 32k entities | Risk | il_core | Hash only components in the documented set; measure; allow hashing every N ticks in release with full hash in tests. |
 | T-5 | Sim on main thread until Phase 3 | Debt | il_app | Render snapshot design from Phase 1 so moving to a render thread is mechanical. |
 | T-6 | Game-specific Rust in `game/rules` | Debt | game | Each addition logged as an open question in the PRD for generalisation. |
+| T-7 | `RegimentSetup.position` and `facing_deg` place regiments directly because deployment zones do not exist yet (Phase 0) | Debt | il_sim_battle | Remove in T2-070 when `Deploy` and deployment zones arrive; PRD OQ-9 decides whether a scenario-file override survives. |
+| T-8 | `ComputeTaskPool` is process-global, so the first `set_threads(n > 1)` fixes the worker count for the process | Debt | il_sim_battle | Acceptable for the app (one pool) and the tests (single N); revisit if a tool needs two pool sizes in one process. |
