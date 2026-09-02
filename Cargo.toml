@@ -10,6 +10,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 # Pinned in T0-003.
+toml = "0.8"
 
 [workspace.lints.clippy]
 float_arithmetic = "deny"       # re-allowed only inside il_core::scalar

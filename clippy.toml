@@ -1,0 +1,20 @@
+# Applies to every crate without its own clippy.toml: the simulation crates
+# (il_core, il_ai, il_sim_battle, il_sim_campaign, game_rules) and the test and
+# bench packages. il_data, il_cli and il_app carry local files that re-allow
+# the filesystem. SAD §5.2, §9.1; TDD §18; SIM-DET-006.
+
+disallowed-methods = [
+  { path = "std::time::Instant::now", reason = "SIM-DET-006: no wall-clock in the sim; time is ticks" },
+  { path = "std::time::SystemTime::now", reason = "SIM-DET-006: no wall-clock in the sim; time is ticks" },
+  { path = "std::fs::read", reason = "SAD §5.2: sim crates do not touch the filesystem; load through il_data" },
+  { path = "std::fs::read_to_string", reason = "SAD §5.2: sim crates do not touch the filesystem; load through il_data" },
+  { path = "std::fs::write", reason = "SAD §5.2: sim crates do not touch the filesystem; il_save writes" },
+  { path = "std::fs::read_dir", reason = "SAD §5.2: sim crates do not touch the filesystem; load through il_data" },
+  { path = "std::fs::File::open", reason = "SAD §5.2: sim crates do not touch the filesystem" },
+  { path = "std::fs::File::create", reason = "SAD §5.2: sim crates do not touch the filesystem" },
+]
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "SIM-DET-003: iteration order is unspecified; use BTreeMap or an id-sorted Vec (allow locally for lookup-only use)" },
+  { path = "std::collections::HashSet", reason = "SIM-DET-003: iteration order is unspecified; use BTreeSet or an id-sorted Vec (allow locally for lookup-only use)" },
+]
