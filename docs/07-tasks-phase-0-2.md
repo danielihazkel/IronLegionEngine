@@ -59,7 +59,7 @@ flowchart LR
   Add `rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml` with `disallowed-methods` for `std::time::Instant::now`, `std::time::SystemTime::now`, `std::fs::*` in sim crates, and `disallowed-types` for `std::collections::HashMap` iteration helpers where feasible. Add `deny.toml` (`cargo deny`) or a workspace test `tests/dep_rules.rs` that parses each `crates/il_*/Cargo.toml` and fails if a sim crate depends on a forbidden crate or on `game_rules`.
   **Done when** `cargo clippy --workspace -D warnings` passes and the dependency-rule test fails when you temporarily add `wgpu` to `il_sim_battle`.
 
-- [ ] **T0-003 Pin Phase 0 dependencies** · S · Refs TDD §1.2
+- [x] **T0-003 Pin Phase 0 dependencies** · S · Refs TDD §1.2
   Add `bevy_ecs`, `serde`, `serde_json`, `json5`, `postcard`, `xxhash-rust`, `thiserror`, `tracing` at the versions in TDD §1.2 (adjust to the latest compatible and record the change in TDD §1.2).
   **Done when** `Cargo.lock` is committed and `cargo build` is warning-free.
 

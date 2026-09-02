@@ -7,6 +7,11 @@ license.workspace = true
 description = "Iron Legion data: JSON5 loading, registries, handles, diagnostics."
 
 [dependencies]
+il_core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+json5.workspace = true
+thiserror.workspace = true
 
 [lints]
 workspace = true

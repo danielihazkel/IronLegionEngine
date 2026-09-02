@@ -9,8 +9,27 @@ rust-version = "1.95"          # MSRV: bevy_ecs 0.19 needs 1.95; bumped only at 
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
-# Pinned in T0-003.
+# Phase 0 pins (TDD §1.2). Upgrade only at phase boundaries (SAD T-1).
+bevy_ecs = { version = "0.19.1", features = ["multi_threaded"] }
+bevy_tasks = "0.19.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+json5 = "1.3"
+postcard = { version = "1.1", features = ["use-std"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+clap = { version = "4", features = ["derive"] }
 toml = "0.8"
+# Workspace crates
+il_core = { path = "crates/il_core" }
+il_data = { path = "crates/il_data" }
+il_ai = { path = "crates/il_ai" }
+il_sim_battle = { path = "crates/il_sim_battle" }
+il_sim_campaign = { path = "crates/il_sim_campaign" }
+il_save = { path = "crates/il_save" }
+il_cli = { path = "crates/il_cli" }
 
 [workspace.lints.clippy]
 float_arithmetic = "deny"       # re-allowed only inside il_core::scalar

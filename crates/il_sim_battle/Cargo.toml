@@ -7,6 +7,14 @@ license.workspace = true
 description = "Iron Legion headless battle simulation."
 
 [dependencies]
+il_core.workspace = true
+il_data.workspace = true
+bevy_ecs.workspace = true
+bevy_tasks.workspace = true
+serde.workspace = true
+postcard.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
 
 [lints]
 workspace = true

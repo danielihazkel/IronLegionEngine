@@ -7,6 +7,11 @@ license.workspace = true
 description = "Workspace integration tests: determinism, dependency rules, content validation."
 
 [dependencies]
+il_core.workspace = true
+il_data.workspace = true
+il_sim_battle.workspace = true
+il_cli.workspace = true
+json5.workspace = true
 
 [dev-dependencies]
 toml.workspace = true
