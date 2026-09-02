@@ -4,6 +4,7 @@
 pub mod angle;
 pub mod hash;
 pub mod ids;
+pub mod rng;
 pub mod scalar;
 pub mod time;
 pub mod vec;
@@ -11,6 +12,7 @@ pub mod vec;
 pub use angle::Angle;
 pub use hash::{Hashable, StateHash, StateHasher, hash_of};
 pub use ids::*;
+pub use rng::{RngStream, StreamId, hash_draw};
 pub use scalar::{S, Scalar};
 pub use time::*;
 pub use vec::{V2, Vec2};

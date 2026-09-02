@@ -77,7 +77,7 @@ flowchart LR
   `StateHasher` over xxh3-64; `Hashable` for all ints, `f32` by bit pattern, `Vec2`, `Angle`, `Option`, `Vec` (length-prefixed), tuples; a `#[derive(Hashable)]` proc macro in `il_core_derive` (or a manual impl helper if you want to avoid a proc-macro crate for now; record the choice in TDD §2).
   **Done when** golden test: hashing a fixed struct produces a hash constant checked into the test, so any hasher change is caught.
 
-- [ ] **T0-013 RNG streams and `hash_draw`** · S · Refs TDD §2.2 `rng.rs`, SIM-DET-001, SIM-DET-002
+- [x] **T0-013 RNG streams and `hash_draw`** · S · Refs TDD §2.2 `rng.rs`, SIM-DET-001, SIM-DET-002
   PCG32 `RngStream::from_seed(seed, StreamId)`, `next_u32`, `unit<T>()`; `StreamId` enum with the nine streams; `hash_draw(seed, tick, entity, index) -> T` in `[0, 1)` via xxh3 of the tuple.
   **Done when** golden sequence test for each stream id and a chi-square test on 1e6 `hash_draw` values passes.
 
