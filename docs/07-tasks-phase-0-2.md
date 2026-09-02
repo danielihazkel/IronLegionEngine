@@ -113,7 +113,7 @@ flowchart LR
   Maintain a `Vec<Entity>` sorted by `SoldierId` and one by `RegimentId` in the `Ids` resource. Stage 17 copies `Pos → PrevPos`, `Facing → PrevFacing`, drains events into `StepOutput`, and hashes exactly the fields listed in SIM-DET-004 in that order.
   **Done when** the hash of a freshly spawned world is stable across process runs (golden test) and changes when any hashed field changes.
 
-- [ ] **T0-034 Snapshot and restore** · L · Refs TDD §4.6, SIM-DET-005, REQ-SIM-006
+- [x] **T0-034 Snapshot and restore** · L · Refs TDD §4.6, SIM-DET-005, REQ-SIM-006
   `Snapshot` struct as in the TDD, postcard-encoded; `BattleWorld::snapshot()` and `BattleWorld::restore(&snapshot, &regs)`. Handles are written as `ContentId` strings and re-resolved on restore. Derived data is rebuilt (nothing derived exists yet, but leave the `rebuild_derived()` hook in place with a comment listing what Phase 1 adds: spatial grid, nav grid, flow fields, paths, ranks).
   **Done when** `hash(restore(snapshot(w))) == hash(w)` and stepping both 1,000 ticks produces identical hash sequences.
 

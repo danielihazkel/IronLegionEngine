@@ -10,6 +10,7 @@ pub mod hash;
 pub mod interface;
 pub mod resources;
 pub mod schedule;
+pub mod snapshot;
 pub mod spawn;
 pub mod world;
 
@@ -21,5 +22,6 @@ pub use interface::{
 };
 pub use resources::{BattlePhase, Rules};
 pub use schedule::Stage;
+pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spawn::SetupError;
 pub use world::{BattleWorld, StepOutput};
