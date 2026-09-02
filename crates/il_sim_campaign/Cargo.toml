@@ -1,0 +1,12 @@
+[package]
+name = "il_sim_campaign"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Iron Legion headless campaign simulation (Phase 4)."
+
+[dependencies]
+
+[lints]
+workspace = true

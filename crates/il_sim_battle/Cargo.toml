@@ -1,0 +1,12 @@
+[package]
+name = "il_sim_battle"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Iron Legion headless battle simulation."
+
+[dependencies]
+
+[lints]
+workspace = true

@@ -1,0 +1,12 @@
+[package]
+name = "game_rules"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Flagship game rule implementations behind engine traits (expected to stay near-empty)."
+
+[dependencies]
+
+[lints]
+workspace = true

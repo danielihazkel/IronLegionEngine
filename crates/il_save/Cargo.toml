@@ -1,0 +1,12 @@
+[package]
+name = "il_save"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Iron Legion save container and replay format (Phase 2/3)."
+
+[dependencies]
+
+[lints]
+workspace = true

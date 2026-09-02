@@ -1,0 +1,9 @@
+// Flagship game manifest. The culture namespaces are item-id prefixes inside
+// this one mod, not separate mods (Modding SDK §2.2, §3.5).
+{
+  id: "rome",
+  name_key: "rome.mod.name",
+  version: "0.1.0",
+  engine_version: "=0.1.0",
+  namespaces: ["rome", "greece", "persia"],
+}

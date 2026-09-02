@@ -1,0 +1,12 @@
+[package]
+name = "il_data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Iron Legion data: JSON5 loading, registries, handles, diagnostics."
+
+[dependencies]
+
+[lints]
+workspace = true

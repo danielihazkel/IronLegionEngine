@@ -1,0 +1,12 @@
+[package]
+name = "il_benches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Workspace benchmarks (criterion arrives in T1-080)."
+
+[dependencies]
+
+[lints]
+workspace = true

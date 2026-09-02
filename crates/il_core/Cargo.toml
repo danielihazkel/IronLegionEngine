@@ -1,0 +1,12 @@
+[package]
+name = "il_core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Iron Legion core: ids, Scalar, Vec2/Angle, deterministic hash and RNG, tick and turn, event base."
+
+[dependencies]
+
+[lints]
+workspace = true

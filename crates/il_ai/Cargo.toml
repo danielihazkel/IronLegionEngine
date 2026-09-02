@@ -1,0 +1,12 @@
+[package]
+name = "il_ai"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Iron Legion utility-AI framework (Phase 2)."
+
+[dependencies]
+
+[lints]
+workspace = true

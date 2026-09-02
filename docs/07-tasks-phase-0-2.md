@@ -51,7 +51,7 @@ flowchart LR
 
 ### WS — Workspace and tooling
 
-- [ ] **T0-001 Create the Cargo workspace** · S · Refs TDD §1.1, SAD §5.1
+- [x] **T0-001 Create the Cargo workspace** · S · Refs TDD §1.1, SAD §5.1
   Create `Cargo.toml` with `members = ["crates/*", "game/rules", "tests", "benches"]`, resolver 2, `rust-version = "1.80"`, release profile `codegen-units = 1`, `lto = "thin"`. Create empty library crates `il_core`, `il_data`, `il_ai`, `il_sim_battle`, `il_sim_campaign`, `il_save`, and binary crates `il_cli` and `il_app` (the app can be a stub printing its version). Create `game/rules` as an empty library and `game/mod.json5` with `id: "rome"`, `namespaces: ["rome", "greece", "persia"]`.
   **Done when** `cargo build --workspace` succeeds and `cargo tree -p il_sim_battle` shows no `wgpu`, `winit`, `egui`.
 

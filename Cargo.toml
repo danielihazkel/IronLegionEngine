@@ -1,0 +1,23 @@
+[workspace]
+members = ["crates/*", "game/rules", "tests", "benches"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"          # MSRV: bevy_ecs 0.19 needs 1.95; bumped only at phase boundaries
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Pinned in T0-003.
+
+[workspace.lints.clippy]
+float_arithmetic = "deny"       # re-allowed only inside il_core::scalar
+
+[workspace.lints.rust]
+unsafe_code = "forbid"          # il_render will opt out locally in Phase 1
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+# never: -C target-cpu=native, never fast-math (REQ-TECH-010)

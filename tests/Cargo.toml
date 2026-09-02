@@ -1,0 +1,12 @@
+[package]
+name = "il_tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Workspace integration tests: determinism, dependency rules, content validation."
+
+[dependencies]
+
+[lints]
+workspace = true
