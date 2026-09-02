@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::{Command, RejectReason};
 use crate::events::BattleEvent;
+use crate::interface::BattleSetup;
 
 /// The tick being simulated is `tick + 1`; `tick` counts completed ticks.
 /// Incremented at the start of `step` so the hash at Stage 17 covers the
@@ -131,6 +132,11 @@ pub struct SideState {
 
 #[derive(Resource, Clone, Debug, Default)]
 pub struct Sides(pub Vec<SideState>);
+
+/// The setup this battle was built from; stored in snapshots so restore can
+/// re-resolve content ids (TDD §4.6). `None` only for `BattleWorld::empty`.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct SetupRes(pub Option<BattleSetup>);
 
 /// Commands handed to `step`, consumed by Stage 0.
 #[derive(Resource, Debug, Default)]

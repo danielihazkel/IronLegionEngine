@@ -5,15 +5,16 @@ use std::sync::Arc;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{MultiThreadedExecutor, SingleThreadedExecutor};
 use bevy_tasks::{ComputeTaskPool, TaskPoolBuilder};
-use il_core::{StateHash, Tick};
+use il_core::{RegimentId, SoldierId, StateHash, Tick};
 use il_data::Registries;
 
 use crate::command::{Command, RejectReason};
 use crate::events::BattleEvent;
 use crate::hash::compute_hash;
+use crate::interface::BattleSetup;
 use crate::resources::{
     BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, Phase, Regs, Rejected, Rng, Rules,
-    RulesRes, Sides, StepEvents, ThreadCount,
+    RulesRes, SetupRes, Sides, StepEvents, ThreadCount,
 };
 use crate::schedule::build_schedule;
 
@@ -35,6 +36,18 @@ pub struct BattleWorld {
     phase: BattlePhase,
 }
 
+impl core::fmt::Debug for BattleWorld {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BattleWorld")
+            .field("tick", &self.tick)
+            .field("phase", &self.phase)
+            .field("regiments", &self.regiment_count())
+            .field("soldiers", &self.soldier_count())
+            .field("hash", &self.hash())
+            .finish()
+    }
+}
+
 impl BattleWorld {
     /// A world with resources but no entities. `BattleWorld::new` (T0-032)
     /// and `restore` (T0-034) build on this; tools use it for micro-tests.
@@ -53,6 +66,7 @@ impl BattleWorld {
         world.insert_resource(StepEvents::default());
         world.insert_resource(LastHash::default());
         world.insert_resource(ThreadCount(1));
+        world.insert_resource(SetupRes(None));
         let mut w = Self {
             world,
             schedule: build_schedule(),
@@ -61,6 +75,41 @@ impl BattleWorld {
         };
         w.refresh_hash();
         w
+    }
+
+    pub(crate) fn set_setup(&mut self, setup: BattleSetup) {
+        self.world.resource_mut::<SetupRes>().0 = Some(setup);
+    }
+
+    /// The setup this world was built from, if any.
+    pub fn setup(&self) -> Option<&BattleSetup> {
+        self.world.resource::<SetupRes>().0.as_ref()
+    }
+
+    /// Living soldier ids, ascending.
+    pub fn soldier_ids(&self) -> impl Iterator<Item = SoldierId> + '_ {
+        self.world
+            .resource::<Ids>()
+            .soldier_entities
+            .iter()
+            .map(|(id, _)| *id)
+    }
+
+    /// Regiment ids, ascending.
+    pub fn regiment_ids(&self) -> impl Iterator<Item = RegimentId> + '_ {
+        self.world
+            .resource::<Ids>()
+            .regiment_entities
+            .iter()
+            .map(|(id, _)| *id)
+    }
+
+    pub fn soldier_count(&self) -> usize {
+        self.world.resource::<Ids>().soldier_entities.len()
+    }
+
+    pub fn regiment_count(&self) -> usize {
+        self.world.resource::<Ids>().regiment_entities.len()
     }
 
     /// Recomputes `LastHash` from the current state (construction, restore).

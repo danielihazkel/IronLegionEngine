@@ -735,8 +735,10 @@ dependencies = [
  "bevy_tasks",
  "il_core",
  "il_data",
+ "json5",
  "postcard",
  "serde",
+ "serde_json",
  "thiserror",
  "tracing",
 ]

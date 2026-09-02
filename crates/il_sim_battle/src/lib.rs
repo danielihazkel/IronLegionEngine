@@ -7,12 +7,19 @@ pub mod command;
 pub mod components;
 pub mod events;
 pub mod hash;
+pub mod interface;
 pub mod resources;
 pub mod schedule;
+pub mod spawn;
 pub mod world;
 
 pub use command::{AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode};
 pub use events::BattleEvent;
+pub use interface::{
+    BattleResult, BattleSetup, GeneralFate, GeneralSetup, RegimentResult, RegimentSetup,
+    ReinforcementGroup, SOLDIER_CAP, SideResult, SideSetup, VictoryRules, Weather,
+};
 pub use resources::{BattlePhase, Rules};
 pub use schedule::Stage;
+pub use spawn::SetupError;
 pub use world::{BattleWorld, StepOutput};
