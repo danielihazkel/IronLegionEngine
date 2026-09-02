@@ -1,0 +1,1050 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[margin=1in]{geometry}
+
+\usepackage[T1]{fontenc}
+
+\usepackage{hyperref}
+
+\usepackage{enumitem}
+
+\usepackage{xcolor}
+
+\usepackage{titlesec}
+
+\usepackage{longtable}
+
+\usepackage{listings}
+
+\usepackage{courier}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    urlcolor=blue
+}
+
+\titleformat{\section}
+{\Large\bfseries}
+{\thesection}
+{1em}
+{}
+
+\titleformat{\subsection}
+{\large\bfseries}
+{\thesubsection}
+{1em}
+{}
+
+\title{
+Iron Legion Engine \\
+Product Requirements Document (PRD)
+}
+
+\author{Daniel Yehezkel}
+
+\date{Version 0.1}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\section{Vision}
+
+Iron Legion Engine is a specialized 2D strategy game engine designed exclusively for creating large-scale strategy games that combine:
+
+\begin{itemize}
+
+    \item Grand strategy campaign gameplay
+
+    \item Real-time tactical battles
+
+    \item Massive armies
+
+    \item Historical and fantasy factions
+
+    \item Extensive modding support
+
+\end{itemize}
+
+The engine is not intended to support unrelated genres such as FPS games, platformers, RPGs, city builders, or general-purpose game development.
+
+The primary design goal is:
+
+\begin{quote}
+
+Enable battles involving tens of thousands of individual soldiers while maintaining strategic depth, modability, and future multiplayer compatibility.
+
+\end{quote}
+
+\section{Core Product Goals}
+
+\subsection{Primary Goals}
+
+\begin{itemize}
+
+    \item Massive battles (target up to 10,000 soldiers)
+
+    \item Real-time tactical combat
+
+    \item Grand campaign layer
+
+    \item Individual soldier representation
+
+    \item Regiment-based command structure
+
+    \item Extensible unit abilities
+
+    \item Deterministic simulation
+
+    \item Data-driven content
+
+    \item Lightweight modding support
+
+\end{itemize}
+
+\subsection{Non-Goals}
+
+The engine will not support:
+
+\begin{itemize}
+
+    \item First-person gameplay
+
+    \item 3D environments
+
+    \item Physics sandbox gameplay
+
+    \item General-purpose game development
+
+    \item Character-centric RPG systems
+
+\end{itemize}
+
+\section{Target Audience}
+
+\subsection{Initial Users}
+
+\begin{itemize}
+
+    \item Internal development
+
+    \item A single flagship game project
+
+\end{itemize}
+
+\subsection{Future Users}
+
+\begin{itemize}
+
+    \item Indie strategy studios
+
+    \item Historical strategy enthusiasts
+
+    \item Mod creators
+
+\end{itemize}
+
+\section{High-Level Gameplay Model}
+
+\begin{verbatim}
+
+Campaign Map
+
+Economy
+
+Diplomacy
+
+Research
+
+Trade
+
+Army Management
+
+      |
+
+      V
+
+Battle Trigger
+
+      |
+
+      V
+
+Real-Time Battle
+
+      |
+
+      V
+
+Battle Outcome
+
+      |
+
+      V
+
+Campaign Update
+
+\end{verbatim}
+
+The campaign and battle simulations are separate systems that exchange data through a defined interface.
+
+\section{Performance Requirements}
+
+\subsection{Initial Goal}
+
+\begin{itemize}
+
+    \item 2,000 soldiers at 60 FPS
+
+\end{itemize}
+
+\subsection{Intermediate Goal}
+
+\begin{itemize}
+
+    \item 10,000 soldiers at 60 FPS
+
+\end{itemize}
+
+\subsection{Advanced Goal}
+
+\begin{itemize}
+
+    \item 20,000 soldiers at 60 FPS
+
+\end{itemize}
+
+\subsection{Long-Term Goal}
+
+\begin{itemize}
+
+    \item 10,000 soldiers at 30--60 FPS
+
+\end{itemize}
+
+\subsection{Target Hardware}
+
+\begin{itemize}
+
+    \item CPU: Modern 8-core consumer processor
+
+    \item RAM: 16--32 GB
+
+    \item GPU: Mid-range gaming GPU
+
+\end{itemize}
+
+\section{Technology Stack}
+
+\subsection{Programming Language}
+
+Rust
+
+\subsection{Rendering}
+
+\begin{itemize}
+
+    \item wgpu
+
+    \item GPU Instancing
+
+    \item Multi-threaded rendering support
+
+\end{itemize}
+
+\subsection{ECS Framework}
+
+\begin{itemize}
+
+    \item Bevy ECS
+
+\end{itemize}
+
+\subsection{User Interface}
+
+\begin{itemize}
+
+    \item egui
+
+\end{itemize}
+
+\subsection{Serialization}
+
+\begin{itemize}
+
+    \item Serde
+
+    \item JSON
+
+    \item RON
+
+\end{itemize}
+
+\subsection{Scripting}
+
+\begin{itemize}
+
+    \item Lua
+
+\end{itemize}
+
+\section{Architectural Principles}
+
+\subsection{Principle 1: Everything is Data Driven}
+
+Content must be loaded from external data definitions.
+
+Examples:
+
+\begin{verbatim}
+
+Unit Definitions
+
+Technology Trees
+
+Buildings
+
+Abilities
+
+Campaign Events
+
+\end{verbatim}
+
+Hardcoded game content is prohibited.
+
+\subsection{Principle 2: Intelligence Lives Above Soldiers}
+
+Hierarchy:
+
+\begin{verbatim}
+
+Faction
+
+  |
+
+Army
+
+  |
+
+Regiment
+
+  |
+
+Soldier
+
+\end{verbatim}
+
+Decision-making should occur at Army and Regiment levels.
+
+Soldiers primarily execute orders and maintain formation integrity.
+
+\subsection{Principle 3: Deterministic Simulation}
+
+Given identical:
+
+\begin{itemize}
+
+    \item Initial State
+
+    \item Input Stream
+
+    \item Random Seed
+
+\end{itemize}
+
+the simulation must always generate identical results.
+
+\subsection{Principle 4: Simulation First}
+
+Gameplay quality and simulation scale have priority over graphical fidelity.
+
+\section{Major Systems}
+
+\subsection{Battle Simulation System}
+
+Responsibilities:
+
+\begin{itemize}
+
+    \item Soldier movement
+
+    \item Regiment movement
+
+    \item Combat
+
+    \item Morale
+
+    \item Routing
+
+    \item Formations
+
+    \item Ability execution
+
+\end{itemize}
+
+Battlefields use a continuous 2D coordinate system.
+
+\subsection{Formation System}
+
+Supported formations:
+
+\begin{itemize}
+
+    \item Line
+
+    \item Column
+
+    \item Square
+
+    \item Wedge
+
+    \item Phalanx
+
+    \item Loose Formation
+
+    \item Custom Formation
+
+\end{itemize}
+
+Features:
+
+\begin{itemize}
+
+    \item Dynamic resizing
+
+    \item Reformation
+
+    \item Rotation
+
+    \item Formation integrity monitoring
+
+\end{itemize}
+
+Formation management is considered a Tier-1 system.
+
+\subsection{Combat System}
+
+\subsubsection{Melee Combat}
+
+Attributes:
+
+\begin{itemize}
+
+    \item Attack
+
+    \item Defense
+
+    \item Armor
+
+    \item Skill
+
+    \item Fatigue
+
+    \item Morale
+
+\end{itemize}
+
+\subsubsection{Ranged Combat}
+
+Attributes:
+
+\begin{itemize}
+
+    \item Range
+
+    \item Accuracy
+
+    \item Projectile Speed
+
+    \item Reload Time
+
+\end{itemize}
+
+\subsubsection{Ability-Based Combat}
+
+Attributes:
+
+\begin{itemize}
+
+    \item Cooldown
+
+    \item Area of Effect
+
+    \item Duration
+
+    \item Energy Cost
+
+\end{itemize}
+
+\section{Morale System}
+
+Morale States:
+
+\begin{itemize}
+
+    \item Steady
+
+    \item Unsettled
+
+    \item Shaken
+
+    \item Broken
+
+    \item Routing
+
+\end{itemize}
+
+Morale Factors:
+
+\begin{itemize}
+
+    \item Casualties
+
+    \item Fatigue
+
+    \item Commander bonuses
+
+    \item Nearby allies
+
+    \item Terrain
+
+    \item Fear effects
+
+    \item Flanking
+
+\end{itemize}
+
+Morale is a primary battle mechanic.
+
+\section{Fatigue System}
+
+Fatigue States:
+
+\begin{itemize}
+
+    \item Fresh
+
+    \item Active
+
+    \item Tired
+
+    \item Exhausted
+
+\end{itemize}
+
+Effects:
+
+\begin{itemize}
+
+    \item Movement Speed
+
+    \item Attack Rate
+
+    \item Morale
+
+    \item Recovery Rate
+
+\end{itemize}
+
+\section{Ability System}
+
+Supported Effects:
+
+\begin{itemize}
+
+    \item Buffs
+
+    \item Debuffs
+
+    \item Damage
+
+    \item Healing
+
+    \item Summons
+
+    \item Fear Effects
+
+    \item Area Effects
+
+    \item Teleportation
+
+\end{itemize}
+
+All abilities must be data-defined.
+
+\section{Campaign Layer}
+
+\subsection{World Structure}
+
+\begin{itemize}
+
+    \item Factions
+
+    \item Provinces
+
+    \item Settlements
+
+    \item Armies
+
+    \item Agents
+
+\end{itemize}
+
+\subsection{Economy}
+
+\begin{itemize}
+
+    \item Taxation
+
+    \item Resource Production
+
+    \item Upkeep
+
+    \item Trade
+
+\end{itemize}
+
+\subsection{Diplomacy}
+
+Supported actions:
+
+\begin{itemize}
+
+    \item Trade Agreements
+
+    \item Alliances
+
+    \item War Declarations
+
+    \item Peace Treaties
+
+    \item Vassalage
+
+    \item Coalitions
+
+\end{itemize}
+
+\subsection{Research}
+
+Technology categories:
+
+\begin{itemize}
+
+    \item Military
+
+    \item Economic
+
+    \item Political
+
+    \item Magic
+
+\end{itemize}
+
+\subsection{Recruitment}
+
+\begin{itemize}
+
+    \item Building Requirements
+
+    \item Unit Tiers
+
+    \item Recruitment Time
+
+    \item Global Modifiers
+
+\end{itemize}
+
+\section{Artificial Intelligence}
+
+\subsection{Campaign AI}
+
+Responsibilities:
+
+\begin{itemize}
+
+    \item Expansion
+
+    \item Diplomacy
+
+    \item Economy
+
+    \item Recruitment
+
+\end{itemize}
+
+\subsection{Army AI}
+
+Responsibilities:
+
+\begin{itemize}
+
+    \item Strategic movement
+
+    \item Army composition
+
+    \item Objective prioritization
+
+\end{itemize}
+
+\subsection{Battle AI}
+
+Responsibilities:
+
+\begin{itemize}
+
+    \item Deployment
+
+    \item Flanking
+
+    \item Retreat decisions
+
+    \item Ability use
+
+    \item Formation management
+
+\end{itemize}
+
+\section{Pathfinding}
+
+\subsection{Campaign Pathfinding}
+
+Uses:
+
+\begin{verbatim}
+
+Province Graph
+
+\end{verbatim}
+
+\subsection{Battlefield Pathfinding}
+
+Uses:
+
+\begin{verbatim}
+
+Hierarchical A*
+
+\end{verbatim}
+
+\subsection{Local Navigation}
+
+Uses:
+
+\begin{verbatim}
+
+Steering Behaviors
+
+\end{verbatim}
+
+for tactical avoidance and crowd movement.
+
+\section{Spatial Partitioning}
+
+Primary implementation:
+
+\begin{verbatim}
+
+Uniform Grid
+
+\end{verbatim}
+
+Future optional implementation:
+
+\begin{verbatim}
+
+QuadTree
+
+\end{verbatim}
+
+Use cases:
+
+\begin{itemize}
+
+    \item Enemy detection
+
+    \item Combat queries
+
+    \item Visibility calculations
+
+\end{itemize}
+
+\section{Rendering System}
+
+Requirements:
+
+\begin{itemize}
+
+    \item GPU Instancing
+
+    \item Multi-threaded renderer
+
+    \item Zoom-dependent Level of Detail (LOD)
+
+\end{itemize}
+
+Supported visual representations:
+
+\begin{itemize}
+
+    \item Detailed Soldier
+
+    \item Reduced Soldier
+
+    \item Sprite Aggregation
+
+\end{itemize}
+
+Camera Features:
+
+\begin{itemize}
+
+    \item Strategic zoom
+
+    \item Tactical zoom
+
+    \item Smooth panning
+
+    \item Smooth rotation
+
+\end{itemize}
+
+\section{Modding System}
+
+\subsection{Tier 1: JSON}
+
+Can modify:
+
+\begin{itemize}
+
+    \item Units
+
+    \item Factions
+
+    \item Technologies
+
+    \item Buildings
+
+    \item Abilities
+
+\end{itemize}
+
+\subsection{Tier 2: Lua}
+
+Can modify:
+
+\begin{itemize}
+
+    \item Campaign Events
+
+    \item Missions
+
+    \item Quests
+
+    \item Triggers
+
+    \item Scenario Logic
+
+\end{itemize}
+
+Design Goal:
+
+\begin{quote}
+
+Average mods should be possible without programming knowledge.
+
+\end{quote}
+
+\section{Save System}
+
+Requirements:
+
+\begin{itemize}
+
+    \item Campaign Saves
+
+    \item Battle Saves
+
+    \item Autosaves
+
+    \item Version Compatibility
+
+\end{itemize}
+
+Format:
+
+\begin{itemize}
+
+    \item Serialized state data
+
+    \item JSON metadata
+
+\end{itemize}
+
+\section{Multiplayer Readiness}
+
+Multiplayer is not required for MVP.
+
+The architecture must support:
+
+\begin{itemize}
+
+    \item Deterministic simulation
+
+    \item Input-based synchronization
+
+    \item Reproducible random number generation
+
+\end{itemize}
+
+Future multiplayer target:
+
+\begin{verbatim}
+
+Lockstep Networking
+
+\end{verbatim}
+
+\section{Development Roadmap}
+
+\subsection{Phase 1: Battlefield Prototype}
+
+Deliverables:
+
+\begin{itemize}
+
+    \item Basic Renderer
+
+    \item ECS
+
+    \item Movement
+
+    \item Formation System
+
+\end{itemize}
+
+Goal:
+
+\begin{verbatim}
+
+2,000 soldiers @ 60 FPS
+
+\end{verbatim}
+
+\subsection{Phase 2: Combat Systems}
+
+Deliverables:
+
+\begin{itemize}
+
+    \item Melee Combat
+
+    \item Morale
+
+    \item Fatigue
+
+    \item Routing
+
+\end{itemize}
+
+Goal:
+
+\begin{verbatim}
+
+10,000 soldiers
+
+\end{verbatim}
+
+\subsection{Phase 3: Scaling}
+
+Deliverables:
+
+\begin{itemize}
+
+    \item Hierarchical Pathfinding
+
+    \item Performance Optimization
+
+    \item GPU Instancing
+
+\end{itemize}
+
+Goal:
+
+\begin{verbatim}
+
+20,000+ soldiers
+
+\end{verbatim}
+
+\subsection{Phase 4: Campaign Layer}
+
+Deliverables:
+
+\begin{itemize}
+
+    \item Map
+
+    \item Provinces
+
+    \item Economy
+
+    \item Diplomacy
+
+\end{itemize}
+
+\subsection{Phase 5: Fantasy Systems}
+
+Deliverables:
+
+\begin{itemize}
+
+    \item Ability Framework
+
+    \item Magic System
+
+    \item Status Effects
+
+\end{itemize}
+
+\subsection{Phase 6: Modding}
+
+Deliverables:
+
+\begin{itemize}
+
+    \item JSON Content Framework
+
+    \item Lua Integration
+
+    \item Mod Packaging
+
+\end{itemize}
+
+\section{Success Criteria}
+
+The project is considered successful when it can:
+
+\begin{enumerate}
+
+    \item Run a campaign map with multiple AI factions.
+
+    \item Transition seamlessly into real-time battles.
+
+    \item Simulate at least 20,000 individual soldiers with stable performance.
+
+    \item Support historical and fantasy factions.
+
+    \item Allow creation of new units and factions entirely through mods.
+
+    \item Be architecturally prepared for deterministic multiplayer.
+
+    \item Add all game content without engine code changes.
+
+\end{enumerate}
+
+\end{document}

@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/unit-type.schema.json",
+  "title": "Iron Legion unit type",
+  "description": "A kind of soldier: stats, equipment, sprites, cost. Files live under content/units/. JSON5 is parsed to JSON before validation; override directives ($override, $delete, $from) are stripped after merging, but are allowed here so a single override object can be checked in isolation.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+:[a-z0-9_]+$",
+      "description": "Namespaced content id 'modid:item_id'."
+    },
+    "locKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
+      "description": "Localisation key."
+    },
+    "assetPath": {
+      "type": "string",
+      "pattern": "^(?!\\.\\.)(?!/)[^\\\\]*$",
+      "description": "Path relative to the mod's assets_root, forward slashes, no '..'."
+    },
+    "listOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "List override operation. Only valid inside an override object.",
+      "properties": {
+        "$append": { "type": "array" },
+        "$remove": { "type": "array" },
+        "$replace": { "type": "array" }
+      }
+    },
+    "contentIdList": {
+      "oneOf": [
+        { "type": "array", "items": { "$ref": "#/$defs/contentId" } },
+        { "$ref": "#/$defs/listOp" }
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name_key", "category", "hp", "speed_walk", "speed_run", "attack", "defence", "damage", "formations", "sprite_set", "cost", "upkeep"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"], "description": "Override mode when an item with this id already exists. Default merge." },
+    "$delete": { "const": true, "description": "Remove the item with this id from the registry." },
+    "$from": { "$ref": "#/$defs/contentId", "description": "Copy this existing unit type as the base for a new id, then merge the remaining fields." },
+    "deprecated": { "type": "string", "description": "Marks the item deprecated; message names the replacement. Hidden from recruitment." },
+
+    "id": { "$ref": "#/$defs/contentId", "description": "Content id." },
+    "name_key": { "$ref": "#/$defs/locKey", "description": "Display name key." },
+    "category": {
+      "enum": ["infantry", "cavalry", "ranged", "skirmisher", "general", "siege"],
+      "description": "Role category. Drives role zones, anti-cavalry rules, and AI considerations."
+    },
+
+    "soldier_radius": { "type": "number", "minimum": 0.1, "maximum": 3.0, "default": 0.4, "description": "Collision circle radius in world units." },
+    "mass": { "type": "number", "minimum": 0.1, "maximum": 20.0, "default": 1.0, "description": "Push weight in collision and charge resolution." },
+    "hp": { "type": "integer", "minimum": 1, "maximum": 10000, "description": "Hit points per soldier." },
+
+    "speed_walk": { "type": "number", "exclusiveMinimum": 0, "maximum": 30, "description": "Formation walking speed, world units per second." },
+    "speed_run": { "type": "number", "exclusiveMinimum": 0, "maximum": 40, "description": "Charge and rout speed, world units per second." },
+    "speed_march": { "type": "number", "exclusiveMinimum": 0, "maximum": 30, "description": "Column and road march speed. Defaults to speed_walk." },
+
+    "attack": { "type": "number", "minimum": 0, "maximum": 100, "description": "Melee attack skill." },
+    "defence": { "type": "number", "minimum": 0, "maximum": 100, "description": "Melee defence skill." },
+    "armour": { "type": "number", "minimum": 0, "maximum": 100, "default": 0, "description": "Flat damage reduction after a hit lands." },
+    "damage": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Melee damage before armour." },
+    "attack_interval_ticks": { "type": "integer", "minimum": 1, "maximum": 400, "default": 20, "description": "Ticks between melee attacks (20 Hz tick)." },
+    "reach": { "type": "number", "minimum": 0.1, "maximum": 6.0, "default": 1.0, "description": "Melee reach from the collision circle edge, world units." },
+    "charge_bonus": { "type": "number", "minimum": 0, "maximum": 100, "default": 0, "description": "Attack bonus on first contact after a charge." },
+    "anti_cavalry_bonus": { "type": "number", "minimum": 0, "maximum": 100, "default": 0, "description": "Attack and defence bonus versus cavalry when braced in formation." },
+    "second_rank_attack": { "type": "boolean", "default": false, "description": "Second rank may attack over the first (spears, pikes)." },
+    "frontal_arc_deg": { "type": "number", "minimum": 10, "maximum": 360, "default": 120, "description": "Arc in degrees inside which incoming attacks count as frontal." },
+
+    "ranged": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Present only for units that shoot.",
+      "required": ["range", "accuracy", "projectile_speed", "reload_ticks", "ammo", "damage"],
+      "properties": {
+        "range": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000, "description": "Maximum range, world units." },
+        "min_range": { "type": "number", "minimum": 0, "maximum": 1000, "default": 0, "description": "Minimum range, world units (indirect fire)." },
+        "accuracy": { "type": "number", "minimum": 0, "maximum": 1, "description": "Base probability that a projectile lands on its aimed soldier." },
+        "projectile_speed": { "type": "number", "exclusiveMinimum": 0, "maximum": 500, "description": "Launch speed, world units per second." },
+        "reload_ticks": { "type": "integer", "minimum": 1, "maximum": 2000, "description": "Ticks between volleys." },
+        "ammo": { "type": "integer", "minimum": 0, "maximum": 1000, "description": "Volleys per soldier per battle." },
+        "damage": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Projectile damage before armour." },
+        "armour_penetration": { "type": "number", "minimum": 0, "maximum": 100, "default": 0, "description": "Subtracted from the target's armour." },
+        "arc": { "enum": ["direct", "indirect"], "default": "direct", "description": "direct: flat trajectory blocked by friends; indirect: lobbed over friends." }
+      }
+    },
+
+    "morale_base": { "type": "number", "minimum": 0, "maximum": 100, "default": 60, "description": "Starting regiment morale contribution." },
+    "fatigue_rate_mult": { "type": "number", "minimum": 0, "maximum": 10, "default": 1.0, "description": "Multiplier on fatigue accumulation." },
+    "los_radius": { "type": "number", "minimum": 0, "maximum": 2000, "default": 80, "description": "Line-of-sight radius on flat open ground, world units." },
+
+    "abilities": { "$ref": "#/$defs/contentIdList", "default": [], "description": "Ability content ids." },
+    "formations": { "$ref": "#/$defs/contentIdList", "description": "Allowed formation templates; the first is the default." },
+
+    "sprite_set": { "$ref": "#/$defs/assetPath", "description": "Path under assets_root to the 8-facing atlas set." },
+    "sounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": {},
+      "description": "Sound paths under assets_root.",
+      "properties": {
+        "select": { "$ref": "#/$defs/assetPath" },
+        "move": { "$ref": "#/$defs/assetPath" },
+        "attack": { "$ref": "#/$defs/assetPath" },
+        "charge": { "$ref": "#/$defs/assetPath" },
+        "die": { "$ref": "#/$defs/assetPath" }
+      }
+    },
+
+    "cost": { "type": "integer", "minimum": 0, "maximum": 1000000, "description": "Recruitment cost in gold." },
+    "upkeep": { "type": "integer", "minimum": 0, "maximum": 1000000, "description": "Upkeep in gold per turn." },
+    "recruit_turns": { "type": "integer", "minimum": 1, "maximum": 50, "default": 1, "description": "Turns to recruit." },
+    "tier": { "type": "integer", "minimum": 1, "maximum": 5, "default": 1, "description": "Recruitment tier required from settlement buildings." },
+    "experience_tiers": {
+      "type": "array",
+      "default": [],
+      "maxItems": 10,
+      "description": "Additive bonuses per experience tier, in ascending xp order.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["xp"],
+        "properties": {
+          "xp": { "type": "integer", "minimum": 0, "description": "Experience threshold." },
+          "attack": { "type": "number", "minimum": -100, "maximum": 100, "default": 0 },
+          "defence": { "type": "number", "minimum": -100, "maximum": 100, "default": 0 },
+          "morale": { "type": "number", "minimum": -100, "maximum": 100, "default": 0 }
+        }
+      }
+    }
+  }
+}

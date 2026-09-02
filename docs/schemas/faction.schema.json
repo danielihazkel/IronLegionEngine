@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/faction.schema.json",
+  "title": "Iron Legion faction",
+  "description": "A political entity: recruitable units, colours, starting provinces, AI profile, diplomacy personality, technology tree. Files live under content/factions/. JSON5 is parsed to JSON before validation.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$", "description": "Namespaced content id 'modid:item_id'." },
+    "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$", "description": "Localisation key." },
+    "colour": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "description": "RGB colour '#rrggbb'." },
+    "unitInterval": { "type": "number", "minimum": 0, "maximum": 1 },
+    "listOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "List override operation. Only valid inside an override object.",
+      "properties": {
+        "$append": { "type": "array" },
+        "$remove": { "type": "array" },
+        "$replace": { "type": "array" }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name_key", "culture", "colour_primary", "colour_secondary", "units", "ai_profile", "tech_tree"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"], "description": "Override mode when an item with this id already exists. Default merge." },
+    "$delete": { "const": true, "description": "Remove the item with this id from the registry." },
+    "$from": { "$ref": "#/$defs/contentId", "description": "Copy this existing faction as the base for a new id, then merge the remaining fields." },
+    "deprecated": { "type": "string", "description": "Marks the item deprecated; message names the replacement." },
+
+    "id": { "$ref": "#/$defs/contentId", "description": "Content id." },
+    "name_key": { "$ref": "#/$defs/locKey", "description": "Display name key." },
+    "culture": { "type": "string", "pattern": "^[a-z0-9_]+$", "description": "Culture tag used by buildings and technologies as a filter." },
+    "colour_primary": { "$ref": "#/$defs/colour", "description": "Map and sprite tint." },
+    "colour_secondary": { "$ref": "#/$defs/colour", "description": "Secondary tint and UI accent." },
+    "units": {
+      "oneOf": [
+        { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/contentId" } },
+        { "$ref": "#/$defs/listOp" }
+      ],
+      "description": "Unit types this faction may recruit, subject to buildings and tier."
+    },
+    "starting_provinces": {
+      "oneOf": [
+        { "type": "array", "items": { "type": "string", "pattern": "^[a-z0-9_]+$" } },
+        { "$ref": "#/$defs/listOp" }
+      ],
+      "default": [],
+      "description": "Campaign province ids owned at the start of a new campaign."
+    },
+    "ai_profile": { "$ref": "#/$defs/contentId", "description": "AI profile content id under content/ai/." },
+    "diplomacy_personality": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "aggression": 0.5, "loyalty": 0.5, "greed": 0.5, "expansionism": 0.5 },
+      "description": "Weights in 0..1 that drive attitude and diplomatic decisions.",
+      "properties": {
+        "aggression": { "$ref": "#/$defs/unitInterval", "default": 0.5, "description": "Tendency to declare war." },
+        "loyalty": { "$ref": "#/$defs/unitInterval", "default": 0.5, "description": "Tendency to honour treaties." },
+        "greed": { "$ref": "#/$defs/unitInterval", "default": 0.5, "description": "Weight of trade and gold in decisions." },
+        "expansionism": { "$ref": "#/$defs/unitInterval", "default": 0.5, "description": "Desire for more provinces." }
+      }
+    },
+    "tech_tree": { "$ref": "#/$defs/contentId", "description": "Technology tree content id." }
+  }
+}

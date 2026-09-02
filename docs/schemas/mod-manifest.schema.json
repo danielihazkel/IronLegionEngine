@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/mod-manifest.schema.json",
+  "title": "Iron Legion mod manifest (mod.json5)",
+  "description": "Manifest at the root of every mod folder or zip. JSON5 is parsed to JSON before validation.",
+  "x-schema-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name_key", "version", "engine_version"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Mod namespace. Every ContentId defined by this mod is '<id>:<item_id>'. Never changes across versions."
+    },
+    "name_key": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
+      "description": "Localisation key of the display name, resolved from this mod's locale files."
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(-[0-9A-Za-z.-]+)?$",
+      "description": "Semantic version MAJOR.MINOR.PATCH. Recorded in save headers."
+    },
+    "engine_version": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Semver range of engine versions this mod targets, e.g. '>=0.4.0 <0.6.0'. Loading outside the range warns."
+    },
+    "dependencies": {
+      "type": "array",
+      "default": [],
+      "description": "Mods that must be enabled and loaded before this one.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "version"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9_]+$", "description": "Dependency mod id." },
+          "version": { "type": "string", "minLength": 1, "description": "Semver range the dependency must satisfy." }
+        }
+      }
+    },
+    "load_after": {
+      "type": "array",
+      "default": [],
+      "description": "Soft ordering: load after these mods if they are enabled. Missing ids are ignored.",
+      "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+    },
+    "load_before": {
+      "type": "array",
+      "default": [],
+      "description": "Soft ordering: load before these mods if they are enabled. Missing ids are ignored.",
+      "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+    },
+    "content_root": {
+      "type": "string",
+      "default": "content",
+      "pattern": "^(?!\\.\\.)(?!/)[^\\\\]*$",
+      "description": "Folder (relative, forward slashes) holding the content kind folders."
+    },
+    "scripts_root": {
+      "type": "string",
+      "default": "scripts",
+      "pattern": "^(?!\\.\\.)(?!/)[^\\\\]*$",
+      "description": "Folder holding Lua scripts; main.lua inside it is the entry point."
+    },
+    "assets_root": {
+      "type": "string",
+      "default": "assets",
+      "pattern": "^(?!\\.\\.)(?!/)[^\\\\]*$",
+      "description": "Folder that sprite, sound, and heightmap paths resolve against."
+    },
+    "locales": {
+      "type": "array",
+      "default": [],
+      "description": "Language codes provided under locale/. Informational; the folder is also scanned.",
+      "items": { "type": "string", "pattern": "^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$" }
+    },
+    "namespaces": {
+      "type": "array",
+      "description": "Extra ContentId namespaces this mod may define. Honoured only for the flagship game at game/.",
+      "items": { "type": "string", "pattern": "^[a-z0-9_]+$" }
+    }
+  }
+}
