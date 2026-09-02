@@ -4,6 +4,8 @@
 # the filesystem. SAD §5.2, §9.1; TDD §18; SIM-DET-006.
 
 disallowed-methods = [
+  { path = "f32::mul_add", reason = "REQ-TECH-010: fused multiply-add rounds once; use Scalar::mul_add_rounded" },
+  { path = "f64::mul_add", reason = "REQ-TECH-010: fused multiply-add rounds once; use Scalar::mul_add_rounded" },
   { path = "std::time::Instant::now", reason = "SIM-DET-006: no wall-clock in the sim; time is ticks" },
   { path = "std::time::SystemTime::now", reason = "SIM-DET-006: no wall-clock in the sim; time is ticks" },
   { path = "std::fs::read", reason = "SAD §5.2: sim crates do not touch the filesystem; load through il_data" },

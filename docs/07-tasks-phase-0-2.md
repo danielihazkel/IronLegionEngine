@@ -69,7 +69,7 @@ flowchart LR
   `SoldierId`, `RegimentId`, `ArmyId`, `FactionId`, `PlayerId`, `ProjectileId`, `ProvinceId` as newtypes deriving `Copy, Ord, Hash, Serialize, Deserialize`; `IdAllocator<T>` that never reuses ids and serialises its counter; `Tick`, `Turn`, `TICK_SECONDS`, `TICKS_PER_SECOND`.
   **Done when** unit tests cover allocator monotonicity and serde round trip.
 
-- [ ] **T0-011 `Scalar` trait, `f32` impl, `Vec2`, `Angle`** · M · Refs TDD §2.2 `scalar.rs`, `vec.rs`, REQ-TECH-009, REQ-TECH-010
+- [x] **T0-011 `Scalar` trait, `f32` impl, `Vec2`, `Angle`** · M · Refs TDD §2.2 `scalar.rs`, `vec.rs`, REQ-TECH-009, REQ-TECH-010
   Implement the trait exactly as in the TDD, including `mul_add` as `a * b + self` (no `fma`), `from_f32_data`, `to_f32_render`. `Vec2<T>` with length, normalise-or-zero, clamp length, rotate, dot, perp. `Angle<T>` normalised to `(−π, π]` with `delta`, `turn_toward`, `to_facing8`. Add `#![deny(clippy::float_arithmetic)]` to every crate except inside `scalar.rs`.
   **Done when** tests cover `to_facing8` boundaries at every multiple of 45°, `turn_toward` never overshoots, and `Vec2::rotate` by `TAU` returns the input bit-exactly.
 
