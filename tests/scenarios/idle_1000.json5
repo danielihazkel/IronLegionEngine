@@ -1,0 +1,24 @@
+// Phase 0 determinism scenario (T0-041): two sides of 500 rome:hastati that
+// never receive an order. No map until T1-030. The temporary `position` and
+// `facing_deg` fields place the regiments 200 m apart facing each other.
+{
+  seed: 42,
+  sides: [
+    {
+      faction: "rome:rome",
+      player: 0,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "rome:hastati", count: 500, position: [-100, 0], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome",
+      player: 1,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "rome:hastati", count: 500, position: [100, 0], facing_deg: 180 },
+      ],
+    },
+  ],
+}
