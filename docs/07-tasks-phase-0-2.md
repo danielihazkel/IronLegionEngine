@@ -81,7 +81,7 @@ flowchart LR
   PCG32 `RngStream::from_seed(seed, StreamId)`, `next_u32`, `unit<T>()`; `StreamId` enum with the nine streams; `hash_draw(seed, tick, entity, index) -> T` in `[0, 1)` via xxh3 of the tuple.
   **Done when** golden sequence test for each stream id and a chi-square test on 1e6 `hash_draw` values passes.
 
-- [ ] **T0-014 Event base types** · S · Refs TDD §2.2 `events.rs`, SAD §3 principle 2
+- [x] **T0-014 Event base types** · S · Refs TDD §2.2 `events.rs`, SAD §3 principle 2
   `Event` trait, `EventQueue<E>` with `push`, `drain`, deterministic insertion order.
   **Done when** used by T0-030.
 
