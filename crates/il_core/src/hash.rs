@@ -318,7 +318,8 @@ macro_rules! impl_hashable_fieldless_enum {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vec::V2;
+
+    type V2 = crate::vec::Vec2<f32>;
 
     #[derive(Copy, Clone)]
     enum Mode {

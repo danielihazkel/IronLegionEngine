@@ -155,6 +155,9 @@ impl<T: Scalar> SubAssign for Vec2<T> {
 mod tests {
     use super::*;
 
+    /// Tests use the bare float so literals stay readable.
+    type V2 = Vec2<f32>;
+
     #[test]
     fn length_and_normalisation() {
         let v = V2::new(3.0, 4.0);

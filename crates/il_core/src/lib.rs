@@ -15,6 +15,6 @@ pub use events::{Event, EventQueue};
 pub use hash::{Hashable, StateHash, StateHasher, hash_of};
 pub use ids::*;
 pub use rng::{RngStream, StreamId, hash_draw};
-pub use scalar::{S, Scalar};
+pub use scalar::{F32, S, Scalar};
 pub use time::*;
 pub use vec::{V2, Vec2};

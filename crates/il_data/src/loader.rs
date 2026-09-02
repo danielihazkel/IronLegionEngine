@@ -190,7 +190,10 @@ mod tests {
             .units
             .lookup(&ContentId::new("t:good").unwrap())
             .unwrap();
-        assert_eq!(regs.units.get(h).speed_walk, 1.6);
+        assert_eq!(
+            regs.units.get(h).speed_walk,
+            <il_core::S as il_core::Scalar>::from_f32_data(1.6)
+        );
     }
 
     #[test]

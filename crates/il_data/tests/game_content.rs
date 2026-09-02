@@ -3,6 +3,7 @@
 
 use std::path::Path;
 
+use il_core::{S, Scalar};
 use il_data::{ContentId, Registries, UnitCategory};
 
 fn game_root() -> std::path::PathBuf {
@@ -18,13 +19,13 @@ fn game_units_load_and_resolve() {
     assert_eq!(u.id, id);
     assert_eq!(regs.units.id_of(h), &id);
     assert_eq!(u.category, UnitCategory::Infantry);
-    assert_eq!(u.soldier_radius, 0.4);
-    assert_eq!(u.mass, 80.0);
-    assert_eq!(u.hp, 100.0);
-    assert_eq!(u.speed_walk, 1.6);
-    assert_eq!(u.speed_run, 4.0);
-    assert_eq!(u.speed_march, 1.6);
-    assert_eq!(u.morale_base, 60.0);
-    assert_eq!(u.los_radius, 200.0);
+    assert_eq!(u.soldier_radius, S::from_f32_data(0.4));
+    assert_eq!(u.mass, S::from_f32_data(80.0));
+    assert_eq!(u.hp, S::from_f32_data(100.0));
+    assert_eq!(u.speed_walk, S::from_f32_data(1.6));
+    assert_eq!(u.speed_run, S::from_f32_data(4.0));
+    assert_eq!(u.speed_march, S::from_f32_data(1.6));
+    assert_eq!(u.morale_base, S::from_f32_data(60.0));
+    assert_eq!(u.los_radius, S::from_f32_data(200.0));
     assert_eq!(u.name_key, "rome.units.hastati.name");
 }

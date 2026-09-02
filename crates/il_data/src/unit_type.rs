@@ -100,13 +100,14 @@ mod tests {
                 speed_walk: 1.5, speed_run: 4, attack: 30, weird_field: [1, 2] }"#,
         )
         .unwrap();
+        let s = S::from_f32_data;
         assert_eq!(u.category, UnitCategory::Cavalry);
-        assert_eq!(u.soldier_radius, 0.4);
-        assert_eq!(u.mass, 1.0);
-        assert_eq!(u.speed_march, 1.5);
-        assert_eq!(u.morale_base, 60.0);
-        assert_eq!(u.los_radius, 80.0);
-        assert_eq!(u.hp, 100.0);
+        assert_eq!(u.soldier_radius, s(0.4));
+        assert_eq!(u.mass, s(1.0));
+        assert_eq!(u.speed_march, s(1.5));
+        assert_eq!(u.morale_base, s(60.0));
+        assert_eq!(u.los_radius, s(80.0));
+        assert_eq!(u.hp, s(100.0));
     }
 
     #[test]
