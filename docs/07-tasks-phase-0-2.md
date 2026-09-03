@@ -264,7 +264,7 @@ flowchart LR
   Soldier FSM (`Idle`, `MoveToSlot` only in Phase 1); seek with arrive damping, separation from the previous tick's grid, obstacle avoidance by sampled rotations, `clamp_length`, facing tracking; Stage 4 `par_iter`; Stage 5 integrate with map clamp.
   **Done when** 2,000 soldiers reforming from Line to Column and back settle to integrity ≥ 0.95 within 15 seconds of sim time, and the determinism test passes at 1 and 8 threads.
 
-- [ ] **T1-044 Collision resolution** · M · Refs SIM-MOVE-040..042, TDD §5 `for_each_pair`, §6.2 `collision_resolve`, SAD §8 rule 2
+- [x] **T1-044 Collision resolution** · M · Refs SIM-MOVE-040..042, TDD §5 `for_each_pair`, §6.2 `collision_resolve`, SAD §8 rule 2
   Pair enumeration per cell row in parallel into per-soldier push buffers, sorted `(i, j)` processing, id-order apply, `collision_iterations` passes, push out of impassable cells.
   **Done when** two regiments marched through each other end with no overlapping pairs after 2 s and the momentum-weighted centre test passes.
 
