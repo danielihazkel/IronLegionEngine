@@ -84,6 +84,7 @@ impl<'de> Deserialize<'de> for UnitType {
 
 impl ContentKind for UnitType {
     const DIR: &'static str = "units";
+    const TAG: crate::schema::KindTag = crate::schema::KindTag::Unit;
     fn id(&self) -> &ContentId {
         &self.id
     }

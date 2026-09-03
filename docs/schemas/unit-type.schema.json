@@ -54,7 +54,7 @@
     },
 
     "soldier_radius": { "type": "number", "minimum": 0.1, "maximum": 3.0, "default": 0.4, "description": "Collision circle radius in world units." },
-    "mass": { "type": "number", "minimum": 0.1, "maximum": 20.0, "default": 1.0, "description": "Push weight in collision and charge resolution." },
+    "mass": { "type": "number", "minimum": 0.1, "maximum": 2000.0, "default": 1.0, "description": "Push weight in collision and charge resolution, in kilograms (Simulation Spec 15.2: infantry about 80, cavalry with horse about 400)." },
     "hp": { "type": "integer", "minimum": 1, "maximum": 10000, "description": "Hit points per soldier." },
 
     "speed_walk": { "type": "number", "exclusiveMinimum": 0, "maximum": 30, "description": "Formation walking speed, world units per second." },

@@ -90,9 +90,13 @@ mod tests {
         std::fs::write(base.join("mods/bad/mod.json5"), "{ id: 1 }").unwrap();
         write_mod(&base.join("mods/good"), "good");
         let err = discover(&[base.join("game"), base.join("mods")]).unwrap_err();
-        assert_eq!(err.len(), 1, "{err}");
+        assert!(!err.is_empty());
         assert!(
-            err.0[0].file.ends_with("bad/mod.json5") || err.0[0].file.ends_with("bad\\mod.json5")
+            err.0.iter().all(|d| {
+                let f = d.file.to_string_lossy();
+                f.ends_with("bad/mod.json5") || f.ends_with(r"bad\mod.json5")
+            }),
+            "only the bad manifest is reported: {err}"
         );
     }
 }

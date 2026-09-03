@@ -206,7 +206,7 @@ flowchart LR
   `Manifest` struct matching `mod-manifest.schema.json`; `discover(roots)`; `resolve_load_order` with Kahn sort, dependency and `load_after`/`load_before` edges, id tie-break, cycle error naming the cycle; `namespaces` honoured only for `game/`.
   **Done when** tests cover diamond dependencies, a cycle, and a `load_before` that contradicts a dependency.
 
-- [ ] **T1-021 Schema validation with diagnostics** · M · Refs TDD §3.3 step 3, REQ-MOD-007, Modding SDK §3.6
+- [x] **T1-021 Schema validation with diagnostics** · M · Refs TDD §3.3 step 3, REQ-MOD-007, Modding SDK §3.6
   Embed `docs/schemas/*.json` with `include_str!`; validate each parsed file; collect every error as a `Diagnostic` in the `file:line:col field: message (expected ...)` format; never stop at the first error.
   **Done when** a file with three errors reports three diagnostics with correct lines.
 

@@ -15,7 +15,11 @@ pub mod load_order;
 pub mod loader;
 pub mod manifest;
 pub mod registry;
+pub mod schema;
+pub mod source;
+pub mod text;
 pub mod unit_type;
+pub mod validate;
 
 pub use content_id::{ContentId, InvalidContentId};
 pub use diagnostic::{Diagnostic, Diagnostics, Severity};
@@ -25,4 +29,7 @@ pub use load_order::{Edge, EdgeKind, LoadOrderError, LoadedMod, ModSet, resolve_
 pub use loader::Registries;
 pub use manifest::{Dependency, Manifest, ManifestWithPath, read_manifest};
 pub use registry::{ContentKind, DuplicateId, Registry};
+pub use schema::KindTag;
+pub use source::{SourceFile, Sources};
 pub use unit_type::{UnitCategory, UnitType};
+pub use validate::validate_value;

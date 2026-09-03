@@ -4,12 +4,15 @@ use serde::de::DeserializeOwned;
 
 use crate::content_id::ContentId;
 use crate::handle::Handle;
+use crate::schema::KindTag;
 
-/// A kind of content file: which folder it lives in and how to find its id.
-/// `SCHEMA` and `resolve` arrive with validation in T1-021 and T1-023.
+/// A kind of content file: which folder it lives in, which schema validates
+/// it and how to find its id. `resolve` arrives with T1-023.
 pub trait ContentKind: DeserializeOwned + Send + Sync + 'static {
     /// Folder under the mod's `content_root`, e.g. `"units"`.
     const DIR: &'static str;
+    /// The embedded schema every merged object of this kind must satisfy.
+    const TAG: KindTag;
     fn id(&self) -> &ContentId;
 }
 
@@ -117,6 +120,7 @@ mod tests {
     }
     impl ContentKind for Thing {
         const DIR: &'static str = "things";
+        const TAG: KindTag = KindTag::Unit;
         fn id(&self) -> &ContentId {
             &self.id
         }

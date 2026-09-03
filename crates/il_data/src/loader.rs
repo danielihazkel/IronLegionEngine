@@ -9,7 +9,9 @@ use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::json5::{FileId, SpannedValue, ValueKind, parse_json5};
 use crate::manifest::read_manifest;
 use crate::registry::{ContentKind, Registry};
+use crate::source::Sources;
 use crate::unit_type::UnitType;
+use crate::validate::validate_value;
 
 /// Every `*.json5` under `dir`, recursively, sorted by path so load order
 /// does not depend on the filesystem.
@@ -27,9 +29,15 @@ pub fn json5_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
 }
 
 /// Parses one content file into its objects: a file holds one object or an
-/// array of objects (Modding SDK §2.1). Positions are kept.
-pub fn parse_content_file(path: &Path, file: FileId) -> Result<Vec<SpannedValue>, Diagnostic> {
-    let text = std::fs::read_to_string(path)
+/// array of objects (Modding SDK §2.1). Positions are kept. `display` is the
+/// path used in diagnostics (`<mod id>/<mod-relative path>`).
+pub fn parse_content_file(
+    abs: &Path,
+    display: &Path,
+    file: FileId,
+) -> Result<Vec<SpannedValue>, Diagnostic> {
+    let path = display;
+    let text = std::fs::read_to_string(abs)
         .map_err(|e| Diagnostic::file_level(path, format!("cannot read: {e}")))?;
     let value = parse_json5(&text, file)
         .map_err(|e| Diagnostic::file_level(path, e.message).at(e.span.line, e.span.col))?;
@@ -56,10 +64,17 @@ pub fn parse_content_file(path: &Path, file: FileId) -> Result<Vec<SpannedValue>
     }
 }
 
-/// Loads every file of kind `T` under `content_dir/T::DIR` into a registry,
+/// Loads every file of kind `T` under `<mod_root>/<content_root>/T::DIR` into
+/// a registry, validating each object against the kind's schema and
 /// collecting all diagnostics. A missing kind folder is an empty registry.
-pub fn load_kind<T: ContentKind>(content_dir: &Path) -> Result<Registry<T>, Diagnostics> {
-    let dir = content_dir.join(T::DIR);
+pub fn load_kind<T: ContentKind>(
+    mod_root: &Path,
+    content_root: &str,
+    mod_id: &str,
+    mod_index: usize,
+    sources: &mut Sources,
+) -> Result<Registry<T>, Diagnostics> {
+    let dir = mod_root.join(content_root).join(T::DIR);
     let mut registry = Registry::new();
     let mut diags = Diagnostics::new();
     if !dir.is_dir() {
@@ -70,8 +85,12 @@ pub fn load_kind<T: ContentKind>(content_dir: &Path) -> Result<Registry<T>, Diag
         diags.push(Diagnostic::file_level(&dir, format!("cannot list: {e}")));
         return Err(diags);
     }
-    for (file_index, path) in files.iter().enumerate() {
-        let values = match parse_content_file(path, FileId(file_index as u32)) {
+    for abs in &files {
+        let rel = abs.strip_prefix(mod_root).unwrap_or(abs);
+        let file_id = sources.add(mod_index, mod_id, rel, abs);
+        let display = sources.display(file_id);
+        let path = display.as_path();
+        let values = match parse_content_file(abs, path, file_id) {
             Ok(v) => v,
             Err(d) => {
                 diags.push(d);
@@ -79,15 +98,23 @@ pub fn load_kind<T: ContentKind>(content_dir: &Path) -> Result<Registry<T>, Diag
             }
         };
         for (i, value) in values.into_iter().enumerate() {
+            if !validate_value(T::TAG, &value, path, &mut diags) {
+                continue;
+            }
             let item: T = match serde_json::from_value(value.to_json()) {
                 Ok(item) => item,
                 Err(e) => {
-                    // Typed errors name the field; schema validation adds
-                    // per-field positions (T1-021).
+                    // The schema passed, so this is a mismatch between the
+                    // schema and the typed struct: report it plainly.
                     diags.push(
-                        Diagnostic::file_level(path, e.to_string())
-                            .at(value.span.line, value.span.col)
-                            .field(format!("[{i}]")),
+                        Diagnostic::file_level(
+                            path,
+                            format!(
+                                "internal: schema accepted an object the loader cannot read: {e}"
+                            ),
+                        )
+                        .at(value.span.line, value.span.col)
+                        .field(format!("[{i}]")),
                     );
                     continue;
                 }
@@ -115,8 +142,14 @@ impl Registries {
     /// Loads one mod root (the flagship game at `game/`).
     pub fn load_root(mod_root: &Path) -> Result<Registries, Diagnostics> {
         let manifest = read_manifest(mod_root, true)?;
-        let content_dir = mod_root.join(&manifest.manifest.content_root);
-        let units = load_kind::<UnitType>(&content_dir)?;
+        let mut sources = Sources::new();
+        let units = load_kind::<UnitType>(
+            mod_root,
+            &manifest.manifest.content_root,
+            &manifest.manifest.id,
+            0,
+            &mut sources,
+        )?;
         Ok(Registries { units })
     }
 }
@@ -141,19 +174,30 @@ mod tests {
         root
     }
 
-    const GOOD: &str = r#"{ id: "t:good", name_key: "t.good", category: "infantry",
-        hp: 100, speed_walk: 1.6, speed_run: 4.0, attack: 1 }"#;
+    /// A complete unit that passes the schema.
+    fn unit(id: &str, category: &str) -> String {
+        format!(
+            r#"{{ id: "{id}", name_key: "t.units.x.name", category: "{category}",
+        hp: 100, speed_walk: 1.6, speed_run: 4.0, attack: 1, defence: 1, damage: 1,
+        formations: ["t:line"], sprite_set: "sprites/units/x", cost: 1, upkeep: 1 }}"#
+        )
+    }
 
     #[test]
     fn loads_objects_and_arrays_in_path_order() {
         let root = scratch("ok");
-        std::fs::write(root.join("content/units/b.json5"), GOOD).unwrap();
+        std::fs::write(
+            root.join("content/units/b.json5"),
+            unit("t:good", "infantry"),
+        )
+        .unwrap();
         std::fs::write(
             root.join("content/units/a.json5"),
-            r#"[
-              { id: "t:a1", name_key: "t.a", category: "cavalry", hp: 1, speed_walk: 1, speed_run: 2 },
-              { id: "t:a2", name_key: "t.a", category: "ranged", hp: 1, speed_walk: 1, speed_run: 2 },
-            ]"#,
+            format!(
+                "[\n{},\n{},\n]",
+                unit("t:a1", "cavalry"),
+                unit("t:a2", "ranged")
+            ),
         )
         .unwrap();
         let regs = Registries::load_root(&root).unwrap();
@@ -189,19 +233,37 @@ mod tests {
     fn collects_every_diagnostic_before_failing() {
         let root = scratch("many");
         std::fs::write(root.join("content/units/a.json5"), "{ id: 5 }").unwrap();
-        std::fs::write(root.join("content/units/b.json5"), GOOD).unwrap();
-        std::fs::write(root.join("content/units/c.json5"), GOOD).unwrap();
+        std::fs::write(
+            root.join("content/units/b.json5"),
+            unit("t:good", "infantry"),
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("content/units/c.json5"),
+            unit("t:good", "infantry"),
+        )
+        .unwrap();
         std::fs::write(root.join("content/units/d.json5"), "not json5 at all").unwrap();
         let err = Registries::load_root(&root).unwrap_err();
-        let files: Vec<String> = err
+        let mut files: Vec<String> = err
             .0
             .iter()
             .map(|d| d.file.file_name().unwrap().to_string_lossy().into_owned())
             .collect();
+        files.dedup();
         assert_eq!(files, vec!["a.json5", "c.json5", "d.json5"], "{err}");
-        assert!(err.0[1].message.contains("duplicate"), "{err}");
+        assert!(
+            err.0[0].file.starts_with("t/content/units"),
+            "display path is mod-relative: {}",
+            err.0[0].file.display()
+        );
+        let dup = err
+            .0
+            .iter()
+            .find(|d| d.message.contains("duplicate"))
+            .expect("duplicate reported");
         assert_eq!(
-            (err.0[1].line, err.0[1].col),
+            (dup.line, dup.col),
             (1, 3),
             "duplicate points at the id key"
         );

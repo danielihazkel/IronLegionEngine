@@ -233,7 +233,7 @@ impl<T: ContentKind> Registry<T> {
     pub fn id_of(&self, h: Handle<T>) -> &ContentId;
     pub fn iter(&self) -> impl Iterator<Item=(Handle<T>, &T)>;   // ascending index = deterministic
 }
-pub trait ContentKind: DeserializeOwned + 'static { const DIR: &'static str; const SCHEMA: &'static str; fn id(&self) -> &ContentId; fn resolve(&mut self, reg: &Registries) -> Result<(), ResolveError>; }
+pub trait ContentKind: DeserializeOwned + 'static { const DIR: &'static str; const TAG: KindTag; fn id(&self) -> &ContentId; fn resolve(&mut self, reg: &Registries) -> Result<(), ResolveError>; }  // TAG selects the embedded schema (T1-021); il_data::validate::validate_value maps every schema error back to the key's line and column
 
 pub struct Registries {
     pub units: Registry<UnitType>, pub factions: Registry<Faction>, pub formations: Registry<FormationTemplate>,

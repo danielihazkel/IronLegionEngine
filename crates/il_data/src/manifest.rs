@@ -6,6 +6,8 @@ use serde::Deserialize;
 
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::json5::{FileId, parse_json5};
+use crate::schema::KindTag;
+use crate::validate::validate_value;
 
 /// A dependency on another mod at a version range.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -85,17 +87,6 @@ fn default_assets_root() -> String {
     "assets".to_string()
 }
 
-pub(crate) fn is_mod_id(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 64
-        && s.bytes()
-            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
-}
-
-fn is_relative_root(s: &str) -> bool {
-    !s.starts_with("..") && !s.starts_with('/') && !s.contains('\\')
-}
-
 /// Parses a semver range as the SDK writes it: comparators separated by
 /// spaces (`>=0.4.0 <0.6.0`), `*`, or a single comparator. An operator and
 /// its version must not be separated by a space.
@@ -129,10 +120,15 @@ pub fn read_manifest(root: &Path, is_game: bool) -> Result<ManifestWithPath, Dia
             return Err(diags);
         }
     };
+    // The schema gives positioned diagnostics for shapes, patterns and unknown
+    // fields; the checks below cover what a schema cannot (semver ranges).
+    let schema_ok = validate_value(KindTag::Manifest, &value, &path, &mut diags);
     let raw: RawManifest = match serde_json::from_value(value.to_json()) {
         Ok(r) => r,
         Err(e) => {
-            diags.push(Diagnostic::file_level(&path, e.to_string()));
+            if schema_ok {
+                diags.push(Diagnostic::file_level(&path, e.to_string()));
+            }
             return Err(diags);
         }
     };
@@ -143,19 +139,15 @@ pub fn read_manifest(root: &Path, is_game: bool) -> Result<ManifestWithPath, Dia
             .field(field)
     };
 
-    if !is_mod_id(&raw.id) {
-        diags.push(
-            field_diag("id", format!("invalid mod id {:?}", raw.id))
-                .expected("^[a-z0-9_]+$, at most 64 characters"),
-        );
-    }
     let version = match semver::Version::parse(&raw.version) {
         Ok(v) => v,
         Err(e) => {
-            diags.push(
-                field_diag("version", format!("invalid version {:?}: {e}", raw.version))
-                    .expected("MAJOR.MINOR.PATCH"),
-            );
+            if schema_ok {
+                diags.push(
+                    field_diag("version", format!("invalid version {:?}: {e}", raw.version))
+                        .expected("MAJOR.MINOR.PATCH"),
+                );
+            }
             semver::Version::new(0, 0, 0)
         }
     };
@@ -177,12 +169,6 @@ pub fn read_manifest(root: &Path, is_game: bool) -> Result<ManifestWithPath, Dia
     };
     let mut dependencies = Vec::new();
     for (i, d) in raw.dependencies.iter().enumerate() {
-        if !is_mod_id(&d.id) {
-            diags.push(field_diag(
-                "dependencies",
-                format!("dependencies[{i}].id: invalid mod id {:?}", d.id),
-            ));
-        }
         match parse_version_req(&d.version) {
             Ok(version) => dependencies.push(Dependency {
                 id: d.id.clone(),
@@ -195,32 +181,6 @@ pub fn read_manifest(root: &Path, is_game: bool) -> Result<ManifestWithPath, Dia
                     d.version
                 ),
             )),
-        }
-    }
-    for (field, list) in [
-        ("load_after", &raw.load_after),
-        ("load_before", &raw.load_before),
-        ("namespaces", &raw.namespaces),
-    ] {
-        for (i, id) in list.iter().enumerate() {
-            if !is_mod_id(id) {
-                diags.push(field_diag(
-                    field,
-                    format!("{field}[{i}]: invalid mod id {id:?}"),
-                ));
-            }
-        }
-    }
-    for (field, dir) in [
-        ("content_root", &raw.content_root),
-        ("scripts_root", &raw.scripts_root),
-        ("assets_root", &raw.assets_root),
-    ] {
-        if !is_relative_root(dir) {
-            diags.push(field_diag(
-                field,
-                format!("{dir:?} must be a relative path with forward slashes"),
-            ));
         }
     }
     if !raw.namespaces.is_empty() && !is_game {
