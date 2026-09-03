@@ -5,9 +5,10 @@ use std::path::Path;
 
 use thiserror::Error;
 
-use crate::atlas::{Atlas, AtlasError, AtlasId, Rgba8Image, SpriteSheet};
+use crate::atlas::{Atlas, AtlasError, AtlasId, Rgba8Image, atlas_path};
 use crate::egui_pass::{EguiPaint, EguiPass};
 use crate::sprite::{SpritePipeline, SpriteScene};
+use il_data::SpriteSet;
 
 /// Depth attachment format shared by every pipeline.
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
@@ -215,20 +216,20 @@ impl Renderer {
         &self.queue
     }
 
-    /// Loads a sheet's PNG from `assets_root` and uploads it. Returns the id
-    /// batches refer to.
+    /// Loads a sprite set's PNG from `assets_root` and uploads it. Returns
+    /// the id batches refer to.
     pub fn load_atlas(
         &mut self,
-        sheet: SpriteSheet,
+        set: &SpriteSet,
         assets_root: &Path,
     ) -> Result<AtlasId, RenderError> {
-        let path = sheet.atlas_path(assets_root);
+        let path = atlas_path(set, assets_root);
         let image = Rgba8Image::load_png(&path)?;
         let atlas = Atlas::upload(
             &self.device,
             &self.queue,
             &self.sprites.atlas_layout,
-            sheet,
+            set,
             &image,
             &path,
         )?;

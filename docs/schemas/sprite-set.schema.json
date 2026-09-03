@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/sprite-set.schema.json",
+  "title": "Iron Legion sprite set",
+  "description": "The frame table of one sprite sheet (content/sprites/*.json5): a PNG atlas under assets_root with facings as rows and frames as columns (TDD 10.1). Unit types reference sprite sets by ContentId.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "assetPath": { "type": "string", "pattern": "^(?!\\.\\.)(?!/)[^\\\\]*$" }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "atlas", "frame_w", "frame_h", "columns", "origin", "anims"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"] },
+    "$delete": { "const": true },
+    "$from": { "$ref": "#/$defs/contentId" },
+    "deprecated": { "type": "string" },
+    "id": { "$ref": "#/$defs/contentId" },
+    "atlas": { "$ref": "#/$defs/assetPath", "description": "PNG path relative to the mod's assets_root." },
+    "frame_w": { "type": "integer", "minimum": 1, "maximum": 1024 },
+    "frame_h": { "type": "integer", "minimum": 1, "maximum": 1024 },
+    "facings": { "type": "integer", "minimum": 1, "maximum": 16, "default": 8, "description": "Rows in the sheet, one per facing (8 for soldiers, REQ-RNDR-002)." },
+    "columns": { "type": "integer", "minimum": 1, "maximum": 256, "description": "Frames per row." },
+    "origin": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" }, "description": "Pixel of a frame that sits on the ground position." },
+    "anims": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z0-9_]+$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["first", "count", "fps"],
+        "properties": {
+          "first": { "type": "integer", "minimum": 0, "description": "First column of the animation." },
+          "count": { "type": "integer", "minimum": 1, "description": "Number of frames." },
+          "fps": { "type": "number", "exclusiveMinimum": 0, "maximum": 120 }
+        }
+      },
+      "description": "Named animations; `idle` and `walk` are what Phase 1 plays."
+    }
+  }
+}

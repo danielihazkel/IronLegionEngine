@@ -110,13 +110,8 @@ pub struct Events(pub EventQueue<BattleEvent>);
 #[derive(Resource, Clone)]
 pub struct Regs(pub Arc<Registries>);
 
-/// Engine tunables. Empty until Phase 1 adds `MovementRules` and
-/// `FormationRules` (T1-023).
-#[derive(Debug, Default, Clone)]
-pub struct Rules {}
-
-#[derive(Resource, Clone, Default)]
-pub struct RulesRes(pub Arc<Rules>);
+// Rules are `il_data::Rules`, read through `Regs.0.rules` (T1-023), so a
+// registry swap (hot reload) carries new tunables too.
 
 /// One entry per side of `BattleSetup.sides`, index = side number.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -1,0 +1,21 @@
+// Formation tunables (Simulation Spec 4 and 15.1; schema
+// docs/schemas/rules-formation.schema.json). Every field is required.
+{
+  // Reform and assignment (SIM-FORM-020..024)
+  reform_angle: 10,            // degrees
+  keep_slot_radius: 1.5,       // m
+  assign_search_radius: 30,    // m
+  swap_passes: 2,
+  turn_in_place_angle: 120,    // degrees
+
+  // Integrity and morphing (SIM-FORM-030..032)
+  integrity_radius: 1.0,       // file spacings (sf)
+  integrity_period_ticks: 5,
+  integrity_morale_threshold: 0.5,
+  morph_speed_mult: 0.5,
+
+  // Group formations (SIM-FORM-040..042)
+  group_gap: 6,                // m
+  skirmish_offset: 20,         // m
+  width_tolerance: 0.1,
+}

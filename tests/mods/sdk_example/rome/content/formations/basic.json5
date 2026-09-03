@@ -1,0 +1,42 @@
+// The formation templates every Phase 1 unit can use (SIM-FORM-003, 004, 008).
+// Spacing values are multiples of the soldier diameter (SIM-FORM-002).
+[
+  {
+    id: "rome:line",
+    name_key: "rome.formations.line.name",
+    layout: "line",
+    default_ranks: 4,
+    min_ranks: 1,
+    max_ranks: 16,
+    spacing_file: 1.0,
+    spacing_rank: 1.2,
+    morph_ticks: 60,
+    speed_mult: 1.0,
+  },
+  {
+    id: "rome:column",
+    name_key: "rome.formations.column.name",
+    layout: "column",
+    default_ranks: 30,
+    min_ranks: 1,
+    max_ranks: 64,
+    spacing_file: 1.0,
+    spacing_rank: 1.2,
+    default_files_column: 4,
+    morph_ticks: 60,
+    speed_mult: 1.0,
+  },
+  {
+    id: "rome:loose",
+    name_key: "rome.formations.loose.name",
+    layout: "loose",
+    default_ranks: 3,
+    min_ranks: 1,
+    max_ranks: 8,
+    spacing_file: 1.0,
+    spacing_rank: 1.2,
+    loose_mult: 2.0,
+    morph_ticks: 40,
+    speed_mult: 1.0,
+  },
+]

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/input-bindings.schema.json",
+  "title": "Iron Legion input bindings (content/input/bindings.json5)",
+  "description": "Action to key-chord bindings (TDD 11, REQ-INP-005). One merged object per enabled mod set; a later mod's entry for the same action replaces the earlier one.",
+  "x-schema-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bindings"],
+  "properties": {
+    "bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "keys"],
+        "properties": {
+          "action": { "type": "string", "pattern": "^[a-z0-9_]+$", "description": "Engine action name, e.g. select_all, camera_rotate_left." },
+          "keys": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "Chords such as \"Ctrl+A\", \"Shift+LeftClick\", \"MouseWheelUp\"." }
+        }
+      }
+    }
+  }
+}

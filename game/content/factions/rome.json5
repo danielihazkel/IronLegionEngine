@@ -1,0 +1,13 @@
+// The flagship faction, minimal until the campaign layer (Phase 4).
+// ai_profile and tech_tree are ContentIds of kinds that arrive in Phase 2 and
+// Phase 4; the loader keeps them as ids until then.
+{
+  id: "rome:rome",
+  name_key: "rome.factions.rome.name",
+  culture: "latin",
+  colour_primary: "#b03a2e",
+  colour_secondary: "#e0c060",
+  units: ["rome:hastati"],
+  ai_profile: "rome:default_ai",
+  tech_tree: "rome:tree",
+}

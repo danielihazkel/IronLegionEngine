@@ -16,15 +16,29 @@ pub enum KindTag {
     Manifest,
     Unit,
     Formation,
+    GroupFormation,
     Faction,
+    Zone,
+    Map,
+    SpriteSet,
+    RulesMovement,
+    RulesFormation,
+    InputBindings,
 }
 
 impl KindTag {
-    pub const ALL: [KindTag; 4] = [
+    pub const ALL: [KindTag; 11] = [
         KindTag::Manifest,
         KindTag::Unit,
         KindTag::Formation,
+        KindTag::GroupFormation,
         KindTag::Faction,
+        KindTag::Zone,
+        KindTag::Map,
+        KindTag::SpriteSet,
+        KindTag::RulesMovement,
+        KindTag::RulesFormation,
+        KindTag::InputBindings,
     ];
 
     /// Human name used in messages.
@@ -33,7 +47,14 @@ impl KindTag {
             KindTag::Manifest => "mod manifest",
             KindTag::Unit => "unit type",
             KindTag::Formation => "formation template",
+            KindTag::GroupFormation => "group formation",
             KindTag::Faction => "faction",
+            KindTag::Zone => "zone type",
+            KindTag::Map => "map",
+            KindTag::SpriteSet => "sprite set",
+            KindTag::RulesMovement => "movement rules",
+            KindTag::RulesFormation => "formation rules",
+            KindTag::InputBindings => "input bindings",
         }
     }
 
@@ -44,7 +65,22 @@ impl KindTag {
             KindTag::Formation => {
                 include_str!("../../../docs/schemas/formation-template.schema.json")
             }
+            KindTag::GroupFormation => {
+                include_str!("../../../docs/schemas/group-formation.schema.json")
+            }
             KindTag::Faction => include_str!("../../../docs/schemas/faction.schema.json"),
+            KindTag::Zone => include_str!("../../../docs/schemas/zone-type.schema.json"),
+            KindTag::Map => include_str!("../../../docs/schemas/map-def.schema.json"),
+            KindTag::SpriteSet => include_str!("../../../docs/schemas/sprite-set.schema.json"),
+            KindTag::RulesMovement => {
+                include_str!("../../../docs/schemas/rules-movement.schema.json")
+            }
+            KindTag::RulesFormation => {
+                include_str!("../../../docs/schemas/rules-formation.schema.json")
+            }
+            KindTag::InputBindings => {
+                include_str!("../../../docs/schemas/input-bindings.schema.json")
+            }
         }
     }
 }

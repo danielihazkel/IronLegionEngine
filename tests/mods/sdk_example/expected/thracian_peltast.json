@@ -35,7 +35,7 @@
   "los_radius": 250,
   "abilities": ["mymod:rhomphaia_frenzy"],
   "formations": ["rome:loose", "rome:line"],
-  "sprite_set": "sprites/units/thracian_peltast",
+  "sprite_set": "mymod:sprites_thracian_peltast",
   "sounds": {
     "select": "sounds/voice/thracian_select.ogg",
     "move": "sounds/voice/velites_move.ogg"

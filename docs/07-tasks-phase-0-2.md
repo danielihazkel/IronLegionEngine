@@ -214,7 +214,7 @@ flowchart LR
   Implement the accumulating `Value` map per content kind and the directive semantics exactly as the Modding SDK defines them: default deep merge, `$override: "replace"`, `$delete`, `$append`, `$remove`, `$replace` on lists, `$from` resolved before validation with depth ≤ 8 and cycle detection.
   **Done when** the Modding SDK §4 worked example (`mymod:thracian_peltast` from `rome:velites`) loads from a second mod folder and the result equals the expected merged object in a golden test.
 
-- [ ] **T1-023 All registries, `Rules`, handle resolution, content registry hash** · L · Refs TDD §3.2 `Registries`, §3.3 steps 4–6, Simulation Spec §15.1
+- [x] **T1-023 All registries, `Rules`, handle resolution, content registry hash** · L · Refs TDD §3.2 `Registries`, §3.3 steps 4–6, Simulation Spec §15.1
   Typed structs for `UnitType` (all fields), `FormationTemplate`, `GroupFormationTemplate`, `Faction`, `ZoneType`, `MapDef` (metadata only; geometry in T1-030), `SpriteSet`, and the `Rules` sub-structs `MovementRules`, `FormationRules` (others added in Phase 2 with their systems). Two-pass `resolve` so file order does not matter. `content_registry_hash` and `mod_list_hash`. Missing Must-tier rule fields are diagnostics.
   **Done when** loading `game/` yields every registry populated and the hash is stable across file order and whitespace changes.
 

@@ -1,19 +1,114 @@
-//! `Registry<T>` and `ContentKind` (TDD §3.2).
+//! `Registry<T>`, `ContentKind`, the two-pass `Lookup` (TDD §3.2, §3.3 step 4).
 
+use std::collections::BTreeMap;
+
+use il_core::StateHasher;
 use serde::de::DeserializeOwned;
 
 use crate::content_id::ContentId;
 use crate::handle::Handle;
 use crate::schema::KindTag;
 
+/// A reference that did not resolve, reported by `ContentKind::resolve`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolveError {
+    /// Field path inside the object, e.g. `formations[1]`.
+    pub field: String,
+    pub id: ContentId,
+    /// The kind the reference should have named.
+    pub kind: KindTag,
+    /// Overrides the default "unknown reference" wording.
+    pub message: Option<String>,
+}
+
+impl ResolveError {
+    pub fn new(field: impl Into<String>, id: ContentId, kind: KindTag) -> Self {
+        Self {
+            field: field.into(),
+            id,
+            kind,
+            message: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_message(mut self, message: impl Into<String>) -> Self {
+        self.message = Some(message.into());
+        self
+    }
+}
+
 /// A kind of content file: which folder it lives in, which schema validates
-/// it and how to find its id. `resolve` arrives with T1-023.
+/// it, how to find its id, how to turn its references into handles and which
+/// fields the content hash covers.
 pub trait ContentKind: DeserializeOwned + Send + Sync + 'static {
     /// Folder under the mod's `content_root`, e.g. `"units"`.
     const DIR: &'static str;
     /// The embedded schema every merged object of this kind must satisfy.
     const TAG: KindTag;
     fn id(&self) -> &ContentId;
+    /// Turns ContentId references into handles. Called once per item after
+    /// every kind's ids are known, so file order never matters.
+    fn resolve(&mut self, lookup: &Lookup, errors: &mut Vec<ResolveError>) {
+        let _ = (lookup, errors);
+    }
+    /// Writes the sim-relevant fields in a fixed order (content registry
+    /// hash). Render-only kinds write nothing.
+    fn hash_content(&self, h: &mut StateHasher) {
+        let _ = h;
+    }
+}
+
+/// ContentId → final registry index for every kind, built before any typed
+/// item exists (pass 1), so pass 2 can resolve references in any order.
+#[derive(Debug, Default)]
+pub struct Lookup {
+    tables: BTreeMap<KindTag, BTreeMap<ContentId, u32>>,
+    /// Ids that exist but failed validation: a reference to one is not an
+    /// error of the referencing item.
+    invalid: BTreeMap<KindTag, std::collections::BTreeSet<ContentId>>,
+}
+
+impl Lookup {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Registers the ids of one kind in the order they will be inserted.
+    pub fn register<'a>(&mut self, kind: KindTag, ids: impl IntoIterator<Item = &'a ContentId>) {
+        let table = self.tables.entry(kind).or_default();
+        for (i, id) in ids.into_iter().enumerate() {
+            table.insert(id.clone(), i as u32);
+        }
+    }
+
+    pub fn handle<T: ContentKind>(&self, id: &ContentId) -> Option<Handle<T>> {
+        self.tables
+            .get(&T::TAG)?
+            .get(id)
+            .map(|&i| Handle::from_index(i))
+    }
+
+    /// Ids of a kind, for "nearest" suggestions.
+    pub fn ids(&self, kind: KindTag) -> impl Iterator<Item = &ContentId> {
+        self.tables.get(&kind).into_iter().flat_map(|t| t.keys())
+    }
+
+    /// Marks ids of `kind` that were defined but failed validation.
+    pub fn register_invalid<'a>(
+        &mut self,
+        kind: KindTag,
+        ids: impl IntoIterator<Item = &'a ContentId>,
+    ) {
+        let set = self.invalid.entry(kind).or_default();
+        set.extend(ids.into_iter().cloned());
+    }
+
+    /// Whether `id` of `kind` exists but was rejected (its own diagnostics
+    /// already explain why).
+    pub fn is_invalid(&self, kind: KindTag, id: &ContentId) -> bool {
+        self.invalid.get(&kind).is_some_and(|s| s.contains(id))
+    }
 }
 
 /// Error for inserting an id twice.
@@ -151,5 +246,19 @@ mod tests {
             r.insert(thing("m:a", 3)).unwrap_err(),
             DuplicateId(ContentId::new("m:a").unwrap())
         );
+    }
+
+    #[test]
+    fn lookup_maps_ids_to_indices_per_kind() {
+        let mut l = Lookup::new();
+        let ids = [
+            ContentId::new("m:b").unwrap(),
+            ContentId::new("m:a").unwrap(),
+        ];
+        l.register(KindTag::Unit, ids.iter());
+        assert_eq!(l.handle::<Thing>(&ids[1]).map(|h| h.index()), Some(1));
+        assert_eq!(l.handle::<Thing>(&ContentId::new("m:zz").unwrap()), None);
+        assert_eq!(l.ids(KindTag::Unit).count(), 2);
+        assert_eq!(l.ids(KindTag::Faction).count(), 0);
     }
 }

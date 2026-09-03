@@ -1,0 +1,11 @@
+// Terrain zone types (SIM-MOVE-031..032). Maps reference these by id.
+// move_cost is at least 1 so the A* heuristic stays admissible.
+[
+  { id: "rome:open",   name_key: "rome.zones.open.name",   move_mult: 1.0,  move_cost: 1.0, colour: "#6b8e3a" },
+  { id: "rome:road",   name_key: "rome.zones.road.name",   move_mult: 1.15, move_cost: 1.0, fatigue_mult: 0.8, colour: "#b5a27a" },
+  { id: "rome:forest", name_key: "rome.zones.forest.name", move_mult: 0.7,  move_cost: 1.5, los_mult: 0.5, conceal: true, formation_integrity_mult: 0.8, colour: "#2f5d2a" },
+  { id: "rome:marsh",  name_key: "rome.zones.marsh.name",  move_mult: 0.5,  move_cost: 2.5, fatigue_mult: 1.5, formation_integrity_mult: 0.8, colour: "#4f6b4a" },
+  { id: "rome:rock",   name_key: "rome.zones.rock.name",   move_mult: 0.0,  move_cost: 1.0, passable: false, colour: "#7d7d7d" },
+  { id: "rome:ford",   name_key: "rome.zones.ford.name",   move_mult: 0.5,  move_cost: 2.0, fatigue_mult: 1.3, colour: "#5b8fb0" },
+  { id: "rome:bridge", name_key: "rome.zones.bridge.name", move_mult: 1.0,  move_cost: 1.0, colour: "#8a6a4a" },
+]

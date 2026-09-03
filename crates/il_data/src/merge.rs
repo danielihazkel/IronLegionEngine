@@ -666,6 +666,42 @@ impl KindAccumulator {
     }
 }
 
+/// Merges one mod's singleton object (a rules file or the bindings file)
+/// into the accumulated one: the first mod's object is the base, later mods
+/// deep-merge. Directives other than list operations are errors.
+pub fn merge_singleton(
+    existing: &mut Option<SpannedValue>,
+    obj: SpannedValue,
+    ctx: &ApplyCtx<'_>,
+    diags: &mut Diagnostics,
+) {
+    if obj.as_object().is_none() {
+        diags.push(diag_at(
+            ctx,
+            obj.span,
+            format!("expected an object, found {}", obj.type_name()),
+        ));
+        return;
+    }
+    let mut ok = true;
+    for key in ["$override", "$delete", "$from", "id"] {
+        if let Some(span) = obj.key_span(key) {
+            diags.push(
+                diag_at(ctx, span, format!("{key:?} is not allowed in a rules or bindings file; the whole file is one merged object"))
+                    .field(key),
+            );
+            ok = false;
+        }
+    }
+    if !ok || !check_list_ops(&obj, ctx, diags) {
+        return;
+    }
+    match existing {
+        Some(base) => deep_merge(base, obj, ctx, diags),
+        None => *existing = Some(fresh_object(&obj, ctx, diags)),
+    }
+}
+
 fn mod_name(ctx: &ApplyCtx<'_>, mod_index: usize) -> String {
     if mod_index == ctx.mod_index {
         format!("{:?}", ctx.mod_id)

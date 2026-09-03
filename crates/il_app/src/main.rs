@@ -56,6 +56,7 @@ fn load_registries(root: &Path) -> anyhow::Result<Arc<Registries>> {
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
+    let regs = load_registries(&args.content_root)?;
     let mode = if args.bench_sprites {
         Mode::BenchSprites
     } else {
@@ -63,15 +64,14 @@ fn main() -> anyhow::Result<()> {
             .scenario
             .as_deref()
             .ok_or_else(|| anyhow!("a scenario file is required (or pass --bench-sprites)"))?;
-        let regs = load_registries(&args.content_root)?;
         let setup = load_setup(scenario)?;
-        let mut world = BattleWorld::new(&setup, regs).map_err(|e| anyhow!("{e}"))?;
+        let mut world = BattleWorld::new(&setup, regs.clone()).map_err(|e| anyhow!("{e}"))?;
         world.set_threads(args.threads);
         Mode::Battle(Box::new(BattleSession::new(world, PlayerId(0))))
     };
 
     let event_loop = EventLoop::new().context("creating the event loop")?;
-    let mut app = App::new(mode, args.content_root, args.demo_circle);
+    let mut app = App::new(mode, regs, args.content_root, args.demo_circle);
     event_loop
         .run_app(&mut app)
         .context("running the event loop")?;

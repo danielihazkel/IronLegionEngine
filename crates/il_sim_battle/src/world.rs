@@ -14,8 +14,8 @@ use crate::events::BattleEvent;
 use crate::hash::compute_hash;
 use crate::interface::BattleSetup;
 use crate::resources::{
-    BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, Phase, Regs, Rejected, Rng, Rules,
-    RulesRes, SetupRes, Sides, StepEvents, ThreadCount,
+    BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, Phase, Regs, Rejected, Rng, SetupRes,
+    Sides, StepEvents, ThreadCount,
 };
 use crate::schedule::{NoopObserver, Stage, StageObserver, build_schedules};
 use crate::view::{BattleView, ViewQueries};
@@ -63,7 +63,6 @@ impl BattleWorld {
         world.insert_resource(Ids::default());
         world.insert_resource(Events::default());
         world.insert_resource(Regs(regs));
-        world.insert_resource(RulesRes(Arc::new(Rules::default())));
         world.insert_resource(Sides::default());
         world.insert_resource(CommandInbox::default());
         world.insert_resource(Rejected::default());

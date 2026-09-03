@@ -22,7 +22,7 @@
   abilities: { $append: ["mymod:rhomphaia_frenzy"] },
   formations: { $replace: ["rome:loose", "rome:line"] },
 
-  sprite_set: "sprites/units/thracian_peltast",
+  sprite_set: "mymod:sprites_thracian_peltast",
   sounds: { select: "sounds/voice/thracian_select.ogg" },
 
   cost: 380,

@@ -5,8 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::json5::{FileId, SpannedValue, ValueKind, parse_json5};
-use crate::registry::Registry;
-use crate::unit_type::UnitType;
+pub use crate::registries::Registries;
 
 /// Every `*.json5` under `dir`, recursively, sorted by path so load order
 /// does not depend on the filesystem.
@@ -59,12 +58,6 @@ pub fn parse_content_file(
     }
 }
 
-/// Every registry (TDD §3.2 `Registries`, Phase 1 subset so far).
-#[derive(Debug, Default)]
-pub struct Registries {
-    pub units: Registry<UnitType>,
-}
-
 impl Registries {
     /// Loads a single mod root (the flagship game at `game/`); the folder
     /// must hold a `mod.json5`.
@@ -107,13 +100,23 @@ mod tests {
         )
         .unwrap();
         let err = Registries::load_root(&root).unwrap_err();
-        assert_eq!(err.len(), 1, "{err}");
-        let d = &err.0[0];
+        // The scratch mod ships no rules or bindings, which is reported too.
+        let d = err
+            .0
+            .iter()
+            .find(|d| d.message.starts_with("expected ',' or '}'"))
+            .unwrap_or_else(|| panic!("parse error reported: {err}"));
         assert_eq!(
             d.file.to_string_lossy().replace('\\', "/"),
             "t/content/units/bad.json5"
         );
         assert_eq!((d.line, d.col), (4, 11), "{d}");
+        assert!(
+            err.0
+                .iter()
+                .any(|d| d.file.to_string_lossy() == "t/content/rules/movement.json5"),
+            "{err}"
+        );
     }
 
     #[test]

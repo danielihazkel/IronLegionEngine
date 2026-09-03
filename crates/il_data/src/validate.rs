@@ -238,7 +238,7 @@ mod tests {
   hp: 80, speed_walk: 1.8, speed_run: 4.5,
   attack: 25, defence: 20, damage: 25,
   formations: ["rome:loose"],
-  sprite_set: "sprites/units/peltast",
+  sprite_set: "mymod:sprites_peltast",
   cost: 250, upkeep: 40,
 }"#;
 
@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn three_errors_report_three_diagnostics_with_correct_lines() {
-        let src = "{\n  id: \"mymod:peltast\",\n  name_key: \"mymod.units.peltast.name\",\n  category: \"infantree\",\n  hp: 80, speed_walk: 1.8, speed_run: 4.5,\n  attack: 25, defence: 20, damage: 25,\n  armour: -2,\n  formations: [\"rome:loose\"],\n  sprite_set: \"sprites/units/peltast\",\n  amour: 1,\n  cost: 250, upkeep: 40,\n}";
+        let src = "{\n  id: \"mymod:peltast\",\n  name_key: \"mymod.units.peltast.name\",\n  category: \"infantree\",\n  hp: 80, speed_walk: 1.8, speed_run: 4.5,\n  attack: 25, defence: 20, damage: 25,\n  armour: -2,\n  formations: [\"rome:loose\"],\n  sprite_set: \"mymod:sprites_peltast\",\n  amour: 1,\n  cost: 250, upkeep: 40,\n}";
         let diags = run(KindTag::Unit, src);
         let got: Vec<String> = diags.0.iter().map(ToString::to_string).collect();
         assert_eq!(
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn nested_field_out_of_range_matches_the_sdk_example() {
-        let src = "{\n  id: \"mymod:peltast\",\n  name_key: \"mymod.units.peltast.name\",\n  category: \"skirmisher\",\n  hp: 80, speed_walk: 1.8, speed_run: 4.5,\n  attack: 25, defence: 20, damage: 25,\n  formations: [\"rome:loose\"],\n  sprite_set: \"sprites/units/peltast\",\n  cost: 250, upkeep: 40,\n  ranged: {\n    range: 40, projectile_speed: 20, reload_ticks: 80, ammo: 8, damage: 30,\n    accuracy: 1.4,\n  },\n}";
+        let src = "{\n  id: \"mymod:peltast\",\n  name_key: \"mymod.units.peltast.name\",\n  category: \"skirmisher\",\n  hp: 80, speed_walk: 1.8, speed_run: 4.5,\n  attack: 25, defence: 20, damage: 25,\n  formations: [\"rome:loose\"],\n  sprite_set: \"mymod:sprites_peltast\",\n  cost: 250, upkeep: 40,\n  ranged: {\n    range: 40, projectile_speed: 20, reload_ticks: 80, ammo: 8, damage: 30,\n    accuracy: 1.4,\n  },\n}";
         let diags = run(KindTag::Unit, src);
         assert_eq!(
             diags.to_string().trim(),
@@ -295,7 +295,7 @@ mod tests {
 
     #[test]
     fn wrong_types_and_array_items_are_positioned() {
-        let src = "{\n  id: \"mymod:peltast\",\n  name_key: \"mymod.units.peltast.name\",\n  category: \"skirmisher\",\n  hp: \"lots\", speed_walk: 1.8, speed_run: 4.5,\n  attack: 25, defence: 20, damage: 25,\n  formations: [\"rome:loose\", 7],\n  sprite_set: \"sprites/units/peltast\",\n  cost: 250, upkeep: 40,\n}";
+        let src = "{\n  id: \"mymod:peltast\",\n  name_key: \"mymod.units.peltast.name\",\n  category: \"skirmisher\",\n  hp: \"lots\", speed_walk: 1.8, speed_run: 4.5,\n  attack: 25, defence: 20, damage: 25,\n  formations: [\"rome:loose\", 7],\n  sprite_set: \"mymod:sprites_peltast\",\n  cost: 250, upkeep: 40,\n}";
         let diags = run(KindTag::Unit, src);
         let got: Vec<String> = diags.0.iter().map(ToString::to_string).collect();
         assert!(

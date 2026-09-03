@@ -62,17 +62,21 @@ mymod/
     units/*.json5
     factions/*.json5
     formations/*.json5
+    group_formations/*.json5    multi-regiment arrangements (GroupFormationTemplate)
+    zones/*.json5               terrain zone types (ZoneType)
     abilities/*.json5
     technologies/*.json5
     buildings/*.json5
     maps/*.json5
     sprites/*.json5             sprite sheet frame tables (SpriteSet)
     ai/*.json5
-    rules/                      engine tunables, one file per system
+    input/bindings.json5        key bindings (one merged object)
+    rules/                      engine tunables, one merged object per file
+      movement.json5
+      formation.json5
       morale.json5
       fatigue.json5
       combat.json5
-      movement.json5
       battle_flow.json5
   locale/
     en.json5
@@ -305,8 +309,8 @@ Schema: [`schemas/unit-type.schema.json`](schemas/unit-type.schema.json). Satisf
 | `damage` | f | | required | Melee damage before armour |
 | `attack_interval_ticks` | i | ticks | 20 | Attack cycle length |
 | `reach` | f | wu | 1.0 | Melee reach from circle edge |
-| `charge_bonus` | f | | 0 | Added to attack on first contact after a charge |
-| `anti_cavalry_bonus` | f | | 0 | Added to attack and defence versus `cavalry` when braced |
+| `charge_bonus` | f | fraction | 0 | Attack multiplier bonus on first contact after a charge (0.3 = +30 %) |
+| `anti_cavalry_bonus` | f | fraction | 0 | Attack and defence multiplier bonus versus `cavalry` when braced (0.5 = +50 %) |
 | `second_rank_attack` | b | | false | Second rank may attack (spears, pikes) |
 | `frontal_arc_deg` | f | degrees | 120 | Arc inside which attacks are frontal |
 | `ranged` | object | | none | Present only for units that shoot; see below |
@@ -317,18 +321,19 @@ Schema: [`schemas/unit-type.schema.json`](schemas/unit-type.schema.json). Satisf
 | `ranged.reload_ticks` | i | ticks | required | Ticks between volleys |
 | `ranged.ammo` | i | | required | Volleys per soldier per battle |
 | `ranged.damage` | f | | required | Projectile damage before armour |
-| `ranged.armour_penetration` | f | | 0 | Subtracted from target armour |
+| `ranged.armour_penetration` | f | fraction | 0 | Fraction of the target's armour ignored (0.5 = half) |
 | `ranged.arc` | enum | | `direct` | `direct` (flat, blocked by friends) or `indirect` (lobbed, fires over friends) |
 | `morale_base` | f | 0..100 | 60 | Starting regiment morale contribution |
 | `fatigue_rate_mult` | f | | 1.0 | Multiplier on fatigue accumulation |
 | `los_radius` | f | wu | 80 | Line-of-sight radius on flat open ground |
 | `abilities` | [id] | | `[]` | Ability Content IDs |
 | `formations` | [id] | | required | Formation templates this unit may use; first is default |
-| `sprite_set` | string | | required | Path under `assets_root` to the 8-facing atlas set |
+| `sprite_set` | id | | required | Sprite set Content ID (`content/sprites/`, schema `sprite-set.schema.json`): atlas path, frame size, facings, animations |
 | `sounds` | object | | `{}` | `select`, `move`, `attack`, `charge`, `die` → paths under `assets_root` |
 | `cost` | i | gold | required | Recruitment cost |
 | `upkeep` | i | gold/turn | required | Per-turn upkeep |
 | `recruit_turns` | i | turns | 1 | Turns to recruit |
+| `regiment_size` | i | | 120 | Default soldiers per regiment when recruited or auto-generated |
 | `tier` | i | 1..5 | 1 | Recruitment tier (building requirement) |
 | `experience_tiers` | [object] | | `[]` | `{xp, attack, defence, morale}` per tier; additive bonuses |
 
@@ -358,7 +363,7 @@ Worked example: a Thracian peltast derived from the flagship Velites by merge.
   abilities: { $append: ["mymod:rhomphaia_frenzy"] },
   formations: { $replace: ["rome:loose", "rome:line"] },
 
-  sprite_set: "sprites/units/thracian_peltast",
+  sprite_set: "mymod:sprites_thracian_peltast",
   sounds: { select: "sounds/voice/thracian_select.ogg" },
 
   cost: 380,
@@ -384,7 +389,7 @@ Merged result (what the engine validates and loads; `tests/mods/sdk_example/` ho
   morale_base: 50, fatigue_rate_mult: 1.0, los_radius: 250,
   abilities: ["mymod:rhomphaia_frenzy"],                // $append onto the inherited empty list
   formations: ["rome:loose", "rome:line"],              // $replace dropped rome:column
-  sprite_set: "sprites/units/thracian_peltast",
+  sprite_set: "mymod:sprites_thracian_peltast",
   sounds: { select: "sounds/voice/thracian_select.ogg", move: "sounds/voice/velites_move.ogg" },  // sibling key kept
   cost: 380, upkeep: 45, recruit_turns: 1, tier: 1, experience_tiers: [],
 }
@@ -404,14 +409,17 @@ Schema: [`schemas/formation-template.schema.json`](schemas/formation-template.sc
 | `default_ranks` | i | | required | Ranks when the player has not adjusted depth |
 | `min_ranks` | i | | 1 | |
 | `max_ranks` | i | | 16 | |
-| `spacing_file` | f | wu | 1.0 | Distance between adjacent soldiers in a rank |
-| `spacing_rank` | f | wu | 1.2 | Distance between ranks |
+| `spacing_file` | f | soldier diameters | 1.0 | Distance between adjacent soldiers in a rank, as a multiple of `2 × soldier_radius` (`sf`, SIM-FORM-002) |
+| `spacing_rank` | f | soldier diameters | 1.2 | Distance between ranks, as a multiple of `2 × soldier_radius` (`sr`) |
+| `min_files` | i | | 2 | On casualties ranks are kept while files stay at or above this (SIM-FORM-021) |
+| `loose_mult` | f | | 2.0 | Spacing multiplier of the `loose` layout (SIM-FORM-008) |
+| `default_files_column` | i | | 4 | Files of the `column` layout (SIM-FORM-004) |
 | `role_zones` | [object] | | `[]` | `{unit_category, ranks_from, ranks_to}` (inclusive, 1-based from the front). Only meaningful in mixed regiments. |
 | `morph_ticks` | i | ticks | 60 | Transition time when morphing into this template |
 | `integrity_bonus_attack` | f | | 0 | Attack bonus at integrity 1.0, scaled linearly |
 | `integrity_bonus_defence` | f | | 0 | Defence bonus at integrity 1.0 |
 | `speed_mult` | f | | 1.0 | Movement speed multiplier in this template |
-| `custom_slots` | [object] | spacing units | required if `layout == custom` | `{x, y}` offsets from the **Anchor**; x is along the front (right positive), y toward the rear. Multiplied by `spacing_file` / `spacing_rank`. Soldiers beyond the slot count are appended in extra ranks. |
+| `custom_slots` | [object] | soldier diameters | required if `layout == custom` | `{x, y}` offsets from the **Anchor** in units of `2 × soldier_radius`; x along the front (right positive), y forward (rear ranks at negative y), matching SIM-FORM-001/009. Soldiers beyond the slot count form a Line behind. |
 
 Worked example:
 

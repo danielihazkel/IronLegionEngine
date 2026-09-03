@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/rules-formation.schema.json",
+  "title": "Iron Legion formation rules (content/rules/formation.json5)",
+  "description": "Engine tunables read by the formation systems (Simulation Spec 4 and 15.1). Every field is required in the flagship game because the engine carries no numeric defaults.",
+  "x-schema-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "keep_slot_radius", "integrity_radius", "integrity_period_ticks", "integrity_morale_threshold",
+    "morph_speed_mult", "group_gap", "skirmish_offset", "width_tolerance", "assign_search_radius",
+    "swap_passes", "reform_angle", "turn_in_place_angle"
+  ],
+  "properties": {
+    "keep_slot_radius": { "type": "number", "minimum": 0, "maximum": 50, "description": "Metres: a soldier this close to its old slot keeps it on reform (SIM-FORM-022)." },
+    "integrity_radius": { "type": "number", "exclusiveMinimum": 0, "maximum": 20, "description": "In file spacings (sf): distance to the slot that still counts as in formation (SIM-FORM-030)." },
+    "integrity_period_ticks": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Ticks between integrity recomputations (SIM-FORM-030)." },
+    "integrity_morale_threshold": { "type": "number", "minimum": 0, "maximum": 1, "description": "Integrity below which the morale factor applies (SIM-FORM-031)." },
+    "morph_speed_mult": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Regiment speed multiplier during a template morph (SIM-FORM-032)." },
+    "group_gap": { "type": "number", "minimum": 0, "maximum": 100, "description": "Metres between regiments in a group formation (SIM-FORM-041)." },
+    "skirmish_offset": { "type": "number", "minimum": 0, "maximum": 200, "description": "Metres ranged regiments stand ahead of a battle line (SIM-FORM-041)." },
+    "width_tolerance": { "type": "number", "minimum": 0, "maximum": 1, "description": "Fraction of the requested width a group formation may miss by (SIM-FORM-042)." },
+    "assign_search_radius": { "type": "number", "exclusiveMinimum": 0, "maximum": 500, "description": "Metres around a soldier searched for free slots via the spatial grid (SIM-FORM-022)." },
+    "swap_passes": { "type": "integer", "minimum": 0, "maximum": 16, "description": "In-rank swap passes after greedy assignment (SIM-FORM-022)." },
+    "reform_angle": { "type": "number", "minimum": 0, "maximum": 180, "description": "Degrees of anchor rotation that trigger a reform (SIM-FORM-020)." },
+    "turn_in_place_angle": { "type": "number", "minimum": 0, "maximum": 180, "description": "Degrees above which a halted regiment about-faces instead of wheeling (SIM-FORM-024)." }
+  }
+}

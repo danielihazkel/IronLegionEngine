@@ -5,29 +5,114 @@
   "description": "Parameters for an engine layout function that turns a soldier count into slots. Files live under content/formations/. JSON5 is parsed to JSON before validation.",
   "x-schema-version": 1,
   "$defs": {
-    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$", "description": "Namespaced content id 'modid:item_id'." },
-    "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$", "description": "Localisation key." }
+    "contentId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+:[a-z0-9_]+$",
+      "description": "Namespaced content id 'modid:item_id'."
+    },
+    "locKey": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$",
+      "description": "Localisation key."
+    },
+    "listOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$append": {
+          "type": "array"
+        },
+        "$remove": {
+          "type": "array"
+        },
+        "$replace": {
+          "type": "array"
+        }
+      }
+    }
   },
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "name_key", "layout", "default_ranks"],
+  "required": [
+    "id",
+    "name_key",
+    "layout",
+    "default_ranks"
+  ],
   "properties": {
-    "$override": { "enum": ["merge", "replace"], "description": "Override mode when an item with this id already exists. Default merge." },
-    "$delete": { "const": true, "description": "Remove the item with this id from the registry." },
-    "$from": { "$ref": "#/$defs/contentId", "description": "Copy this existing template as the base for a new id, then merge the remaining fields." },
-    "deprecated": { "type": "string", "description": "Marks the item deprecated; message names the replacement." },
-
-    "id": { "$ref": "#/$defs/contentId", "description": "Content id." },
-    "name_key": { "$ref": "#/$defs/locKey", "description": "Display name key." },
+    "$override": {
+      "enum": [
+        "merge",
+        "replace"
+      ],
+      "description": "Override mode when an item with this id already exists. Default merge."
+    },
+    "$delete": {
+      "const": true,
+      "description": "Remove the item with this id from the registry."
+    },
+    "$from": {
+      "$ref": "#/$defs/contentId",
+      "description": "Copy this existing template as the base for a new id, then merge the remaining fields."
+    },
+    "deprecated": {
+      "type": "string",
+      "description": "Marks the item deprecated; message names the replacement."
+    },
+    "id": {
+      "$ref": "#/$defs/contentId",
+      "description": "Content id."
+    },
+    "name_key": {
+      "$ref": "#/$defs/locKey",
+      "description": "Display name key."
+    },
     "layout": {
-      "enum": ["line", "column", "square", "wedge", "phalanx", "loose", "custom"],
+      "enum": [
+        "line",
+        "column",
+        "square",
+        "wedge",
+        "phalanx",
+        "loose",
+        "custom"
+      ],
       "description": "Engine layout function. 'custom' requires custom_slots."
     },
-    "default_ranks": { "type": "integer", "minimum": 1, "maximum": 64, "description": "Ranks used until the player adjusts depth." },
-    "min_ranks": { "type": "integer", "minimum": 1, "maximum": 64, "default": 1, "description": "Minimum ranks the player may set." },
-    "max_ranks": { "type": "integer", "minimum": 1, "maximum": 64, "default": 16, "description": "Maximum ranks the player may set." },
-    "spacing_file": { "type": "number", "minimum": 0.3, "maximum": 10, "default": 1.0, "description": "Distance between adjacent soldiers in a rank, world units." },
-    "spacing_rank": { "type": "number", "minimum": 0.3, "maximum": 10, "default": 1.2, "description": "Distance between ranks, world units." },
+    "default_ranks": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "description": "Ranks used until the player adjusts depth."
+    },
+    "min_ranks": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 1,
+      "description": "Minimum ranks the player may set."
+    },
+    "max_ranks": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 16,
+      "description": "Maximum ranks the player may set."
+    },
+    "spacing_file": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 5,
+      "default": 1.0,
+      "description": "Distance between adjacent soldiers in a rank, as a multiple of the soldier diameter (2 x soldier_radius); sf = spacing_file x 2r (SIM-FORM-002)."
+    },
+    "spacing_rank": {
+      "type": "number",
+      "minimum": 0.5,
+      "maximum": 5,
+      "default": 1.2,
+      "description": "Distance between ranks, as a multiple of the soldier diameter; sr = spacing_rank x 2r (SIM-FORM-002)."
+    },
     "role_zones": {
       "type": "array",
       "default": [],
@@ -36,38 +121,128 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["unit_category", "ranks_from", "ranks_to"],
+        "required": [
+          "unit_category",
+          "ranks_from",
+          "ranks_to"
+        ],
         "properties": {
-          "unit_category": { "enum": ["infantry", "cavalry", "ranged", "skirmisher", "general", "siege"] },
-          "ranks_from": { "type": "integer", "minimum": 1, "maximum": 64 },
-          "ranks_to": { "type": "integer", "minimum": 1, "maximum": 64 }
+          "unit_category": {
+            "enum": [
+              "infantry",
+              "cavalry",
+              "ranged",
+              "skirmisher",
+              "general",
+              "siege"
+            ]
+          },
+          "ranks_from": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          },
+          "ranks_to": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64
+          }
         }
       }
     },
-    "morph_ticks": { "type": "integer", "minimum": 0, "maximum": 2000, "default": 60, "description": "Transition ticks when morphing into this template; integrity is reduced meanwhile." },
-    "integrity_bonus_attack": { "type": "number", "minimum": -100, "maximum": 100, "default": 0, "description": "Attack bonus at formation integrity 1.0, scaled linearly with integrity." },
-    "integrity_bonus_defence": { "type": "number", "minimum": -100, "maximum": 100, "default": 0, "description": "Defence bonus at formation integrity 1.0, scaled linearly with integrity." },
-    "speed_mult": { "type": "number", "minimum": 0.05, "maximum": 3, "default": 1.0, "description": "Movement speed multiplier while in this template." },
+    "morph_ticks": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2000,
+      "default": 60,
+      "description": "Transition ticks when morphing into this template; integrity is reduced meanwhile."
+    },
+    "integrity_bonus_attack": {
+      "type": "number",
+      "minimum": -100,
+      "maximum": 100,
+      "default": 0,
+      "description": "Attack bonus at formation integrity 1.0, scaled linearly with integrity."
+    },
+    "integrity_bonus_defence": {
+      "type": "number",
+      "minimum": -100,
+      "maximum": 100,
+      "default": 0,
+      "description": "Defence bonus at formation integrity 1.0, scaled linearly with integrity."
+    },
+    "speed_mult": {
+      "type": "number",
+      "minimum": 0.05,
+      "maximum": 3,
+      "default": 1.0,
+      "description": "Movement speed multiplier while in this template."
+    },
     "custom_slots": {
       "type": "array",
       "minItems": 1,
       "maxItems": 4096,
-      "description": "For layout 'custom': slot offsets from the anchor in spacing units (x along the front, right positive; y toward the rear). Extra soldiers are appended in additional ranks.",
+      "description": "Slot offsets from the anchor in soldier diameters (2 x soldier_radius): x right, y forward (rear ranks at negative y). Soldiers beyond the slot count form a Line behind (SIM-FORM-009).",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["x", "y"],
+        "required": [
+          "x",
+          "y"
+        ],
         "properties": {
-          "x": { "type": "number", "minimum": -200, "maximum": 200 },
-          "y": { "type": "number", "minimum": -200, "maximum": 200 }
+          "x": {
+            "type": "number",
+            "minimum": -200,
+            "maximum": 200
+          },
+          "y": {
+            "type": "number",
+            "minimum": -200,
+            "maximum": 200
+          }
         }
       }
+    },
+    "min_files": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 2,
+      "description": "On casualties, ranks are kept while files stay at or above this (SIM-FORM-021)."
+    },
+    "loose_mult": {
+      "type": "number",
+      "minimum": 1,
+      "maximum": 5,
+      "default": 2.0,
+      "description": "Spacing multiplier applied by the loose layout (SIM-FORM-008)."
+    },
+    "default_files_column": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64,
+      "default": 4,
+      "description": "Files of the column layout; ranks follow from the count (SIM-FORM-004)."
     }
   },
   "allOf": [
     {
-      "if": { "properties": { "layout": { "const": "custom" } }, "required": ["layout"] },
-      "then": { "required": ["custom_slots"] }
+      "if": {
+        "properties": {
+          "layout": {
+            "const": "custom"
+          }
+        },
+        "required": [
+          "layout"
+        ]
+      },
+      "then": {
+        "required": [
+          "custom_slots"
+        ]
+      }
     }
   ]
 }

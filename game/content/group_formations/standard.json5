@@ -1,0 +1,10 @@
+// Group formations the drag gesture and the AI can request (SIM-FORM-040..042).
+// gap 0 means "use formation.group_gap from the rules".
+[
+  { id: "rome:battle_line",   name_key: "rome.group_formations.battle_line.name",   kind: "battle_line" },
+  { id: "rome:double_line",   name_key: "rome.group_formations.double_line.name",   kind: "double_line", lines: 2 },
+  { id: "rome:echelon_left",  name_key: "rome.group_formations.echelon_left.name",  kind: "echelon_left" },
+  { id: "rome:echelon_right", name_key: "rome.group_formations.echelon_right.name", kind: "echelon_right" },
+  { id: "rome:refused_left",  name_key: "rome.group_formations.refused_left.name",  kind: "refused_left" },
+  { id: "rome:refused_right", name_key: "rome.group_formations.refused_right.name", kind: "refused_right" },
+]

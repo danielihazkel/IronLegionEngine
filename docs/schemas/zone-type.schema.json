@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/zone-type.schema.json",
+  "title": "Iron Legion terrain zone type",
+  "description": "A terrain zone type (content/zones/*.json5) referenced by map zone polygons (Simulation Spec SIM-MOVE-031). Mods may add zone types.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
+    "colour": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name_key", "move_mult", "move_cost", "colour"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"] },
+    "$delete": { "const": true },
+    "$from": { "$ref": "#/$defs/contentId" },
+    "deprecated": { "type": "string" },
+    "id": { "$ref": "#/$defs/contentId" },
+    "name_key": { "$ref": "#/$defs/locKey" },
+    "move_mult": { "type": "number", "minimum": 0, "maximum": 5, "description": "Soldier speed multiplier inside the zone (SIM-MOVE-020)." },
+    "move_cost": { "type": "number", "minimum": 1, "maximum": 100, "description": "Pathfinding cost multiplier per nav cell; at least 1 so the A* heuristic stays admissible (SIM-MOVE-001)." },
+    "los_mult": { "type": "number", "minimum": 0, "maximum": 5, "default": 1.0, "description": "Line-of-sight range multiplier (Phase 2)." },
+    "conceal": { "type": "boolean", "default": false, "description": "Regiments inside are hidden beyond visibility.conceal_radius (Phase 2)." },
+    "fatigue_mult": { "type": "number", "minimum": 0, "maximum": 10, "default": 1.0, "description": "Fatigue accumulation multiplier (Phase 2)." },
+    "formation_integrity_mult": { "type": "number", "minimum": 0, "maximum": 5, "default": 1.0, "description": "Integrity multiplier applied inside the zone (SIM-FORM-031)." },
+    "passable": { "type": "boolean", "default": true, "description": "False makes every nav cell touching the zone impassable (rock, water outside crossings)." },
+    "colour": { "$ref": "#/$defs/colour", "description": "Terrain tint used by the renderer until zone textures exist." }
+  }
+}

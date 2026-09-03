@@ -45,7 +45,7 @@
   abilities: [],
   formations: ["rome:loose", "rome:line", "rome:column"],
 
-  sprite_set: "sprites/units/velites",
+  sprite_set: "rome:sprites_skirmisher",
   sounds: {
     select: "sounds/voice/velites_select.ogg",
     move: "sounds/voice/velites_move.ogg",

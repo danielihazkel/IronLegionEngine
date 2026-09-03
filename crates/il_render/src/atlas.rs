@@ -1,9 +1,8 @@
-//! Sprite sheets: the JSON5 frame table and the GPU atlas (T1-051).
+//! GPU atlases built from `il_data::SpriteSet` frame tables (T1-051, T1-023).
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
+use il_data::SpriteSet;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -13,8 +12,6 @@ pub enum AtlasError {
         path: PathBuf,
         source: std::io::Error,
     },
-    #[error("parsing frame table {path}: {message}")]
-    Parse { path: PathBuf, message: String },
     #[error("decoding PNG {path}: {source}")]
     Png {
         path: PathBuf,
@@ -35,60 +32,20 @@ pub enum AtlasError {
     },
 }
 
-/// One animation: a run of columns in the sheet.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct Anim {
-    pub first: u32,
-    pub count: u32,
-    pub fps: f32,
+/// Absolute path of a sprite set's PNG.
+pub fn atlas_path(set: &SpriteSet, assets_root: &Path) -> PathBuf {
+    assets_root.join(&set.atlas)
 }
 
-/// The frame table of one sprite sheet (`content/sprites/*.json5`).
-/// Rows are the 8 facings, columns are frames.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct SpriteSheet {
-    pub id: String,
-    /// PNG path relative to the mod's assets root.
-    pub atlas: String,
-    pub frame_w: u32,
-    pub frame_h: u32,
-    pub facings: u32,
-    pub columns: u32,
-    /// Pixel of a frame that sits on the ground position.
-    pub origin: [f32; 2],
-    pub anims: BTreeMap<String, Anim>,
-}
-
-impl SpriteSheet {
-    pub fn parse(text: &str, path: &Path) -> Result<Self, AtlasError> {
-        json5::from_str(text).map_err(|e| AtlasError::Parse {
-            path: path.to_path_buf(),
-            message: e.to_string(),
-        })
-    }
-
-    pub fn load(path: &Path) -> Result<Self, AtlasError> {
-        let text = std::fs::read_to_string(path).map_err(|source| AtlasError::Io {
-            path: path.to_path_buf(),
-            source,
-        })?;
-        Self::parse(&text, path)
-    }
-
-    pub fn atlas_path(&self, assets_root: &Path) -> PathBuf {
-        assets_root.join(&self.atlas)
-    }
-
-    /// Column of animation `name` at `time` seconds (looping); column 0 if
-    /// the animation is unknown.
-    pub fn column(&self, name: &str, time: f32) -> u32 {
-        match self.anims.get(name) {
-            Some(a) if a.count > 0 => {
-                let step = (time * a.fps).max(0.0) as u32;
-                a.first + step % a.count
-            }
-            _ => 0,
+/// Column of animation `name` at `time` seconds (looping); column 0 if the
+/// animation is unknown.
+pub fn anim_column(set: &SpriteSet, name: &str, time: f32) -> u32 {
+    match set.anims.get(name) {
+        Some(a) if a.count > 0 => {
+            let step = (time * a.fps).max(0.0) as u32;
+            a.first + step % a.count
         }
+        _ => 0,
     }
 }
 
@@ -153,7 +110,7 @@ pub(crate) struct AtlasUniform {
 
 /// A sprite sheet uploaded to the GPU.
 pub struct Atlas {
-    pub sheet: SpriteSheet,
+    pub set: SpriteSet,
     pub(crate) bind_group: wgpu::BindGroup,
 }
 
@@ -166,12 +123,12 @@ impl Atlas {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         layout: &wgpu::BindGroupLayout,
-        sheet: SpriteSheet,
+        set: &SpriteSet,
         image: &Rgba8Image,
         path: &Path,
     ) -> Result<Self, AtlasError> {
-        let need_w = sheet.columns * sheet.frame_w;
-        let need_h = sheet.facings * sheet.frame_h;
+        let need_w = set.columns * set.frame_w;
+        let need_h = set.facings * set.frame_h;
         if image.width < need_w || image.height < need_h {
             return Err(AtlasError::Size {
                 path: path.to_path_buf(),
@@ -187,7 +144,7 @@ impl Atlas {
             depth_or_array_layers: 1,
         };
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&sheet.id),
+            label: Some(set.id.as_str()),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -224,8 +181,8 @@ impl Atlas {
         });
         let uniform = AtlasUniform {
             inv_size: [1.0 / image.width as f32, 1.0 / image.height as f32],
-            frame: [sheet.frame_w as f32, sheet.frame_h as f32],
-            origin: sheet.origin,
+            frame: [set.frame_w as f32, set.frame_h as f32],
+            origin: set.origin,
             _pad: [0.0; 2],
         };
         let buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -236,7 +193,7 @@ impl Atlas {
         });
         queue.write_buffer(&buffer, 0, bytemuck::bytes_of(&uniform));
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some(&sheet.id),
+            label: Some(set.id.as_str()),
             layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -253,31 +210,60 @@ impl Atlas {
                 },
             ],
         });
-        Ok(Self { sheet, bind_group })
+        Ok(Self {
+            set: set.clone(),
+            bind_group,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use il_data::Anim;
+    use std::collections::BTreeMap;
 
-    const TABLE: &str = r#"{
-      id: "rome:sprites_infantry", atlas: "sprites/units/infantry.png",
-      frame_w: 64, frame_h: 64, facings: 8, columns: 5, origin: [32, 52],
-      anims: { idle: { first: 0, count: 1, fps: 1 }, walk: { first: 1, count: 4, fps: 8 } },
-    }"#;
+    fn set() -> SpriteSet {
+        SpriteSet {
+            id: il_data::ContentId::new("rome:sprites_infantry").unwrap(),
+            atlas: "sprites/units/infantry.png".to_string(),
+            frame_w: 64,
+            frame_h: 64,
+            facings: 8,
+            columns: 5,
+            origin: [32.0, 52.0],
+            anims: BTreeMap::from([
+                (
+                    "idle".to_string(),
+                    Anim {
+                        first: 0,
+                        count: 1,
+                        fps: 1.0,
+                    },
+                ),
+                (
+                    "walk".to_string(),
+                    Anim {
+                        first: 1,
+                        count: 4,
+                        fps: 8.0,
+                    },
+                ),
+            ]),
+            deprecated: None,
+        }
+    }
 
     #[test]
-    fn frame_table_parses_and_animates() {
-        let sheet = SpriteSheet::parse(TABLE, Path::new("t.json5")).unwrap();
-        assert_eq!(sheet.columns, 5);
-        assert_eq!(sheet.column("idle", 10.0), 0);
-        assert_eq!(sheet.column("walk", 0.0), 1);
-        assert_eq!(sheet.column("walk", 0.25), 3);
-        assert_eq!(sheet.column("walk", 0.5), 1, "loops after count frames");
-        assert_eq!(sheet.column("missing", 1.0), 0);
+    fn animation_columns_loop_and_paths_resolve() {
+        let s = set();
+        assert_eq!(anim_column(&s, "idle", 10.0), 0);
+        assert_eq!(anim_column(&s, "walk", 0.0), 1);
+        assert_eq!(anim_column(&s, "walk", 0.25), 3);
+        assert_eq!(anim_column(&s, "walk", 0.5), 1, "loops after count frames");
+        assert_eq!(anim_column(&s, "missing", 1.0), 0);
         assert_eq!(
-            sheet.atlas_path(Path::new("game/assets")),
+            atlas_path(&s, Path::new("game/assets")),
             PathBuf::from("game/assets/sprites/units/infantry.png")
         );
     }

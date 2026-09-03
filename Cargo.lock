@@ -1511,7 +1511,6 @@ dependencies = [
  "json5",
  "png",
  "pollster",
- "serde",
  "thiserror 2.0.20",
  "wgpu",
 ]

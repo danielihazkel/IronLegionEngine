@@ -1,6 +1,5 @@
 // rome:hastati — Simulation Spec §15.2. Every field is present even though
-// Phase 0 reads only id, name_key, category, soldier_radius, mass, hp,
-// speed_walk, speed_run, speed_march, morale_base and los_radius.
+// Phase 1 reads the movement fields; combat fields wait for Phase 2.
 {
   id: "rome:hastati",
   name_key: "rome.units.hastati.name",
@@ -46,12 +45,13 @@
   abilities: [],
   formations: ["rome:line", "rome:column", "rome:loose"],
 
-  sprite_set: "sprites/units/hastati",
+  sprite_set: "rome:sprites_infantry",
   sounds: {},
 
   cost: 400,
   upkeep: 60,
   recruit_turns: 1,
+  regiment_size: 120,
   tier: 1,
   experience_tiers: [],
 }

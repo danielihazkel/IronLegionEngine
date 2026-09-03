@@ -8,9 +8,10 @@ use std::time::Instant;
 
 use glam::Vec2;
 use il_core::{Angle, RegimentId, S, Scalar, V2};
+use il_data::Registries;
 use il_render::{
-    AtlasId, Camera, CategoryAtlas, ClearColour, EguiPaint, RenderSnapshot, Renderer,
-    SnapshotInput, SpriteScene, SpriteSheet, build_snapshot, scene_from_snapshot,
+    AtlasId, Camera, ClearColour, EguiPaint, RenderSnapshot, Renderer, SetAtlas, SnapshotInput,
+    SpriteScene, build_snapshot, scene_from_snapshot,
 };
 use il_ui::{UiContext, profiler_overlay};
 use winit::application::ApplicationHandler;
@@ -35,16 +36,6 @@ const WHEEL_ZOOM_STEP: f32 = 1.15;
 /// Developer tooling compiled in (`dev` feature): profiler overlay, F1 toggle.
 const DEV: bool = cfg!(feature = "dev");
 
-/// Unit categories with a placeholder sheet, in `UnitCategory` order.
-pub const CATEGORIES: [&str; 6] = [
-    "infantry",
-    "cavalry",
-    "ranged",
-    "skirmisher",
-    "general",
-    "siege",
-];
-
 pub enum Mode {
     Battle(Box<BattleSession>),
     BenchSprites,
@@ -60,6 +51,7 @@ struct PanKeys {
 
 pub struct App {
     mode: Mode,
+    regs: Arc<Registries>,
     content_root: PathBuf,
     /// `--demo-circle`: walk every regiment around a circle (T1-052 check).
     demo_circle: bool,
@@ -68,7 +60,7 @@ pub struct App {
     ui: Option<UiContext>,
     profiler: Profiler,
     show_profiler: bool,
-    /// One atlas per entry of `CATEGORIES`.
+    /// One atlas per sprite set, in registry order.
     atlases: Vec<AtlasId>,
     camera: Option<Camera>,
     snapshot: RenderSnapshot,
@@ -87,9 +79,15 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(mode: Mode, content_root: PathBuf, demo_circle: bool) -> Self {
+    pub fn new(
+        mode: Mode,
+        regs: Arc<Registries>,
+        content_root: PathBuf,
+        demo_circle: bool,
+    ) -> Self {
         Self {
             mode,
+            regs,
             content_root,
             demo_circle,
             window: None,
@@ -114,16 +112,13 @@ impl App {
         }
     }
 
+    /// Uploads every sprite set of the registry, in registry order, so the
+    /// snapshot's sprite-set index maps straight onto `atlases`.
     fn load_atlases(&mut self) -> anyhow::Result<()> {
         let renderer = self.renderer.as_mut().expect("renderer exists");
         let assets_root = self.content_root.join("assets");
-        for category in CATEGORIES {
-            let table = self
-                .content_root
-                .join("content/sprites")
-                .join(format!("{category}.json5"));
-            let sheet = SpriteSheet::load(&table)?;
-            self.atlases.push(renderer.load_atlas(sheet, &assets_root)?);
+        for (_, set) in self.regs.sprite_sets.iter() {
+            self.atlases.push(renderer.load_atlas(set, &assets_root)?);
         }
         Ok(())
     }
@@ -262,15 +257,15 @@ impl App {
             };
             build_snapshot(&session.world.view(), &input, &mut self.snapshot);
             if let Some(renderer) = self.renderer.as_ref() {
-                let categories: Vec<CategoryAtlas<'_>> = self
+                let sets: Vec<SetAtlas<'_>> = self
                     .atlases
                     .iter()
-                    .map(|id| CategoryAtlas {
+                    .map(|id| SetAtlas {
                         atlas: *id,
-                        sheet: &renderer.atlas(*id).expect("loaded atlas").sheet,
+                        set: &renderer.atlas(*id).expect("loaded atlas").set,
                     })
                     .collect();
-                scene_from_snapshot(&self.snapshot, screen, time, &categories, &mut self.scene);
+                scene_from_snapshot(&self.snapshot, screen, time, &sets, &mut self.scene);
             }
         }
 

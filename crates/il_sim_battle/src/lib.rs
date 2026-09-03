@@ -17,11 +17,12 @@ pub mod world;
 
 pub use command::{AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode};
 pub use events::BattleEvent;
+pub use il_data::Rules;
 pub use interface::{
     BattleResult, BattleSetup, GeneralFate, GeneralSetup, RegimentResult, RegimentSetup,
     ReinforcementGroup, SOLDIER_CAP, SideResult, SideSetup, VictoryRules, Weather,
 };
-pub use resources::{BattlePhase, Rules};
+pub use resources::BattlePhase;
 pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spawn::SetupError;

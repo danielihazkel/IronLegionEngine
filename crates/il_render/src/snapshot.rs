@@ -24,7 +24,8 @@ pub struct SoldierInst {
     pub height: f32,
     /// World facing in eighths of a turn (not interpolated: facing snaps).
     pub facing8: u8,
-    pub category: u8,
+    /// Registry index of the unit's sprite set.
+    pub sprite_set: u16,
     pub side: u8,
     pub moving: bool,
     pub selected: bool,
@@ -106,6 +107,7 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
     }
 
     let (min, max) = input.camera.visible_bounds(input.screen, CULL_PAD_METRES);
+    let units = &view.regs().units;
     let alpha = input.alpha.clamp(0.0, 1.0);
     let mut total = 0u32;
     for s in view.soldiers_unordered() {
@@ -125,7 +127,7 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
             pos: p.to_array(),
             height: 0.0, // heightmap sampling arrives with the map (T1-030/T1-053)
             facing8: s.facing.to_facing8(),
-            category: s.category as u8,
+            sprite_set: units.get(s.unit).sprite_set().index() as u16,
             side,
             moving: (cur - prev).length_squared() > 1e-8,
             selected,

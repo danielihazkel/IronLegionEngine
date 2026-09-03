@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/group-formation.schema.json",
+  "title": "Iron Legion group formation template",
+  "description": "A multi-regiment arrangement (content/group_formations/*.json5) applied by the GroupFormation command (Simulation Spec SIM-FORM-040..042).",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name_key", "kind"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"] },
+    "$delete": { "const": true },
+    "$from": { "$ref": "#/$defs/contentId" },
+    "deprecated": { "type": "string" },
+    "id": { "$ref": "#/$defs/contentId" },
+    "name_key": { "$ref": "#/$defs/locKey" },
+    "kind": { "enum": ["battle_line", "double_line", "echelon_left", "echelon_right", "refused_left", "refused_right", "custom"], "description": "Names the engine arrangement (SIM-FORM-040)." },
+    "gap": { "type": "number", "minimum": 0, "maximum": 100, "default": 0, "description": "Metres between regiments; 0 means use formation.group_gap from the rules." },
+    "skirmishers_forward": { "type": "boolean", "default": true, "description": "Ranged and skirmisher regiments stand formation.skirmish_offset ahead (SIM-FORM-041)." },
+    "cavalry_flanks": { "type": "boolean", "default": true, "description": "Cavalry regiments take the outer positions (SIM-FORM-041)." },
+    "lines": { "type": "integer", "minimum": 1, "maximum": 4, "default": 1, "description": "Number of lines for double_line style arrangements." }
+  }
+}

@@ -97,7 +97,7 @@ Phase 0 pins (T0-003) are the versions in the table; later phases pin their own 
 | `json5` | 1.3 | scenario and frame-table parsing only; content goes through `il_data::json5`, a span-carrying parser written in T1-020 because per-field positions are needed for diagnostics and merge provenance (OQ-7 amended) | il_cli, il_render, il_app |
 | `semver` | 1 | manifest versions and ranges | il_data |
 | `serde_json` | 1 | save headers, schema validation input | il_data, il_save |
-| `jsonschema` | 0.18 | content validation | il_data |
+| `jsonschema` | 0.53 (`default-features = false`) | content validation, draft 2020-12 | il_data |
 | `postcard` | 1.1 | snapshot encoding (OQ-2 resolved in Phase 0) | il_save, il_sim_* |
 | `mlua` (`lua54`, `vendored`) | 0.10 | Lua | il_script |
 | `glam` | 0.33.6 | render-side math only (never in sim) | il_render, il_ui |
@@ -242,7 +242,7 @@ pub struct Registries {
     pub zones: Registry<ZoneType>, pub ai_profiles: Registry<AiProfile>, pub ai_actions: Registry<AiActionSet>,
     pub rules: Rules,                         // morale, fatigue, combat, movement, formation, general, visibility, battle_flow, ai, campaign, diplomacy
     pub locale: Locale, pub sprite_sets: Registry<SpriteSet>, pub sound_sets: Registry<SoundSet>,
-    pub content_registry_hash: u64,                    // xxh3 over canonical JSON of every registry in load order (Networking Spec §4.2)
+    pub content_registry_hash: u64,                    // xxh3 over the typed sim-relevant fields (`ContentKind::hash_content`), kinds in a fixed order, items in ContentId order, references as ContentIds; independent of file order, whitespace, key order and registry layout (Networking Spec §4.2). As built in T1-023 the struct holds units, formations, group_formations, factions, zones, maps, sprite_sets, rules {movement, formation}, input (bindings), mods, mod_list_hash; the other registries arrive with their phases. References are resolved in two passes (ids registered first, then `resolve`), so file order never matters; Faction.ai_profile and tech_tree stay ContentIds until their kinds exist.
 }
 
 pub struct ModSet { pub mods: Vec<LoadedMod> }                // in resolved load order
