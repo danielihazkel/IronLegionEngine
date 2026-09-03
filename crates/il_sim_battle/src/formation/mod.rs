@@ -5,9 +5,12 @@ pub mod assign;
 pub mod layout;
 pub mod systems;
 
-pub use assign::{AssignScratch, AssignSoldier, assign_slots, slot_world};
+pub use assign::{AssignScratch, AssignSoldier, assign_slots, frame, local_to_world, slot_world};
 pub use layout::{
     LayoutFn, Slot, effective_ranks, files_for, files_used, layout_for, layout_slots, ranks_used,
     spacing,
 };
-pub use systems::{formation_apply, formation_layout, rebuild_formation_derived};
+pub use systems::{
+    formation_apply, formation_integrity, formation_layout, integrity, rebuild_formation_derived,
+    set_facing,
+};

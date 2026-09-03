@@ -268,7 +268,7 @@ flowchart LR
   Pair enumeration per cell row in parallel into per-soldier push buffers, sorted `(i, j)` processing, id-order apply, `collision_iterations` passes, push out of impassable cells.
   **Done when** two regiments marched through each other end with no overlapping pairs after 2 s and the momentum-weighted centre test passes.
 
-- [ ] **T1-045 Formation integrity and facing changes** · S · Refs SIM-FORM-024, SIM-FORM-030, REQ-FORM-005, 006
+- [x] **T1-045 Formation integrity and facing changes** · S · Refs SIM-FORM-024, SIM-FORM-030, REQ-FORM-005, 006
   `formation_integrity` system every `integrity_period_ticks`; `SetFacing` wheel versus about-face rule.
   **Done when** integrity reads 1.0 for a settled regiment and drops during a wheel.
 

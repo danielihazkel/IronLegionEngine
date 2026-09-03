@@ -71,7 +71,7 @@ Conventions:
 
 | Rule | Statement | Satisfies |
 |---|---|---|
-| SIM-FORM-001 | A Regiment's formation is defined by `(template, n, ranks, θ_a, a)`: template handle, soldier count, chosen rank count, facing, anchor. The layout function returns `n` slot offsets `o_i` in the formation's local frame (x = right, y = forward), in metres. World slot position `s_i = a + R(θ_a) · o_i`. | REQ-FORM-001 |
+| SIM-FORM-001 | A Regiment's formation is defined by `(template, n, ranks, θ_a, a)`: template handle, soldier count, chosen rank count, facing, anchor. The layout function returns `n` slot offsets `o_i` in the formation's local frame (x = right, y = forward), in metres. World slot position `s_i = a + R(θ_a) · o_i`, where `R(θ_a)` maps local forward onto the facing direction `(cos θ_a, sin θ_a)` and local right onto `(sin θ_a, −cos θ_a)` (facing `0` is +x, TDD §2.2 `Angle`). | REQ-FORM-001 |
 | SIM-FORM-002 | `files = ceil(n / ranks)`. Spacing: `sf = template.spacing_file × unit.soldier_radius × 2`, `sr = template.spacing_rank × unit.soldier_radius × 2`. | REQ-FORM-001 |
 | SIM-FORM-003 | **Line**: slot `(k)` for `k in 0..n`: rank `q = k / files`, file `f = k % files`; `o = ((f − (files−1)/2) · sf, −q · sr)`. Front rank is `q = 0` at `y = 0`; the anchor is the centre of the front rank. The last rank may be short; its slots are centred. | REQ-FORM-002 |
 | SIM-FORM-004 | **Column**: Line with `files = template.default_files_column` (default 4) and ranks derived. | REQ-FORM-002 |

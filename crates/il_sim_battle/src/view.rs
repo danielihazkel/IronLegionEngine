@@ -11,7 +11,7 @@ use std::sync::Arc;
 use bevy_ecs::prelude::*;
 use bevy_ecs::query::QueryState;
 use il_core::{Angle, RegimentId, S, SoldierId, Tick, V2};
-use il_data::{Handle, Registries, UnitCategory, UnitType};
+use il_data::{FormationTemplate, Handle, Registries, UnitCategory, UnitType};
 
 use crate::components::{
     Anchor, Facing, FormationState, Fsm, Health, Morale, MoraleState, Order, OrderKind, Path, Pos,
@@ -39,6 +39,7 @@ type RegimentData = (
     &'static Anchor,
     &'static Order,
     &'static Morale,
+    &'static FormationState,
 );
 
 /// Cached query states behind every `BattleView`.
@@ -90,6 +91,11 @@ pub struct RegimentRow {
     pub morale: S,
     pub morale_state: MoraleState,
     pub soldier_count: u32,
+    /// SIM-FORM-030, as of the last `integrity_period_ticks` boundary.
+    pub integrity: S,
+    pub formation: Handle<FormationTemplate>,
+    pub ranks: u8,
+    pub files: u16,
 }
 
 /// Borrowed, read-only view over a `BattleWorld`.
@@ -127,7 +133,9 @@ fn soldier_row(
     }
 }
 
-fn regiment_row((r, anchor, order, morale): (&Regiment, &Anchor, &Order, &Morale)) -> RegimentRow {
+fn regiment_row(
+    (r, anchor, order, morale, formation): (&Regiment, &Anchor, &Order, &Morale, &FormationState),
+) -> RegimentRow {
     RegimentRow {
         id: r.id,
         side: r.side,
@@ -138,6 +146,10 @@ fn regiment_row((r, anchor, order, morale): (&Regiment, &Anchor, &Order, &Morale
         morale: morale.m,
         morale_state: morale.state,
         soldier_count: r.soldiers.len() as u32,
+        integrity: formation.integrity,
+        formation: formation.template,
+        ranks: formation.ranks,
+        files: formation.files,
     }
 }
 

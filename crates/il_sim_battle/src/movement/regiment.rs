@@ -235,6 +235,7 @@ pub fn regiment_follow_path(
     let ids = &ids;
     let regs = &regs.0;
     let map = &map.0;
+    let wheel_per_tick = deg_to_rad(regs.rules.movement.wheel_rate) * tick_dt();
     let run = |(r, mut anchor, mut order, mut path, mut state): (
         &Regiment,
         Mut<Anchor>,
@@ -242,7 +243,17 @@ pub fn regiment_follow_path(
         Mut<Path>,
         Mut<FormationState>,
     )| {
-        if !order.kind.moves() || path.requested || !path.is_active() {
+        if !order.kind.moves() {
+            // SIM-FORM-024: a halted regiment wheels toward its ordered
+            // facing while its soldiers track the moving slots.
+            if let Some(target) = order.facing
+                && anchor.facing != target
+            {
+                anchor.facing = anchor.facing.turn_toward(target, wheel_per_tick);
+            }
+            return;
+        }
+        if path.requested || !path.is_active() {
             return;
         }
         follow_one(

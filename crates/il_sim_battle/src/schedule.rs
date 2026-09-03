@@ -12,7 +12,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 
 use crate::command::apply_commands;
-use crate::formation::{formation_apply, formation_layout};
+use crate::formation::{formation_apply, formation_integrity, formation_layout};
 use crate::hash::flush_events_and_hash;
 use crate::movement::{collision_resolve, integrate, regiment_follow_path, soldier_steer};
 use crate::nav::serve_path_requests;
@@ -148,9 +148,11 @@ fn stage_schedule(stage: Stage) -> Schedule {
     match stage {
         Stage::ApplyCommands => s.add_systems(apply_commands.in_set(stage)),
         Stage::Ai => s.add_systems(stage_ai.in_set(stage)),
-        Stage::Formation => {
-            s.add_systems((formation_layout, formation_apply).chain().in_set(stage))
-        }
+        Stage::Formation => s.add_systems(
+            (formation_layout, formation_apply, formation_integrity)
+                .chain()
+                .in_set(stage),
+        ),
         Stage::RegimentMovement => s.add_systems(
             (serve_path_requests, regiment_follow_path)
                 .chain()

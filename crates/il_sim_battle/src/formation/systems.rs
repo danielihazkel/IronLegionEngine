@@ -9,12 +9,110 @@
 //! SAD §8 rule 2.
 
 use bevy_ecs::prelude::*;
-use il_core::{S, Scalar, SoldierId};
+use il_core::{Angle, S, Scalar, SoldierId, V2};
+use il_data::FormationRules;
 
-use crate::components::{Anchor, FormationState, Pos, Rank, Regiment, SlotRef, Soldier};
-use crate::formation::assign::{AssignScratch, AssignSoldier, assign_slots};
-use crate::formation::layout::{effective_ranks, files_used, layout_slots};
-use crate::resources::{Ids, Regs};
+use crate::components::{Anchor, FormationState, Order, Pos, Rank, Regiment, SlotRef, Soldier};
+use crate::formation::assign::{
+    AssignScratch, AssignSoldier, assign_slots, local_to_world, slot_world,
+};
+use crate::formation::layout::{effective_ranks, files_used, layout_slots, spacing};
+use crate::resources::{Clock, Ids, Regs};
+
+/// SIM-FORM-030: the fraction of a regiment's soldiers within `radius` of
+/// their slot (`1` for an empty regiment).
+pub fn integrity(
+    regiment: &Regiment,
+    anchor: &Anchor,
+    state: &FormationState,
+    soldiers: &SoldierRead,
+    ids: &Ids,
+    radius: S,
+) -> S {
+    if regiment.soldiers.is_empty() {
+        return S::ONE;
+    }
+    let r_sq = radius * radius;
+    let mut inside = 0;
+    for &sid in &regiment.soldiers {
+        let Some(entity) = ids.soldier_entity(sid) else {
+            continue;
+        };
+        let Ok((_, pos, slot)) = soldiers.get(entity) else {
+            continue;
+        };
+        if let Some(slot) = slot.slot.and_then(|s| state.slots.get(usize::from(s)))
+            && slot_world(anchor, slot).distance_sq(pos.p) <= r_sq
+        {
+            inside += 1;
+        }
+    }
+    S::from_i32(inside) / S::from_i32(regiment.soldiers.len() as i32)
+}
+
+/// Stage 2, last: `formation_integrity` every `integrity_period_ticks`
+/// (SIM-FORM-030), `integrity_radius` in file spacings.
+pub fn formation_integrity(
+    mut regiments: Query<(&Regiment, &Anchor, &mut FormationState)>,
+    soldiers: SoldierRead,
+    ids: Res<Ids>,
+    regs: Res<Regs>,
+    clock: Res<Clock>,
+) {
+    let period = u32::from(regs.0.rules.formation.integrity_period_ticks.max(1));
+    if !clock.tick.0.is_multiple_of(period) {
+        return;
+    }
+    let parallel = bevy_tasks::ComputeTaskPool::try_get().is_some_and(|p| p.thread_num() > 1);
+    let soldiers = &soldiers;
+    let ids = &ids;
+    let regs = &regs;
+    let run = |(r, anchor, mut state): (&Regiment, &Anchor, Mut<FormationState>)| {
+        let radius = regs.0.units.get(r.unit).soldier_radius;
+        let (sf, _) = spacing(regs.0.formations.get(state.template), radius);
+        state.integrity = integrity(
+            r,
+            anchor,
+            &state,
+            soldiers,
+            ids,
+            regs.0.rules.formation.integrity_radius * sf,
+        );
+    };
+    if parallel {
+        regiments.par_iter_mut().for_each(run);
+    } else {
+        regiments.iter_mut().for_each(run);
+    }
+}
+
+/// SIM-FORM-024 (Phase 1 plan S10): a facing order for a halted regiment.
+/// Beyond `turn_in_place_angle` the regiment about-faces: the anchor moves
+/// to the rear rank's centre (`a − R(θ_a)·(0, (ranks − 1)·sr)`), the facing
+/// flips and a reform makes the rear rank the front. Otherwise the regiment
+/// wheels: `order.facing` becomes the target that `regiment_follow_path`
+/// turns toward at `wheel_rate`. Returns whether it about-faced.
+pub fn set_facing(
+    anchor: &mut Anchor,
+    order: &mut Order,
+    state: &mut FormationState,
+    rules: &FormationRules,
+    sr: S,
+    facing: Angle<S>,
+) -> bool {
+    order.facing = Some(facing);
+    let delta = anchor.facing.delta(facing).abs();
+    let threshold = rules.turn_in_place_angle * S::PI / S::from_i32(180);
+    if !order.kind.moves() && delta > threshold {
+        let depth = S::from_i32(i32::from(state.ranks.max(1)) - 1) * sr;
+        anchor.pos = local_to_world(anchor, V2::new(S::ZERO, -depth));
+        anchor.facing = Angle::new(anchor.facing.radians() + S::PI);
+        state.needs_reform = true;
+        // Whatever remains of the turn is wheeled from the new facing.
+        return true;
+    }
+    false
+}
 
 /// SIM-FORM-020: whether the regiment's formation must be laid out again.
 fn wants_reform(

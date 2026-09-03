@@ -25,10 +25,27 @@ pub struct AssignSoldier {
     pub category: UnitCategory,
 }
 
+/// The world-space basis of a formation frame: `(right, forward)` for an
+/// anchor facing `θ` (local x = right, local y = forward; `θ = 0` faces +x,
+/// so forward = (cos θ, sin θ) and right = (sin θ, −cos θ)).
+#[inline]
+pub fn frame(anchor: &Anchor) -> (V2, V2) {
+    let forward = anchor.facing.direction();
+    (V2::new(forward.y, -forward.x), forward)
+}
+
+/// A local formation offset in world space (SIM-FORM-001, `R(θ_a) · o`
+/// with the frame above).
+#[inline]
+pub fn local_to_world(anchor: &Anchor, offset: V2) -> V2 {
+    let (right, forward) = frame(anchor);
+    anchor.pos + right * offset.x + forward * offset.y
+}
+
 /// World position of `slot` for an anchor (SIM-FORM-001).
 #[inline]
 pub fn slot_world(anchor: &Anchor, slot: &Slot) -> V2 {
-    anchor.pos + slot.offset.rotate(anchor.facing.radians())
+    local_to_world(anchor, slot.offset)
 }
 
 /// Reusable buffers so per-tick assignments allocate nothing.
@@ -340,6 +357,31 @@ mod tests {
     }
 
     #[test]
+    fn the_formation_frame_puts_forward_along_the_facing() {
+        // Facing +x: right is -y, forward is +x, so a line spans y.
+        let east = Anchor {
+            pos: V2::ZERO,
+            facing: Angle::ZERO,
+        };
+        let (right, forward) = frame(&east);
+        assert_eq!(forward, V2::new(S::ONE, S::ZERO));
+        assert_eq!(right, V2::new(S::ZERO, -S::ONE));
+        let w = local_to_world(&east, V2::new(S::from_i32(2), -S::ONE));
+        assert_eq!(w, V2::new(-S::ONE, -S::from_i32(2)));
+        // Facing +y (north): right is +x, forward is +y.
+        let north = Anchor {
+            pos: V2::new(S::from_i32(10), S::ZERO),
+            facing: Angle::from_degrees_data(90.0),
+        };
+        let w = local_to_world(&north, V2::new(S::from_i32(2), -S::ONE));
+        assert!(
+            (w.x - S::from_i32(12)).abs() < S::from_f32_data(1e-5),
+            "{w:?}"
+        );
+        assert!((w.y + S::ONE).abs() < S::from_f32_data(1e-5), "{w:?}");
+    }
+
+    #[test]
     fn everyone_gets_a_distinct_slot_and_nearby_soldiers_keep_theirs() {
         let slots = line(12, 3);
         let anchor = Anchor {
@@ -389,9 +431,14 @@ mod tests {
             pos: V2::ZERO,
             facing: Angle::ZERO,
         };
-        // Soldiers in reverse order along the rank, far enough that keep
-        // does not apply.
-        let pts: Vec<(f32, f32)> = (0..6).map(|i| (2.5 - i as f32, 5.0)).collect();
+        // Soldiers in reverse order along the rank, five metres ahead of
+        // it, far enough that keep does not apply.
+        let pts: Vec<(f32, f32)> = (0..6)
+            .map(|i| {
+                let w = slot_world(&anchor, &slots[5 - i]) + V2::new(S::from_i32(5), S::ZERO);
+                (w.x.to_f32_render(), w.y.to_f32_render())
+            })
+            .collect();
         let soldiers = soldiers_at(&pts);
         let mut out = Vec::new();
         let mut scratch = AssignScratch::default();
@@ -407,11 +454,10 @@ mod tests {
         let mut used: Vec<u16> = out.iter().map(|s| s.unwrap()).collect();
         used.sort_unstable();
         assert_eq!(used, (0..6).collect::<Vec<u16>>());
-        // Total squared distance is minimal: soldier i (at x = 2.5 - i) gets
-        // the slot at the same x.
-        for (k, s) in soldiers.iter().enumerate() {
-            let w = slot_world(&anchor, &slots[usize::from(out[k].unwrap())]);
-            assert_eq!(w.x, s.pos.x, "soldier {k}");
+        // Total squared distance is minimal: soldier i stands ahead of slot
+        // 5 - i and gets it.
+        for (k, slot) in out.iter().enumerate() {
+            assert_eq!(*slot, Some(5 - k as u16), "soldier {k}");
         }
     }
 
@@ -424,7 +470,10 @@ mod tests {
         let big = line(8, 2);
         let pts: Vec<(f32, f32)> = big
             .iter()
-            .map(|s| (s.offset.x.to_f32_render(), s.offset.y.to_f32_render()))
+            .map(|s| {
+                let w = slot_world(&anchor, s);
+                (w.x.to_f32_render(), w.y.to_f32_render())
+            })
             .collect();
         let soldiers = soldiers_at(&pts);
         let prev: Vec<Option<u16>> = (0..8).map(|i| Some(i as u16)).collect();

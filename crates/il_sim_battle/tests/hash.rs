@@ -15,12 +15,13 @@ use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 /// the test map (re-baselined in T1-030 when the regiments moved onto it and
 /// in T1-041 when spawning switched to real Line slots; the 1,000-tick value
 /// again in T1-043 when soldiers started steering and in T1-044 when
-/// collisions started pushing).
+/// collisions started pushing; both again in T1-045 when the formation
+/// frame was corrected so a line spans perpendicular to its facing).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x8c44_e800_0446_3f1d;
+const GOLDEN_FRESH: u64 = 0x9c00_d41b_b133_c9a4;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x971c_f604_c61a_4044;
+const GOLDEN_1000: u64 = 0x3d6a_5a09_c210_61aa;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 

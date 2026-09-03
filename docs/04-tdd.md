@@ -488,7 +488,8 @@ pub fn layout_for(layout: Layout) -> &'static dyn LayoutFn;   // SIM-FORM-003..0
 // Column widens beyond default_files_column only if it would exceed 255 ranks; Wedge ignores `ranks`; Square uses `ranks` as the depth of each side.
 pub fn assign_slots(soldiers: &[AssignSoldier { id, pos, category }], slots: &[Slot], anchor: &Anchor, rules: &FormationRules, prev: &[Option<u16>], out: &mut Vec<Option<u16>>, scratch: &mut AssignScratch);  // SIM-FORM-022; as built (T1-041) the grid it searches is a private one over the *slots* (rings of keep_slot_radius doubling up to assign_search_radius, brute force beyond), rebuilt per call into `scratch`; the soldier grid is not needed
 pub fn slot_world(anchor: &Anchor, slot: &Slot) -> V2;   // a + R(θ_a) · o (SIM-FORM-001)
-pub fn integrity(soldiers: &[V2], assigned: &[Option<u16>], slots_world: &[V2], radius: S) -> S;  // SIM-FORM-030
+pub fn integrity(regiment: &Regiment, anchor: &Anchor, state: &FormationState, soldiers: &Query<(&Soldier, &Pos, &SlotRef)>, ids: &Ids, radius: S) -> S;  // SIM-FORM-030, as built (T1-045); `formation_integrity` runs it every integrity_period_ticks with radius = integrity_radius × sf
+pub fn set_facing(anchor: &mut Anchor, order: &mut Order, state: &mut FormationState, rules: &FormationRules, sr: S, facing: Angle<S>) -> bool;  // SIM-FORM-024 (T1-045): order.facing becomes the wheel target that regiment_follow_path turns toward at wheel_rate while halted; beyond turn_in_place_angle a halted regiment about-faces instead (anchor to the rear rank's centre, facing + π, reform), returning true
 pub struct GroupFormationTemplate { pub id: ContentId, pub kind: GroupKind, pub gap: S, pub skirmishers_forward: bool, pub cavalry_flanks: bool, pub lines: u8 }
 pub fn arrange_group(t: &GroupFormationTemplate, regiments: &[RegimentInfo], anchor: V2, facing: Angle<S>, width: S, rules: &FormationRules) -> Vec<(RegimentId, V2, Angle<S>, u8 /*ranks*/)>;  // SIM-FORM-040..042
 ```
