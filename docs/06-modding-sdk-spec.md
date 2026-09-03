@@ -550,6 +550,19 @@ Each file is one object of named tunables for one system. The Simulation Spec ow
 
 See §7.
 
+### 4.11 Input bindings — `content/input/bindings.json5`
+
+One merged object `{ bindings: [ { action, keys } ] }` (schema `input-bindings.schema.json`); a later mod's entry for an action replaces the earlier one's key list, so a mod rebinds one action by listing only that action. Unknown actions and unparsable chords are reported at load and skipped; the rest of the file still applies.
+
+Chord syntax: `[Ctrl+][Shift+][Alt+]Key`. Modifiers match exactly (`W` does not fire while Shift is held, so `W` and `Shift+W` are distinct). `Key` is one of:
+
+- a letter `A`..`Z` or digit `0`..`9` (physical keys: `W` is the key at W on a QWERTY layout);
+- a winit `KeyCode` name: `ArrowUp/Down/Left/Right`, `Equal`, `Minus`, `Space`, `Escape`, `Enter`, `Tab`, `Backspace`, `Delete`, `Insert`, `Home`, `End`, `PageUp`, `PageDown`, `F1`..`F12`, `Numpad0`..`Numpad9`, `NumpadAdd`, `NumpadSubtract`, `NumpadMultiply`, `NumpadDivide`, `NumpadDecimal`, `NumpadEnter`, `Backquote`, `Comma`, `Period`, `Slash`, `Backslash`, `BracketLeft`, `BracketRight`, `Semicolon`, `Quote`, `CapsLock`;
+- a mouse token: `LeftClick`, `RightClick`, `MiddleClick`, `DoubleLeftClick`, `DoubleRightClick`, `DoubleMiddleClick`, `LeftDrag`, `RightDrag`, `MiddleDrag`, `MouseWheelUp`, `MouseWheelDown`;
+- nothing: a chord of modifiers only (`Alt`) is active while they are held (used by `order_flip_facing`).
+
+Actions (Phase 1): `camera_pan_up/down/left/right`, `camera_rotate_left/right`, `camera_zoom_in/out`, `camera_drag`, `select`, `select_add`, `box_select`, `box_select_add`, `select_type`, `select_all`, `group_set_0`..`group_set_9`, `group_recall_0`..`group_recall_9`, `order_move`, `order_drag_formation`, `order_flip_facing`, `order_halt`, `toggle_run`, `formation_1`..`formation_9` (the unit type's n-th formation template), `pause`, `speed_up`, `speed_down`, `quit_to_menu`, and in developer builds `toggle_profiler`, `debug_nav_grid`, `debug_slots`, `debug_paths`, `debug_anchors`, `debug_spatial`.
+
 ---
 
 ## 5. Tier 2 Lua

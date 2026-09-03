@@ -303,7 +303,7 @@ flowchart LR
   **Done when** the test map is recognisable and elevation reads correctly under the isometric projection.
 
 - [x] **T1-054 Debug overlays** · S · Refs REQ-RNDR-008, TDD §10.1 debug
-  Line pipeline (shared with the deployment outlines of T1-053); F2..F6 toggle nav grid (impassable and costly cells), slots, paths (with the waypoints whose corridor is narrower than the formation marked), anchors and facings, spatial grid cells; all built from `BattleView` by `il_render::build_debug_lines`.
+  Line pipeline (shared with the deployment outlines of T1-053); the `debug_*` bindings (F5..F9 by default) toggle nav grid (impassable and costly cells), slots, paths (with the waypoints whose corridor is narrower than the formation marked), anchors and facings, spatial grid cells; all built from `BattleView` by `il_render::build_debug_lines`.
   **Done when** each toggle draws from `BattleView` without touching the ECS mutably.
 
 ### UI — egui, input, gestures
@@ -312,7 +312,7 @@ flowchart LR
   `egui-wgpu` and `egui-winit`; `tracing` spans per stage collected into a ring buffer; overlay showing per-stage tick time, frame time, entity counts.
   **Done when** the overlay shows the 18 stages with live timings.
 
-- [ ] **T1-061 Input state, bindings file, selection model** · M · Refs REQ-INP-001, 002, 004, 005, TDD §11
+- [x] **T1-061 Input state, bindings file, selection model** · M · Refs REQ-INP-001, 002, 004, 005, TDD §11
   `InputState` from winit events; `content/input/bindings.json5` loaded through `il_data`; `Selection` with click, shift-click, box select, double-click by type, control groups; camera bindings.
   **Done when** the bindings file can rebind box-select to a different modifier without code changes.
 

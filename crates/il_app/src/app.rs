@@ -1,24 +1,30 @@
-//! The winit application handler: window, renderer, camera input, frame loop
-//! (T1-050, T1-051, T1-052).
+//! The winit application handler: window, renderer, input, frame loop
+//! (T1-050, T1-051, T1-052, T1-061).
+//!
+//! Every key and mouse gesture goes through `il_ui::InputState` and the
+//! `Bindings` loaded from `content/input/bindings.json5`; nothing here names
+//! a key code (REQ-INP-005).
 
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
 use glam::Vec2;
-use il_core::{RegimentId, Scalar};
+use il_core::{PlayerId, RegimentId, Scalar, V2};
 use il_data::Registries;
 use il_render::{
     AtlasId, Camera, ClearColour, DebugFlags, EguiPaint, FrameScene, LineScene, RenderSnapshot,
     Renderer, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_debug_lines, build_snapshot,
-    deployment_outlines, scene_from_snapshot,
+    deployment_outlines, ground_height, scene_from_snapshot,
 };
-use il_ui::{UiContext, profiler_overlay};
+use il_sim_battle::BattleView;
+use il_ui::{
+    Action, Bindings, Gesture, InputState, Selection, UiContext, own_regiments, pick_regiment,
+    profiler_overlay, regiments_in_box, regiments_of_type_on_screen, selection_box,
+};
 use winit::application::ApplicationHandler;
-use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
+use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::HotReloadHandle;
@@ -33,24 +39,19 @@ const KEY_PAN_PX_PER_S: f32 = 700.0;
 /// Edge-scroll band in pixels and speed in pixels per second.
 const EDGE_BAND_PX: f32 = 10.0;
 const EDGE_PAN_PX_PER_S: f32 = 600.0;
-/// Zoom factor per mouse-wheel line.
+/// Zoom factor per mouse-wheel line or key press.
 const WHEEL_ZOOM_STEP: f32 = 1.15;
 /// Metres added around the regiments when the starting camera frames them.
 const CAMERA_FIT_MARGIN_M: f32 = 60.0;
-/// Developer tooling compiled in (`dev` feature): profiler overlay, F1 toggle.
+/// Speed multiplier range for the speed keys.
+const MIN_SPEED: f32 = 0.125;
+const MAX_SPEED: f32 = 8.0;
+/// Developer tooling compiled in (`dev` feature): profiler and debug overlays.
 const DEV: bool = cfg!(feature = "dev");
 
 pub enum Mode {
     Battle(Box<BattleSession>),
     BenchSprites,
-}
-
-#[derive(Default)]
-struct PanKeys {
-    up: bool,
-    down: bool,
-    left: bool,
-    right: bool,
 }
 
 pub struct App {
@@ -62,9 +63,12 @@ pub struct App {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     ui: Option<UiContext>,
+    input: InputState,
+    bindings: Bindings,
+    selection: Selection,
     profiler: Profiler,
     show_profiler: bool,
-    /// F2..F6 overlays (T1-054), `dev` builds only.
+    /// Debug overlays (T1-054), `dev` builds only.
     debug: DebugFlags,
     /// One atlas per sprite set, in registry order.
     atlases: Vec<AtlasId>,
@@ -72,17 +76,22 @@ pub struct App {
     snapshot: RenderSnapshot,
     scene: SpriteScene,
     lines: LineScene,
-    selected: BTreeSet<RegimentId>,
     bench: Option<SpriteBench>,
-    pan_keys: PanKeys,
-    cursor: Option<Vec2>,
-    middle_down: bool,
     started: Instant,
     last_frame: Option<Instant>,
     frames: u32,
     /// Wall time spent inside `BattleWorld::step` since the last title refresh.
     step_seconds: f64,
     ticks_since_title: u32,
+}
+
+/// Parses the registry's bindings, printing what it had to skip.
+fn load_bindings(regs: &Registries) -> Bindings {
+    let (bindings, errors) = Bindings::from_content(&regs.input);
+    for e in errors {
+        eprintln!("bindings: {e}");
+    }
+    bindings
 }
 
 impl App {
@@ -92,6 +101,7 @@ impl App {
         hot_reload: HotReloadHandle,
         content_root: PathBuf,
     ) -> Self {
+        let bindings = load_bindings(&regs);
         Self {
             mode,
             regs,
@@ -100,6 +110,9 @@ impl App {
             window: None,
             renderer: None,
             ui: None,
+            input: InputState::new(),
+            bindings,
+            selection: Selection::new(),
             profiler: Profiler::default(),
             show_profiler: DEV,
             debug: DebugFlags::default(),
@@ -108,11 +121,7 @@ impl App {
             snapshot: RenderSnapshot::default(),
             scene: SpriteScene::default(),
             lines: LineScene::default(),
-            selected: BTreeSet::new(),
             bench: None,
-            pan_keys: PanKeys::default(),
-            cursor: None,
-            middle_down: false,
             started: Instant::now(),
             last_frame: None,
             frames: 0,
@@ -185,26 +194,31 @@ impl App {
         self.camera.as_mut().expect("camera set above")
     }
 
+    /// Camera bindings (REQ-INP-004): key pan, edge scroll, snap rotation,
+    /// wheel and key zoom about the cursor, drag pan.
     fn apply_camera_input(&mut self, dt: f32) {
         let screen = self.screen();
+        let b = &self.bindings;
+        let input = &self.input;
         let mut pan = Vec2::ZERO;
-        if self.pan_keys.left {
+        if input.held(b, Action::CameraPanLeft) {
             pan.x += 1.0;
         }
-        if self.pan_keys.right {
+        if input.held(b, Action::CameraPanRight) {
             pan.x -= 1.0;
         }
-        if self.pan_keys.up {
+        if input.held(b, Action::CameraPanUp) {
             pan.y += 1.0;
         }
-        if self.pan_keys.down {
+        if input.held(b, Action::CameraPanDown) {
             pan.y -= 1.0;
         }
         if pan != Vec2::ZERO {
             pan = pan.normalize() * KEY_PAN_PX_PER_S * dt;
         }
-        if let Some(c) = self.cursor
-            && !self.middle_down
+        let drag = input.drag(b, Action::CameraDrag);
+        if let Some(c) = input.cursor()
+            && drag.is_none()
         {
             let mut edge = Vec2::ZERO;
             if c.x <= EDGE_BAND_PX {
@@ -219,9 +233,131 @@ impl App {
             }
             pan += edge * EDGE_PAN_PX_PER_S * dt;
         }
+        if drag.is_some() {
+            pan += input.cursor_delta();
+        }
+        let rotate = i8::from(input.pressed(b, Action::CameraRotateRight))
+            - i8::from(input.pressed(b, Action::CameraRotateLeft));
+        let zoom_lines = input.wheel_for(b, Action::CameraZoomIn)
+            - input.wheel_for(b, Action::CameraZoomOut)
+            + f32::from(input.pressed(b, Action::CameraZoomIn))
+            - f32::from(input.pressed(b, Action::CameraZoomOut));
+        let anchor = input.cursor().unwrap_or(screen * 0.5);
+
         if pan != Vec2::ZERO {
             self.camera_mut().pan_screen(pan);
         }
+        if rotate != 0 {
+            self.camera_mut().rotate(rotate);
+        }
+        if zoom_lines != 0.0 {
+            self.camera_mut()
+                .zoom_at(WHEEL_ZOOM_STEP.powf(zoom_lines), anchor, screen);
+        }
+    }
+
+    /// Developer toggles, pause and speed (bindings `toggle_profiler`,
+    /// `debug_*`, `pause`, `speed_up`, `speed_down`).
+    fn apply_toggles(&mut self) {
+        let b = &self.bindings;
+        let input = &self.input;
+        if DEV {
+            if input.pressed(b, Action::ToggleProfiler) {
+                self.show_profiler = !self.show_profiler;
+            }
+            let flags = &mut self.debug;
+            for (action, flag) in [
+                (Action::DebugNavGrid, &mut flags.nav_grid),
+                (Action::DebugSlots, &mut flags.slots),
+                (Action::DebugPaths, &mut flags.paths),
+                (Action::DebugAnchors, &mut flags.anchors),
+                (Action::DebugSpatial, &mut flags.spatial_cells),
+            ] {
+                if input.pressed(b, action) {
+                    *flag = !*flag;
+                }
+            }
+        }
+        let Mode::Battle(session) = &mut self.mode else {
+            return;
+        };
+        let mut changed = false;
+        if input.pressed(b, Action::Pause) {
+            let paused = session.paused();
+            session.set_paused(!paused);
+            changed = true;
+        }
+        if input.pressed(b, Action::SpeedUp) {
+            session.set_speed((session.speed() * 2.0).min(MAX_SPEED));
+            changed = true;
+        }
+        if input.pressed(b, Action::SpeedDown) {
+            session.set_speed((session.speed() * 0.5).max(MIN_SPEED));
+            changed = true;
+        }
+        if changed {
+            self.refresh_title();
+        }
+    }
+
+    /// Selection gestures (REQ-INP-002): click, shift-click, box, double
+    /// click by type, select all, control groups. Only the local player's
+    /// regiments can be selected.
+    fn apply_selection_input(&mut self) {
+        let Mode::Battle(session) = &self.mode else {
+            return;
+        };
+        let Some(camera) = self.camera else {
+            return;
+        };
+        let screen = self.screen();
+        let player = session.local_player();
+        let view = session.world.view();
+        let b = &self.bindings;
+        let input = &self.input;
+        let picker = Picker {
+            view: &view,
+            camera,
+            screen,
+            player,
+        };
+
+        // Gestures, most specific first: a double click is also a click, so
+        // the type selection must win over the plain one.
+        if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::SelectType) {
+            let hit = picker.pick(pos);
+            if let Some(id) = hit {
+                let ids = regiments_of_type_on_screen(&view, &picker.project(), player, id, screen);
+                self.selection.set(ids);
+            } else {
+                self.selection.click(None, false);
+            }
+        } else if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::SelectAdd) {
+            self.selection.click(picker.pick(pos), true);
+        } else if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::Select) {
+            self.selection.click(picker.pick(pos), false);
+        }
+        if let Some(Gesture::DragEnd { from, to, .. }) = input.gesture(b, Action::BoxSelectAdd) {
+            self.selection.box_select(picker.in_box(from, to), true);
+        } else if let Some(Gesture::DragEnd { from, to, .. }) = input.gesture(b, Action::BoxSelect)
+        {
+            self.selection.box_select(picker.in_box(from, to), false);
+        }
+        if input.pressed(b, Action::SelectAll) {
+            self.selection.set(own_regiments(&view, player));
+        }
+        for n in 0..il_ui::GROUPS {
+            let group = n as u8;
+            if input.pressed(b, Action::GroupSet(group)) {
+                self.selection.set_group(n);
+            }
+            if input.pressed(b, Action::GroupRecall(group)) {
+                self.selection.recall_group(n, input.mods().shift);
+            }
+        }
+        // Regiments that died or changed hands leave every set.
+        let own = own_regiments(&view, player);
+        self.selection.retain(|id| own.contains(&id));
     }
 
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
@@ -230,7 +366,10 @@ impl App {
             .last_frame
             .map_or(0.0, |t| now.duration_since(t).as_secs_f64());
         self.last_frame = Some(now);
+        self.input.begin_frame(self.started.elapsed().as_secs_f64());
         self.apply_camera_input(dt as f32);
+        self.apply_toggles();
+        self.apply_selection_input();
         let screen = self.screen();
         let time = self.started.elapsed().as_secs_f32();
 
@@ -240,6 +379,7 @@ impl App {
                 if let Some(hr) = self.hot_reload.as_mut() {
                     if let Some(regs) = hr.poll() {
                         session.world.replace_registries(regs.clone());
+                        self.bindings = load_bindings(&regs);
                         self.regs = regs;
                     }
                     for event in hr.take_events() {
@@ -283,7 +423,7 @@ impl App {
                 alpha: session.alpha(),
                 camera,
                 screen,
-                selected: &self.selected,
+                selected: &self.selection.regiments,
             };
             build_snapshot(&session.world.view(), &input, &mut self.snapshot);
             self.lines.clear();
@@ -310,6 +450,11 @@ impl App {
             }
         }
 
+        let box_drag = self
+            .input
+            .drag(&self.bindings, Action::BoxSelect)
+            .or_else(|| self.input.drag(&self.bindings, Action::BoxSelectAdd))
+            .map(|d| (d.from, d.to));
         let mut ui_out = match (self.ui.as_mut(), self.window.as_ref(), &self.mode) {
             (Some(ui), Some(window), Mode::Battle(session)) => {
                 let mut stats = self.profiler.stats();
@@ -321,6 +466,9 @@ impl App {
                 Some(ui.run(window, |ctx| {
                     if show {
                         profiler_overlay(ctx, &stats);
+                    }
+                    if let Some((from, to)) = box_drag {
+                        selection_box(ctx, from, to);
                     }
                 }))
             }
@@ -348,69 +496,11 @@ impl App {
             std::process::exit(1);
         }
 
+        self.input.end_frame();
         self.frames += 1;
         if self.frames.is_multiple_of(TITLE_EVERY_FRAMES) {
             self.refresh_title();
         }
-    }
-
-    /// Temporary keyboard handling until bindings arrive (T1-061): WASD and
-    /// arrows pan, Q/E snap-rotate, Space pauses, `+`/`-` change speed, F1
-    /// the profiler, F2..F6 the debug overlays (nav grid, slots, paths,
-    /// anchors, spatial cells).
-    fn key(&mut self, event: &KeyEvent) {
-        let pressed = event.state == ElementState::Pressed;
-        if let PhysicalKey::Code(code) = event.physical_key {
-            match code {
-                KeyCode::KeyW | KeyCode::ArrowUp => self.pan_keys.up = pressed,
-                KeyCode::KeyS | KeyCode::ArrowDown => self.pan_keys.down = pressed,
-                KeyCode::KeyA | KeyCode::ArrowLeft => self.pan_keys.left = pressed,
-                KeyCode::KeyD | KeyCode::ArrowRight => self.pan_keys.right = pressed,
-                KeyCode::KeyQ if pressed && !event.repeat => self.camera_mut().rotate(-1),
-                KeyCode::KeyE if pressed && !event.repeat => self.camera_mut().rotate(1),
-                KeyCode::F1 if pressed && !event.repeat && DEV => {
-                    self.show_profiler = !self.show_profiler;
-                }
-                KeyCode::F2 if pressed && !event.repeat && DEV => {
-                    self.debug.nav_grid = !self.debug.nav_grid;
-                }
-                KeyCode::F3 if pressed && !event.repeat && DEV => {
-                    self.debug.slots = !self.debug.slots;
-                }
-                KeyCode::F4 if pressed && !event.repeat && DEV => {
-                    self.debug.paths = !self.debug.paths;
-                }
-                KeyCode::F5 if pressed && !event.repeat && DEV => {
-                    self.debug.anchors = !self.debug.anchors;
-                }
-                KeyCode::F6 if pressed && !event.repeat && DEV => {
-                    self.debug.spatial_cells = !self.debug.spatial_cells;
-                }
-                _ => {}
-            }
-        }
-        if !pressed || event.repeat {
-            return;
-        }
-        let Mode::Battle(session) = &mut self.mode else {
-            return;
-        };
-        match &event.logical_key {
-            Key::Named(NamedKey::Space) => {
-                let paused = session.paused();
-                session.set_paused(!paused);
-            }
-            Key::Character(c) if c == "+" || c == "=" => {
-                let speed = (session.speed() * 2.0).min(8.0);
-                session.set_speed(speed);
-            }
-            Key::Character(c) if c == "-" => {
-                let speed = (session.speed() * 0.5).max(0.125);
-                session.set_speed(speed);
-            }
-            _ => return,
-        }
-        self.refresh_title();
     }
 
     fn refresh_title(&mut self) {
@@ -426,12 +516,13 @@ impl App {
                 };
                 let cam = self.camera.unwrap_or_else(|| Camera::new(Vec2::ZERO));
                 format!(
-                    "Iron Legion — tick {} — {}/{} soldiers drawn — sim {:.2} ms/tick — speed x{:.2} — {} commands — zoom {:.1} px/m rot {}{}",
+                    "Iron Legion — tick {} — {}/{} soldiers drawn — sim {:.2} ms/tick — speed x{:.2} — {} selected — {} commands — zoom {:.1} px/m rot {}{}",
                     session.world.tick().0,
                     self.snapshot.counts.visible_soldiers,
                     self.snapshot.counts.soldiers,
                     per_tick_ms,
                     session.speed(),
+                    self.selection.len(),
                     session.command_log().len(),
                     cam.zoom,
                     cam.rotation,
@@ -446,6 +537,40 @@ impl App {
         window.set_title(&title);
         self.step_seconds = 0.0;
         self.ticks_since_title = 0;
+    }
+}
+
+/// Hit testing through the frame's camera (`il_ui` never sees `Camera`, so
+/// it gets a projection closure).
+struct Picker<'a, 'w> {
+    view: &'a BattleView<'w>,
+    camera: Camera,
+    screen: Vec2,
+    player: PlayerId,
+}
+
+impl Picker<'_, '_> {
+    fn project(&self) -> impl Fn(V2) -> Vec2 + '_ {
+        let map = self.view.map();
+        move |w: V2| {
+            let p = Vec2::new(w.x.to_f32_render(), w.y.to_f32_render());
+            self.camera
+                .world_to_screen(p, ground_height(map, p), self.screen)
+        }
+    }
+
+    fn pick(&self, cursor: Vec2) -> Option<RegimentId> {
+        pick_regiment(
+            self.view,
+            &self.project(),
+            self.camera.zoom,
+            self.player,
+            cursor,
+        )
+    }
+
+    fn in_box(&self, a: Vec2, b: Vec2) -> std::collections::BTreeSet<RegimentId> {
+        regiments_in_box(self.view, &self.project(), self.player, a, b)
     }
 }
 
@@ -509,53 +634,17 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
-        if let (Some(ui), Some(window)) = (self.ui.as_mut(), self.window.as_ref()) {
-            let consumed = ui.on_window_event(window, &event);
-            let always = matches!(
-                event,
-                WindowEvent::CloseRequested
-                    | WindowEvent::Resized(_)
-                    | WindowEvent::RedrawRequested
-            );
-            if consumed && !always {
-                return;
-            }
-        }
+        let consumed = match (self.ui.as_mut(), self.window.as_ref()) {
+            (Some(ui), Some(window)) => ui.on_window_event(window, &event),
+            _ => false,
+        };
+        self.input.on_window_event(&event, consumed);
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {
                 if let Some(r) = self.renderer.as_mut() {
                     r.resize(size.width, size.height);
                 }
-            }
-            WindowEvent::KeyboardInput { event, .. } => self.key(&event),
-            WindowEvent::CursorMoved { position, .. } => {
-                let p = Vec2::new(position.x as f32, position.y as f32);
-                if self.middle_down
-                    && let Some(prev) = self.cursor
-                {
-                    self.camera_mut().pan_screen(p - prev);
-                }
-                self.cursor = Some(p);
-            }
-            WindowEvent::CursorLeft { .. } => {
-                self.cursor = None;
-                self.middle_down = false;
-            }
-            WindowEvent::MouseInput {
-                state,
-                button: MouseButton::Middle,
-                ..
-            } => self.middle_down = state == ElementState::Pressed,
-            WindowEvent::MouseWheel { delta, .. } => {
-                let lines = match delta {
-                    MouseScrollDelta::LineDelta(_, y) => y,
-                    MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
-                };
-                let screen = self.screen();
-                let anchor = self.cursor.unwrap_or(screen * 0.5);
-                self.camera_mut()
-                    .zoom_at(WHEEL_ZOOM_STEP.powf(lines), anchor, screen);
             }
             WindowEvent::RedrawRequested => self.frame(event_loop),
             _ => {}

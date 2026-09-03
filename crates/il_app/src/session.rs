@@ -60,6 +60,10 @@ impl BattleSession {
         self.queue(CommandKind::SetSpeed { mult_x100 });
     }
 
+    pub fn local_player(&self) -> PlayerId {
+        self.local_player
+    }
+
     pub fn paused(&self) -> bool {
         self.paused
     }

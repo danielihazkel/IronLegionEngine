@@ -1,5 +1,6 @@
 // Default key bindings (TDD 11, REQ-INP-004, REQ-INP-005). Chords are
-// "Modifier+Key"; a later mod's entry for the same action replaces this one.
+// "[Ctrl+][Shift+][Alt+]Key" (Modding SDK 4 "Input bindings"); a later
+// mod's entry for the same action replaces this one.
 {
   bindings: [
     { action: "camera_pan_up", keys: ["W", "ArrowUp"] },
@@ -17,6 +18,26 @@
     { action: "box_select_add", keys: ["Shift+LeftDrag"] },
     { action: "select_type", keys: ["DoubleLeftClick"] },
     { action: "select_all", keys: ["Ctrl+A"] },
+    { action: "group_set_0", keys: ["Ctrl+0"] },
+    { action: "group_set_1", keys: ["Ctrl+1"] },
+    { action: "group_set_2", keys: ["Ctrl+2"] },
+    { action: "group_set_3", keys: ["Ctrl+3"] },
+    { action: "group_set_4", keys: ["Ctrl+4"] },
+    { action: "group_set_5", keys: ["Ctrl+5"] },
+    { action: "group_set_6", keys: ["Ctrl+6"] },
+    { action: "group_set_7", keys: ["Ctrl+7"] },
+    { action: "group_set_8", keys: ["Ctrl+8"] },
+    { action: "group_set_9", keys: ["Ctrl+9"] },
+    { action: "group_recall_0", keys: ["0"] },
+    { action: "group_recall_1", keys: ["1"] },
+    { action: "group_recall_2", keys: ["2"] },
+    { action: "group_recall_3", keys: ["3"] },
+    { action: "group_recall_4", keys: ["4"] },
+    { action: "group_recall_5", keys: ["5"] },
+    { action: "group_recall_6", keys: ["6"] },
+    { action: "group_recall_7", keys: ["7"] },
+    { action: "group_recall_8", keys: ["8"] },
+    { action: "group_recall_9", keys: ["9"] },
     { action: "order_move", keys: ["RightClick"] },
     { action: "order_drag_formation", keys: ["RightDrag"] },
     { action: "order_flip_facing", keys: ["Alt"] },
@@ -29,6 +50,13 @@
     { action: "pause", keys: ["Space"] },
     { action: "speed_up", keys: ["Ctrl+Equal", "NumpadAdd"] },
     { action: "speed_down", keys: ["Ctrl+Minus", "NumpadSubtract"] },
+    { action: "quit_to_menu", keys: ["Escape"] },
+    // Developer tooling (`dev` builds only).
     { action: "toggle_profiler", keys: ["F12"] },
+    { action: "debug_nav_grid", keys: ["F5"] },
+    { action: "debug_slots", keys: ["F6"] },
+    { action: "debug_paths", keys: ["F7"] },
+    { action: "debug_anchors", keys: ["F8"] },
+    { action: "debug_spatial", keys: ["F9"] },
   ],
 }

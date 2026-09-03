@@ -16,7 +16,7 @@
         "required": ["action", "keys"],
         "properties": {
           "action": { "type": "string", "pattern": "^[a-z0-9_]+$", "description": "Engine action name, e.g. select_all, camera_rotate_left." },
-          "keys": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "Chords such as \"Ctrl+A\", \"Shift+LeftClick\", \"MouseWheelUp\"." }
+          "keys": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "Chords \"[Ctrl+][Shift+][Alt+]Key\" such as \"Ctrl+A\", \"Shift+LeftClick\", \"MouseWheelUp\", or a bare modifier \"Alt\"; key and mouse token names in Modding SDK 4.11." }
         }
       }
     }
