@@ -280,8 +280,8 @@ flowchart LR
   Stage 0 now applies `Move`, `AttackMove` (as `Move` until Phase 2), `Halt`, `SetFormation`, `SetFacing`, `SetSpeedMode`, `GroupFormation`, `Deploy` (position only). Events for rejections.
   **Done when** each command has a test that checks the resulting `Order`/`FormationState` and the determinism test includes a scripted command stream (T1-081).
 
-- [ ] **T1-048 Snapshot: derived data rebuild** · S · Refs SIM-DET-005, TDD §4.6
-  `rebuild_derived` now reconstructs the spatial grid, nav grid, ranks, and re-requests paths; `Path` is not stored.
+- [x] **T1-048 Snapshot: derived data rebuild** · S · Refs SIM-DET-005, TDD §4.6
+  `rebuild_derived` reconstructs the spatial and anchor grids, the nav grid, the formation slot tables and `Rank`, and the path request queue from `Path.requested`; paths themselves are stored (a re-requested path from the restored anchor would differ from the one in flight, SIM-DET-005 as amended in T1-047).
   **Done when** the snapshot half of the determinism test passes with movement.
 
 ### RNDR — renderer

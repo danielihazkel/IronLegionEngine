@@ -3,7 +3,7 @@
 
 mod common;
 
-use il_core::{RegimentId, SoldierId, Tick};
+use il_core::{RegimentId, S, Scalar, SoldierId, Tick};
 use il_sim_battle::{BattleWorld, RestoreError, SNAPSHOT_VERSION, Snapshot};
 
 #[test]
@@ -42,6 +42,47 @@ fn round_trip_preserves_hash_and_continues_identically() {
     let ids: Vec<SoldierId> = restored.soldier_ids().collect();
     assert_eq!(ids.last(), Some(&SoldierId(399)));
     assert_eq!(restored.regiment_ids().last(), Some(RegimentId(1)));
+}
+
+/// T1-048: a regiment restored mid-path keeps following the stored path
+/// and every derived structure is rebuilt, so the runs stay identical.
+#[test]
+fn restore_mid_march_continues_identically() {
+    use il_core::{Angle, PlayerId, V2};
+    use il_sim_battle::{Command, CommandKind, SpeedMode};
+    let mut original = common::world(120);
+    let order = Command {
+        tick: Tick(1),
+        player: PlayerId(0),
+        seq: 0,
+        kind: CommandKind::Move {
+            regiments: vec![RegimentId(0)],
+            target: V2::from_f32_data(300.0, 450.0),
+            facing: Some(Angle::from_degrees_data(90.0)),
+            speed: SpeedMode::Run,
+        },
+    };
+    assert!(original.step(&[order]).rejected.is_empty());
+    for _ in 0..600 {
+        original.step(&[]);
+    }
+    let snap = original.snapshot();
+    let mid = &snap.regiments[0];
+    assert!(mid.path.len() > 1 && mid.path_next > 0, "{mid:?}");
+    let mut restored = BattleWorld::restore(&snap, common::regs()).unwrap();
+    assert_eq!(restored.hash(), original.hash());
+    restored.set_threads(8);
+    for tick in 0..400 {
+        assert_eq!(
+            original.step(&[]).hash,
+            restored.step(&[]).hash,
+            "diverged {tick} ticks after the restore"
+        );
+    }
+    assert!(
+        original.view().regiments().next().unwrap().anchor_pos.y > S::from_i32(300),
+        "crossed the river"
+    );
 }
 
 #[test]
