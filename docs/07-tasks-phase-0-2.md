@@ -322,7 +322,7 @@ flowchart LR
 
 ### APP — application shell
 
-- [ ] **T1-070 App state machine and fixed-step accumulator** · M · Refs SAD §6.1, TDD §15, REQ-SIM-031
+- [x] **T1-070 App state machine and fixed-step accumulator** · M · Refs SAD §6.1, TDD §15, REQ-SIM-031
   `AppState::{MainMenu, Battle}` (menu is a single "custom battle from scenario file" button in Phase 1); accumulator with `max_catchup_ticks`; pause and speed as Commands and as accumulator multipliers; event routing stub; `RenderSnapshot` built after stepping with `alpha`.
   **Done when** pausing records a `Pause` command in the replay-to-be command log and the sim never runs more than 4 ticks in one frame.
 

@@ -2,7 +2,8 @@
 //!
 //! egui context and event plumbing plus the profiler overlay (T1-060);
 //! bindings, input state, selection and hit testing (T1-061); orders and
-//! the drag-formation gesture (T1-062). The UI only ever reads the
+//! the drag-formation gesture (T1-062); the main menu, battle HUD and event
+//! panel (T1-070). The UI only ever reads the
 //! sim through `BattleView` and emits Commands (SAD §5.2); it never sees the
 //! renderer, so hit testing takes a projection closure from the app.
 
@@ -11,6 +12,7 @@ pub mod context;
 pub mod input;
 pub mod orders;
 pub mod overlay;
+pub mod panels;
 pub mod pick;
 pub mod profiler;
 pub mod selection;
@@ -24,6 +26,10 @@ pub use orders::{
     selection_centroid,
 };
 pub use overlay::{drag_formation_preview, selection_box};
+pub use panels::{
+    EventLine, HudAction, HudModel, MenuChoice, MenuModel, SelectedRegiment, battle_hud, clock,
+    event_panel, main_menu,
+};
 pub use pick::{
     Project, own_regiments, owned, pick_regiment, regiments_in_box, regiments_of_type_on_screen,
 };

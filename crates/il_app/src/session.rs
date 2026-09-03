@@ -3,12 +3,17 @@
 //!
 //! Speed multipliers scale the accumulator, never the tick length. Pause sets
 //! the multiplier to zero and is also recorded as a `Pause` command so replays
-//! and peers see it (SIM-DET-008).
+//! and peers see it (SIM-DET-008). Events and rejected commands are routed
+//! to a ring the developer panel shows (T1-070 routing stub; audio and the
+//! HUD subscribe in their phases).
+
+use std::collections::VecDeque;
 
 use il_core::{PlayerId, TICK_SECONDS, Tick};
 use il_sim_battle::{
     BattleWorld, Command, CommandKind, NoopObserver, ScriptedCommands, StageObserver, StepOutput,
 };
+use il_ui::EventLine;
 
 /// Wall seconds per simulation tick, as the accumulator's type.
 pub const TICK: f64 = TICK_SECONDS as f64;
@@ -16,6 +21,9 @@ pub const TICK: f64 = TICK_SECONDS as f64;
 /// The sim never runs more than this many ticks in one frame; beyond it the
 /// sim visibly slows instead of spiralling (`app.max_catchup_ticks`).
 pub const MAX_CATCHUP_TICKS: u32 = 4;
+
+/// Events kept for the developer panel.
+pub const EVENT_RING: usize = 256;
 
 pub struct BattleSession {
     pub world: BattleWorld,
@@ -31,6 +39,8 @@ pub struct BattleSession {
     script: ScriptedCommands,
     /// Every command handed to the sim, in order: the replay-to-be (T2-101).
     command_log: Vec<Command>,
+    /// The last `EVENT_RING` events and rejections, oldest first.
+    events: VecDeque<EventLine>,
 }
 
 impl BattleSession {
@@ -46,6 +56,7 @@ impl BattleSession {
             pending: Vec::new(),
             script,
             command_log: Vec::new(),
+            events: VecDeque::with_capacity(EVENT_RING),
         }
     }
 
@@ -125,7 +136,34 @@ impl BattleSession {
         self.pending = later;
         now.extend(self.script.take_for(next));
         self.command_log.extend(now.iter().cloned());
-        self.world.step_observed(&now, observer)
+        let out = self.world.step_observed(&now, observer);
+        self.route_events(next, &out);
+        out
+    }
+
+    /// Event routing stub (SAD §6.1): everything goes to the ring for now.
+    fn route_events(&mut self, tick: Tick, out: &StepOutput) {
+        for e in &out.events {
+            self.push_event(tick, format!("{e:?}"));
+        }
+        for (c, reason) in &out.rejected {
+            self.push_event(
+                tick,
+                format!("rejected seq {} {:?}: {reason:?}", c.seq, c.kind),
+            );
+        }
+    }
+
+    fn push_event(&mut self, tick: Tick, text: String) {
+        if self.events.len() == EVENT_RING {
+            self.events.pop_front();
+        }
+        self.events.push_back(EventLine { tick, text });
+    }
+
+    /// Routed events, oldest first.
+    pub fn events(&self) -> &VecDeque<EventLine> {
+        &self.events
     }
 
     /// Interpolation factor for rendering: how far into the next tick wall
@@ -199,6 +237,27 @@ mod tests {
             .collect();
         assert_eq!(kinds, vec![true, true]);
         assert!(s.command_log().windows(2).all(|w| w[0].seq < w[1].seq));
+    }
+
+    #[test]
+    fn rejected_commands_and_events_land_in_the_ring() {
+        let mut s = session();
+        s.queue(CommandKind::Halt {
+            regiments: vec![il_core::RegimentId(7)],
+        });
+        s.advance(TICK);
+        let lines: Vec<_> = s.events().iter().map(|l| l.text.clone()).collect();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].contains("CommandRejected"), "{}", lines[0]);
+        assert!(lines[1].starts_with("rejected seq 0"), "{}", lines[1]);
+        assert_eq!(s.events()[0].tick, Tick(1));
+        for _ in 0..EVENT_RING {
+            s.queue(CommandKind::Halt {
+                regiments: vec![il_core::RegimentId(7)],
+            });
+            s.advance(TICK);
+        }
+        assert_eq!(s.events().len(), EVENT_RING);
     }
 
     #[test]
