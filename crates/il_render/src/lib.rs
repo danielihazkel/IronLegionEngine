@@ -7,6 +7,7 @@
 
 pub mod atlas;
 pub mod camera;
+pub mod debug;
 mod egui_pass;
 pub mod lines;
 mod renderer;
@@ -17,6 +18,7 @@ pub mod terrain;
 
 pub use atlas::{Atlas, AtlasError, AtlasId, anim_column, atlas_path};
 pub use camera::Camera;
+pub use debug::{DebugFlags, build_debug_lines};
 pub use egui_pass::EguiPaint;
 pub use lines::{LineScene, LineVertex};
 pub use renderer::{ClearColour, FrameScene, RenderError, Renderer};

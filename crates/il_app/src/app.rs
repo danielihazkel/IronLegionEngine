@@ -10,9 +10,9 @@ use glam::Vec2;
 use il_core::{RegimentId, Scalar};
 use il_data::Registries;
 use il_render::{
-    AtlasId, Camera, ClearColour, EguiPaint, FrameScene, LineScene, RenderSnapshot, Renderer,
-    SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_snapshot, deployment_outlines,
-    scene_from_snapshot,
+    AtlasId, Camera, ClearColour, DebugFlags, EguiPaint, FrameScene, LineScene, RenderSnapshot,
+    Renderer, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_debug_lines, build_snapshot,
+    deployment_outlines, scene_from_snapshot,
 };
 use il_ui::{UiContext, profiler_overlay};
 use winit::application::ApplicationHandler;
@@ -64,6 +64,8 @@ pub struct App {
     ui: Option<UiContext>,
     profiler: Profiler,
     show_profiler: bool,
+    /// F2..F6 overlays (T1-054), `dev` builds only.
+    debug: DebugFlags,
     /// One atlas per sprite set, in registry order.
     atlases: Vec<AtlasId>,
     camera: Option<Camera>,
@@ -100,6 +102,7 @@ impl App {
             ui: None,
             profiler: Profiler::default(),
             show_profiler: DEV,
+            debug: DebugFlags::default(),
             atlases: Vec::new(),
             camera: None,
             snapshot: RenderSnapshot::default(),
@@ -285,6 +288,15 @@ impl App {
             build_snapshot(&session.world.view(), &input, &mut self.snapshot);
             self.lines.clear();
             deployment_outlines(session.world.map(), &camera, screen, &mut self.lines);
+            if DEV {
+                build_debug_lines(
+                    &session.world.view(),
+                    self.debug,
+                    &camera,
+                    screen,
+                    &mut self.lines,
+                );
+            }
             if let Some(renderer) = self.renderer.as_ref() {
                 let sets: Vec<SetAtlas<'_>> = self
                     .atlases
@@ -343,7 +355,9 @@ impl App {
     }
 
     /// Temporary keyboard handling until bindings arrive (T1-061): WASD and
-    /// arrows pan, Q/E snap-rotate, Space pauses, `+`/`-` change speed.
+    /// arrows pan, Q/E snap-rotate, Space pauses, `+`/`-` change speed, F1
+    /// the profiler, F2..F6 the debug overlays (nav grid, slots, paths,
+    /// anchors, spatial cells).
     fn key(&mut self, event: &KeyEvent) {
         let pressed = event.state == ElementState::Pressed;
         if let PhysicalKey::Code(code) = event.physical_key {
@@ -356,6 +370,21 @@ impl App {
                 KeyCode::KeyE if pressed && !event.repeat => self.camera_mut().rotate(1),
                 KeyCode::F1 if pressed && !event.repeat && DEV => {
                     self.show_profiler = !self.show_profiler;
+                }
+                KeyCode::F2 if pressed && !event.repeat && DEV => {
+                    self.debug.nav_grid = !self.debug.nav_grid;
+                }
+                KeyCode::F3 if pressed && !event.repeat && DEV => {
+                    self.debug.slots = !self.debug.slots;
+                }
+                KeyCode::F4 if pressed && !event.repeat && DEV => {
+                    self.debug.paths = !self.debug.paths;
+                }
+                KeyCode::F5 if pressed && !event.repeat && DEV => {
+                    self.debug.anchors = !self.debug.anchors;
+                }
+                KeyCode::F6 if pressed && !event.repeat && DEV => {
+                    self.debug.spatial_cells = !self.debug.spatial_cells;
                 }
                 _ => {}
             }
@@ -407,7 +436,7 @@ impl App {
                     cam.zoom,
                     cam.rotation,
                     if session.paused() { " — paused" } else { "" }
-                )
+                ) + &debug_suffix(self.debug)
             }
             Mode::BenchSprites => format!(
                 "Iron Legion — sprite bench — frame {}",
@@ -417,6 +446,23 @@ impl App {
         window.set_title(&title);
         self.step_seconds = 0.0;
         self.ticks_since_title = 0;
+    }
+}
+
+/// ` — dbg: nav slots` for the enabled overlays, empty when none.
+fn debug_suffix(flags: DebugFlags) -> String {
+    let names = [
+        (flags.nav_grid, "nav"),
+        (flags.slots, "slots"),
+        (flags.paths, "paths"),
+        (flags.anchors, "anchors"),
+        (flags.spatial_cells, "cells"),
+    ];
+    let on: Vec<&str> = names.iter().filter(|(f, _)| *f).map(|(_, n)| *n).collect();
+    if on.is_empty() {
+        String::new()
+    } else {
+        format!(" — dbg: {}", on.join(" "))
     }
 }
 

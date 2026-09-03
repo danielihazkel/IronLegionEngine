@@ -302,8 +302,8 @@ flowchart LR
   Heightmap mesh, zone-index raster with a palette from the zone colours (rivers and roads come from the raster; open water where no crossing covers a river cell), slope shading and 2 m contour lines, deployment zone outlines through a new line pipeline; sprites sit on the terrain height; the starting camera frames the regiments.
   **Done when** the test map is recognisable and elevation reads correctly under the isometric projection.
 
-- [ ] **T1-054 Debug overlays** · S · Refs REQ-RNDR-008, TDD §10.1 debug
-  Line pipeline; toggles for nav grid, slots, paths, anchors and facings, spatial grid cells.
+- [x] **T1-054 Debug overlays** · S · Refs REQ-RNDR-008, TDD §10.1 debug
+  Line pipeline (shared with the deployment outlines of T1-053); F2..F6 toggle nav grid (impassable and costly cells), slots, paths (with the waypoints whose corridor is narrower than the formation marked), anchors and facings, spatial grid cells; all built from `BattleView` by `il_render::build_debug_lines`.
   **Done when** each toggle draws from `BattleView` without touching the ECS mutably.
 
 ### UI — egui, input, gestures

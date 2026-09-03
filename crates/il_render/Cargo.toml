@@ -21,6 +21,7 @@ egui-wgpu.workspace = true
 
 [dev-dependencies]
 json5.workspace = true   # scenario files in tests
+il_cli.workspace = true  # scenario parsing in tests
 
 # Not `workspace = true`: the renderer is float-heavy render-side math, and it
 # is the one crate allowed to opt out of `unsafe_code = "forbid"` if a GPU API
