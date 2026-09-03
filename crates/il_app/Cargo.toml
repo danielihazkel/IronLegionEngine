@@ -23,7 +23,7 @@ json5.workspace = true
 default = ["dev"]
 # Developer tooling: profiler overlay (T1-060); debug overlays and hot reload
 # join it in T1-054 and T1-025. Release packaging builds --no-default-features.
-dev = []
+dev = ["il_data/hot-reload"]
 
 # Not `workspace = true`: the frame accumulator is wall-clock float math on the
 # app side of the sim boundary (SAD §6.1, TDD §15). Unsafe stays forbidden.

@@ -202,6 +202,30 @@ impl BattleWorld {
         BattleView::new(&self.world, &self.view_queries, self.tick, self.phase)
     }
 
+    /// Swaps in hot-reloaded registries between ticks (T1-025). The new
+    /// layout must extend the old one (every old id at its old index), which
+    /// `il_data::hot_reload` guarantees, so handles held by entities stay
+    /// valid; values copied at spawn (`Body`) are not refreshed.
+    pub fn replace_registries(&mut self, regs: Arc<Registries>) {
+        debug_assert!(
+            {
+                let old = &self.world.resource::<Regs>().0;
+                old.units
+                    .all_ids()
+                    .zip(regs.units.all_ids())
+                    .all(|(a, b)| a == b)
+                    && old.units.slots() <= regs.units.slots()
+            },
+            "hot-reloaded registries must keep the old layout"
+        );
+        self.world.resource_mut::<Regs>().0 = regs;
+    }
+
+    /// The registries the world reads.
+    pub fn registries(&self) -> &Arc<Registries> {
+        &self.world.resource::<Regs>().0
+    }
+
     /// Read-only ECS access for tests and tools; presentation code uses
     /// [`view`](Self::view).
     pub fn ecs(&self) -> &World {

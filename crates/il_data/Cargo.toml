@@ -14,6 +14,11 @@ semver.workspace = true
 jsonschema.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
+notify = { workspace = true, optional = true }
+
+[features]
+# File watcher for hot reload (T1-025); il_app enables it through its `dev` feature.
+hot-reload = ["dep:notify"]
 
 [lints]
 workspace = true

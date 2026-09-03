@@ -13,6 +13,8 @@ pub mod discover;
 pub mod faction;
 pub mod formation;
 pub mod handle;
+#[cfg(feature = "hot-reload")]
+pub mod hot_reload;
 pub mod json5;
 pub mod load_order;
 pub mod loader;
@@ -46,7 +48,7 @@ pub use map_def::{
     DeploymentZone, HeightmapRef, MapDef, MapEdge, MapSize, ReinforcementEdge, River, ZonePolygon,
 };
 pub use merge::{KindAccumulator, MergedItem, Tombstone};
-pub use pipeline::{load, load_roots};
+pub use pipeline::{discover_set, load, load_report, load_roots};
 pub use registries::{ModInfo, Registries};
 pub use registry::{ContentKind, DuplicateId, Lookup, Registry, ResolveError};
 pub use rules::{Binding, FormationRules, InputBindings, MovementRules, Rules};

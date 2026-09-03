@@ -20,6 +20,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
+use crate::HotReloadHandle;
 use crate::bench::SpriteBench;
 use crate::profiler::Profiler;
 use crate::session::BattleSession;
@@ -52,6 +53,8 @@ struct PanKeys {
 pub struct App {
     mode: Mode,
     regs: Arc<Registries>,
+    #[allow(dead_code, reason = "unused without the dev feature")]
+    hot_reload: HotReloadHandle,
     content_root: PathBuf,
     /// `--demo-circle`: walk every regiment around a circle (T1-052 check).
     demo_circle: bool,
@@ -82,12 +85,14 @@ impl App {
     pub fn new(
         mode: Mode,
         regs: Arc<Registries>,
+        hot_reload: HotReloadHandle,
         content_root: PathBuf,
         demo_circle: bool,
     ) -> Self {
         Self {
             mode,
             regs,
+            hot_reload,
             content_root,
             demo_circle,
             window: None,
@@ -216,6 +221,21 @@ impl App {
 
         match &mut self.mode {
             Mode::Battle(session) => {
+                #[cfg(feature = "dev")]
+                if let Some(hr) = self.hot_reload.as_mut() {
+                    if let Some(regs) = hr.poll() {
+                        session.world.replace_registries(regs.clone());
+                        self.regs = regs;
+                    }
+                    for event in hr.take_events() {
+                        match event {
+                            il_data::hot_reload::ReloadEvent::Failed(diags) => {
+                                eprintln!("hot reload rejected (previous content kept):\n{diags}");
+                            }
+                            other => eprintln!("hot reload: {other:?}"),
+                        }
+                    }
+                }
                 let before = Instant::now();
                 let stepped = session.advance_with(dt, &mut self.profiler).len() as u32;
                 self.step_seconds += before.elapsed().as_secs_f64();

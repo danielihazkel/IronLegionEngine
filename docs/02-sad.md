@@ -323,7 +323,7 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 
 ### 9.4 Hot reload (dev only)
 
-- `il_data` watches mod folders; on change it re-parses the file, re-validates, and swaps the registry entry. Sim reads registries by handle each tick, so new numbers apply next tick. Structural changes (new unit types) take effect at next battle load.
+- `il_data` watches mod folders; on change it re-runs the whole load pipeline (under one second for the flagship) laid out like the running registries, so every old id keeps its index, deleted ids stay as removed slots and new ids append; the app swaps the new `Arc<Registries>` into the sim between ticks (T1-025). Registries themselves stay immutable. Sim reads registries by handle each tick, so new numbers apply next tick. Structural changes (new unit types) take effect at next battle load; a failing edit keeps the previous registries and reports the diagnostics.
 
 ### 9.5 Localisation and assets
 

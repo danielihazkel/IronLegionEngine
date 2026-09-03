@@ -257,9 +257,14 @@ pub struct Diagnostics(pub Vec<Diagnostic>);
 pub struct Locale { tables: BTreeMap<String /*lang*/, BTreeMap<String, String>>, current: String, show_keys: AtomicBool, missing: Mutex<BTreeSet<String>> }   // as built (T1-024): fallback is always "en"; misses are recorded once and logged with tracing::warn
 impl Locale { pub fn get<'a>(&'a self, key: &'a str) -> &'a str;  /* current → en → the key itself */ pub fn fmt(&self, key: &str, args: &[(&str, &dyn Display)]) -> String; pub fn set_language(&mut self, lang: &str) -> bool; pub fn set_show_keys(&self, on: bool); pub fn missing_keys(&self) -> Vec<String>; }
 
-#[cfg(feature="dev")]
-pub struct HotReload { watcher: notify::RecommendedWatcher, rx: Receiver<PathBuf> }
-impl HotReload { pub fn poll(&mut self, regs: &mut Registries) -> Vec<ReloadEvent>; }  // replaces item in place by ContentId; index stable
+#[cfg(feature = "hot-reload")]   // il_app enables it through its `dev` feature
+pub struct HotReload { watcher: notify::RecommendedWatcher, rx: Receiver<notify::Result<notify::Event>>, set: ModSet, current: Arc<Registries>, dirty: Vec<PathBuf>, quiet_polls: u32, events: Vec<ReloadEvent> }
+impl HotReload {
+    pub fn new(set: ModSet, current: Arc<Registries>) -> notify::Result<Self>;   // watches every mod's content and locale folders
+    pub fn poll(&mut self) -> Option<Arc<Registries>>;   // per frame; after ~100 ms of quiet re-runs the whole pipeline laid out like `current` (old ids keep their index, deleted ids stay as removed slots, new ids append); the app calls BattleWorld::replace_registries between ticks
+    pub fn rebuild_now(&mut self) -> Option<Arc<Registries>>;
+    pub fn take_events(&mut self) -> Vec<ReloadEvent>;   // Swapped { files } | Structural { added, removed } | Failed(Diagnostics) (old registries kept) | ManifestIgnored(path)
+}  // replaces item in place by ContentId; index stable
 ```
 
 ### 3.3 Load pipeline

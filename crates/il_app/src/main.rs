@@ -54,17 +54,39 @@ fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
     json5::from_str(&text).with_context(|| format!("parsing scenario {}", path.display()))
 }
 
-fn load_registries(root: &Path, mods: &[PathBuf]) -> anyhow::Result<Arc<Registries>> {
+/// With the `dev` feature the app watches the mod folders and swaps
+/// reloaded registries into the sim between ticks (T1-025).
+#[cfg(feature = "dev")]
+pub type HotReloadHandle = Option<il_data::hot_reload::HotReload>;
+#[cfg(not(feature = "dev"))]
+pub type HotReloadHandle = ();
+
+fn load_registries(
+    root: &Path,
+    mods: &[PathBuf],
+) -> anyhow::Result<(Arc<Registries>, HotReloadHandle)> {
     let mut roots = vec![root.to_path_buf()];
     roots.extend(mods.iter().cloned());
-    Registries::load_roots(&roots)
-        .map(Arc::new)
-        .map_err(|d| anyhow!("content errors:\n{d}"))
+    let set = il_data::discover_set(&roots).map_err(|d| anyhow!("content errors:\n{d}"))?;
+    let regs = Arc::new(il_data::load(&set).map_err(|d| anyhow!("content errors:\n{d}"))?);
+    #[cfg(feature = "dev")]
+    let hot_reload = match il_data::hot_reload::HotReload::new(set, regs.clone()) {
+        Ok(h) => Some(h),
+        Err(e) => {
+            eprintln!("hot reload disabled: {e}");
+            None
+        }
+    };
+    #[cfg(not(feature = "dev"))]
+    let hot_reload = {
+        let _ = set;
+    };
+    Ok((regs, hot_reload))
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let regs = load_registries(&args.content_root, &args.mods)?;
+    let (regs, hot_reload) = load_registries(&args.content_root, &args.mods)?;
     regs.locale.set_show_keys(args.show_keys);
     let mode = if args.bench_sprites {
         Mode::BenchSprites
@@ -80,7 +102,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let event_loop = EventLoop::new().context("creating the event loop")?;
-    let mut app = App::new(mode, regs, args.content_root, args.demo_circle);
+    let mut app = App::new(mode, regs, hot_reload, args.content_root, args.demo_circle);
     event_loop
         .run_app(&mut app)
         .context("running the event loop")?;

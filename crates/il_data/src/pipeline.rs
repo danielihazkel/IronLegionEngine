@@ -190,21 +190,49 @@ fn resolve_diagnostic(
         .expected(expected)
 }
 
-/// Deserialises and resolves the valid items of `acc`, in ascending
-/// `ContentId` order so handles never depend on file order (pass 2).
+/// The insertion order of a kind: every slot of the previous registry first
+/// (hot reload keeps indices), then the new valid ids in ContentId order.
+fn layout<T: ContentKind>(
+    prev: Option<&Registry<T>>,
+    valid: &BTreeSet<ContentId>,
+) -> Vec<ContentId> {
+    let mut order: Vec<ContentId> = Vec::new();
+    if let Some(prev) = prev {
+        order.extend(prev.all_ids().cloned());
+    }
+    for id in valid {
+        if !order.contains(id) {
+            order.push(id.clone());
+        }
+    }
+    order
+}
+
+/// Deserialises and resolves the valid items of `acc` in `order` (pass 2):
+/// ContentId order on a cold load, the previous layout on a hot reload.
+/// Ids of `order` that no longer exist keep the previous item in a slot
+/// marked removed.
+#[allow(clippy::too_many_arguments)]
 fn build_registry<T: ContentKind>(
     acc: &KindAccumulator,
     valid: &BTreeSet<ContentId>,
+    order: &[ContentId],
+    prev: Option<&Registry<T>>,
     lookup: &Lookup,
     tombstones: &Tombstones,
     sources: &Sources,
     diags: &mut Diagnostics,
 ) -> Registry<T> {
     let mut registry = Registry::new();
-    for (id, item) in &acc.items {
-        if !valid.contains(id) {
+    for id in order {
+        let Some(item) = acc.items.get(id).filter(|_| valid.contains(id)) else {
+            if let Some(prev) = prev
+                && let Some(h) = prev.lookup_any(id)
+            {
+                registry.insert_removed(prev.get(h).clone());
+            }
             continue;
-        }
+        };
         let mut typed: T = match serde_json::from_value(item.value.to_json()) {
             Ok(t) => t,
             Err(e) => {
@@ -309,6 +337,34 @@ pub fn load(set: &ModSet) -> Result<Registries, Diagnostics> {
 
 /// [`load`] keeping the warnings of a successful load (for `il_cli validate`).
 pub fn load_report(set: &ModSet) -> LoadReport {
+    load_report_with_prev(set, None)
+}
+
+/// Resolves the load order of the mods under `roots` (first root = game).
+pub fn discover_set(roots: &[PathBuf]) -> Result<ModSet, Diagnostics> {
+    let found = crate::discover::discover(roots)?;
+    ModSet::all(&found).map_err(|errors| {
+        Diagnostics(
+            errors
+                .iter()
+                .map(|e| {
+                    Diagnostic::file_level(
+                        roots
+                            .first()
+                            .map_or(Path::new("."), |p| p.as_path())
+                            .join("mod.json5"),
+                        e.to_string(),
+                    )
+                })
+                .collect(),
+        )
+    })
+}
+
+/// [`load_report`] laying the registries out like `prev` (hot reload):
+/// every previous slot keeps its index, deleted ids stay as removed slots,
+/// new ids are appended.
+pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadReport {
     let mut sources = Sources::new();
     let mut diags = Diagnostics::new();
 
@@ -325,29 +381,42 @@ pub fn load_report(set: &ModSet) -> LoadReport {
     let input = merge_singleton_file(set, "input", "bindings", &mut sources, &mut diags);
     let locale = load_locales(set, &mut sources, &mut diags);
 
-    // Pass 1: validate, register every valid id.
+    // Pass 1: validate, fix the layout, register every valid id.
     let mut lookup = Lookup::new();
     let mut tombstones: Tombstones = BTreeMap::new();
-    let mut pass1 = |acc: &KindAccumulator, diags: &mut Diagnostics| -> BTreeSet<ContentId> {
-        let valid = valid_ids(acc, &sources, diags);
-        lookup.register(acc.kind, valid.iter());
-        lookup.register_invalid(acc.kind, acc.items.keys().filter(|id| !valid.contains(*id)));
-        tombstones.insert(
-            acc.kind,
-            acc.tombstones
-                .iter()
-                .map(|(id, t)| (id.clone(), t.span))
-                .collect(),
-        );
-        valid
-    };
-    let units_ok = pass1(&units, &mut diags);
-    let formations_ok = pass1(&formations, &mut diags);
-    let group_ok = pass1(&group_formations, &mut diags);
-    let factions_ok = pass1(&factions, &mut diags);
-    let zones_ok = pass1(&zones, &mut diags);
-    let maps_ok = pass1(&maps, &mut diags);
-    let sprites_ok = pass1(&sprite_sets, &mut diags);
+    macro_rules! pass1 {
+        ($acc:expr, $field:ident) => {{
+            let valid = valid_ids(&$acc, &sources, &mut diags);
+            let order = layout(prev.map(|p| &p.$field), &valid);
+            lookup.register(
+                $acc.kind,
+                order
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, id)| valid.contains(*id))
+                    .map(|(i, id)| (id, i as u32)),
+            );
+            lookup.register_invalid(
+                $acc.kind,
+                $acc.items.keys().filter(|id| !valid.contains(*id)),
+            );
+            tombstones.insert(
+                $acc.kind,
+                $acc.tombstones
+                    .iter()
+                    .map(|(id, t)| (id.clone(), t.span))
+                    .collect(),
+            );
+            (valid, order)
+        }};
+    }
+    let (units_ok, units_order) = pass1!(units, units);
+    let (formations_ok, formations_order) = pass1!(formations, formations);
+    let (group_ok, group_order) = pass1!(group_formations, group_formations);
+    let (factions_ok, factions_order) = pass1!(factions, factions);
+    let (zones_ok, zones_order) = pass1!(zones, zones);
+    let (maps_ok, maps_order) = pass1!(maps, maps);
+    let (sprites_ok, sprites_order) = pass1!(sprite_sets, sprite_sets);
 
     // Pass 2: deserialise and resolve.
     let movement: Option<MovementRules> = build_singleton(
@@ -383,56 +452,28 @@ pub fn load_report(set: &ModSet) -> LoadReport {
     )
     .unwrap_or_default();
 
+    macro_rules! pass2 {
+        ($acc:expr, $ok:expr, $order:expr, $field:ident) => {
+            build_registry(
+                &$acc,
+                &$ok,
+                &$order,
+                prev.map(|p| &p.$field),
+                &lookup,
+                &tombstones,
+                &sources,
+                &mut diags,
+            )
+        };
+    }
     let mut regs = Registries {
-        units: build_registry(
-            &units,
-            &units_ok,
-            &lookup,
-            &tombstones,
-            &sources,
-            &mut diags,
-        ),
-        formations: build_registry(
-            &formations,
-            &formations_ok,
-            &lookup,
-            &tombstones,
-            &sources,
-            &mut diags,
-        ),
-        group_formations: build_registry(
-            &group_formations,
-            &group_ok,
-            &lookup,
-            &tombstones,
-            &sources,
-            &mut diags,
-        ),
-        factions: build_registry(
-            &factions,
-            &factions_ok,
-            &lookup,
-            &tombstones,
-            &sources,
-            &mut diags,
-        ),
-        zones: build_registry(
-            &zones,
-            &zones_ok,
-            &lookup,
-            &tombstones,
-            &sources,
-            &mut diags,
-        ),
-        maps: build_registry(&maps, &maps_ok, &lookup, &tombstones, &sources, &mut diags),
-        sprite_sets: build_registry(
-            &sprite_sets,
-            &sprites_ok,
-            &lookup,
-            &tombstones,
-            &sources,
-            &mut diags,
-        ),
+        units: pass2!(units, units_ok, units_order, units),
+        formations: pass2!(formations, formations_ok, formations_order, formations),
+        group_formations: pass2!(group_formations, group_ok, group_order, group_formations),
+        factions: pass2!(factions, factions_ok, factions_order, factions),
+        zones: pass2!(zones, zones_ok, zones_order, zones),
+        maps: pass2!(maps, maps_ok, maps_order, maps),
+        sprite_sets: pass2!(sprite_sets, sprites_ok, sprites_order, sprite_sets),
         rules,
         input,
         locale,
@@ -456,24 +497,7 @@ pub fn load_report(set: &ModSet) -> LoadReport {
 
 /// Discovers, orders and loads the mods under `roots` (first root = game).
 pub fn load_roots(roots: &[PathBuf]) -> Result<Registries, Diagnostics> {
-    let found = crate::discover::discover(roots)?;
-    let set = ModSet::all(&found).map_err(|errors| {
-        Diagnostics(
-            errors
-                .iter()
-                .map(|e| {
-                    Diagnostic::file_level(
-                        roots
-                            .first()
-                            .map_or(Path::new("."), |p| p.as_path())
-                            .join("mod.json5"),
-                        e.to_string(),
-                    )
-                })
-                .collect(),
-        )
-    })?;
-    load(&set)
+    load(&discover_set(roots)?)
 }
 
 #[cfg(test)]

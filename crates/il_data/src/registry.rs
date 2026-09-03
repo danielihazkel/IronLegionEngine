@@ -1,6 +1,6 @@
 //! `Registry<T>`, `ContentKind`, the two-pass `Lookup` (TDD §3.2, §3.3 step 4).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use il_core::StateHasher;
 use serde::de::DeserializeOwned;
@@ -41,7 +41,7 @@ impl ResolveError {
 /// A kind of content file: which folder it lives in, which schema validates
 /// it, how to find its id, how to turn its references into handles and which
 /// fields the content hash covers.
-pub trait ContentKind: DeserializeOwned + Send + Sync + 'static {
+pub trait ContentKind: DeserializeOwned + Clone + Send + Sync + 'static {
     /// Folder under the mod's `content_root`, e.g. `"units"`.
     const DIR: &'static str;
     /// The embedded schema every merged object of this kind must satisfy.
@@ -74,11 +74,15 @@ impl Lookup {
         Self::default()
     }
 
-    /// Registers the ids of one kind in the order they will be inserted.
-    pub fn register<'a>(&mut self, kind: KindTag, ids: impl IntoIterator<Item = &'a ContentId>) {
+    /// Registers the ids of one kind with the indices they will occupy.
+    pub fn register<'a>(
+        &mut self,
+        kind: KindTag,
+        ids: impl IntoIterator<Item = (&'a ContentId, u32)>,
+    ) {
         let table = self.tables.entry(kind).or_default();
-        for (i, id) in ids.into_iter().enumerate() {
-            table.insert(id.clone(), i as u32);
+        for (id, i) in ids {
+            table.insert(id.clone(), i);
         }
     }
 
@@ -125,6 +129,9 @@ pub struct Registry<T> {
     // Lookup only, never iterated (SIM-DET-003 allows this use).
     #[allow(clippy::disallowed_types)]
     by_id: std::collections::HashMap<ContentId, u32>,
+    /// Slots whose id was deleted by a hot reload: the old item stays so held
+    /// handles keep reading, but `lookup` and `iter` skip them.
+    removed: BTreeSet<u32>,
 }
 
 impl<T> core::fmt::Debug for Registry<T> {
@@ -146,6 +153,7 @@ impl<T> Registry<T> {
             ids: Vec::new(),
             #[allow(clippy::disallowed_types)]
             by_id: std::collections::HashMap::new(),
+            removed: BTreeSet::new(),
         }
     }
 
@@ -156,35 +164,81 @@ impl<T> Registry<T> {
     }
 
     pub fn lookup(&self, id: &ContentId) -> Option<Handle<T>> {
+        self.by_id
+            .get(id)
+            .filter(|&&i| !self.removed.contains(&i))
+            .map(|&i| Handle::from_index(i))
+    }
+
+    /// Every slot's id in index order, removed slots included (hot reload
+    /// layout).
+    pub fn all_ids(&self) -> impl Iterator<Item = &ContentId> {
+        self.ids.iter()
+    }
+
+    /// `lookup` that also finds removed slots.
+    pub fn lookup_any(&self, id: &ContentId) -> Option<Handle<T>> {
         self.by_id.get(id).map(|&i| Handle::from_index(i))
+    }
+
+    /// Whether a hot reload deleted this slot's id.
+    pub fn is_removed(&self, h: Handle<T>) -> bool {
+        self.removed.contains(&h.index())
+    }
+
+    /// Ids of removed slots.
+    pub fn removed_ids(&self) -> impl Iterator<Item = &ContentId> {
+        self.removed.iter().map(|&i| &self.ids[i as usize])
+    }
+
+    /// Every slot, live or removed (the layout length).
+    pub fn slots(&self) -> usize {
+        self.items.len()
+    }
+
+    /// Live ids at indices `>= from`, in index order.
+    pub fn ids_added_after(&self, from: usize) -> impl Iterator<Item = &ContentId> {
+        self.ids
+            .iter()
+            .enumerate()
+            .skip(from)
+            .filter(|(i, _)| !self.removed.contains(&(*i as u32)))
+            .map(|(_, id)| id)
     }
 
     pub fn id_of(&self, h: Handle<T>) -> &ContentId {
         &self.ids[h.index() as usize]
     }
 
-    /// Ascending index order.
+    /// Live items in ascending index order.
     pub fn iter(&self) -> impl Iterator<Item = (Handle<T>, &T)> {
         self.items
             .iter()
             .enumerate()
+            .filter(|(i, _)| !self.removed.contains(&(*i as u32)))
             .map(|(i, item)| (Handle::from_index(i as u32), item))
     }
 
+    /// Live ids in ascending index order.
     pub fn ids(&self) -> impl Iterator<Item = &ContentId> {
-        self.ids.iter()
+        self.ids
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| !self.removed.contains(&(*i as u32)))
+            .map(|(_, id)| id)
     }
 
+    /// Live items.
     pub fn len(&self) -> usize {
-        self.items.len()
+        self.items.len() - self.removed.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
+        self.len() == 0
     }
 
     pub fn contains(&self, id: &ContentId) -> bool {
-        self.by_id.contains_key(id)
+        self.lookup(id).is_some()
     }
 }
 
@@ -200,6 +254,17 @@ impl<T: ContentKind> Registry<T> {
         self.ids.push(id);
         self.items.push(item);
         Ok(Handle::from_index(index))
+    }
+
+    /// Appends an item into a slot that is already marked removed (hot
+    /// reload keeps deleted ids in place).
+    pub fn insert_removed(&mut self, item: T) -> Handle<T> {
+        let index = self.items.len() as u32;
+        self.by_id.insert(item.id().clone(), index);
+        self.ids.push(item.id().clone());
+        self.items.push(item);
+        self.removed.insert(index);
+        Handle::from_index(index)
     }
 }
 
@@ -255,7 +320,7 @@ mod tests {
             ContentId::new("m:b").unwrap(),
             ContentId::new("m:a").unwrap(),
         ];
-        l.register(KindTag::Unit, ids.iter());
+        l.register(KindTag::Unit, ids.iter().zip(0u32..));
         assert_eq!(l.handle::<Thing>(&ids[1]).map(|h| h.index()), Some(1));
         assert_eq!(l.handle::<Thing>(&ContentId::new("m:zz").unwrap()), None);
         assert_eq!(l.ids(KindTag::Unit).count(), 2);
