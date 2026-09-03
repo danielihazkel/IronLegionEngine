@@ -1,0 +1,11 @@
+// The Greek faction, minimal until the campaign layer (Phase 4).
+{
+  id: "greece:greece",
+  name_key: "greece.factions.greece.name",
+  culture: "hellenic",
+  colour_primary: "#3a6fb0",
+  colour_secondary: "#e8e2c8",
+  units: ["greece:hoplite"],
+  ai_profile: "rome:default_ai",
+  tech_tree: "greece:hellenic_tree",
+}

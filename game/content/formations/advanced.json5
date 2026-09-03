@@ -1,0 +1,46 @@
+// Phalanx, square and wedge (SIM-FORM-005..007). Spacing values are
+// multiples of the soldier diameter; a phalanx packs tighter and never goes
+// below four ranks.
+[
+  {
+    id: "rome:phalanx",
+    name_key: "rome.formations.phalanx.name",
+    layout: "phalanx",
+    default_ranks: 8,
+    min_ranks: 4,
+    max_ranks: 16,
+    spacing_file: 0.9,
+    spacing_rank: 1.0,
+    morph_ticks: 80,
+    integrity_bonus_attack: 0.05,
+    integrity_bonus_defence: 0.15,
+    speed_mult: 0.8,
+  },
+  {
+    id: "rome:square",
+    name_key: "rome.formations.square.name",
+    layout: "square",
+    // For a square, ranks is the depth of each side.
+    default_ranks: 2,
+    min_ranks: 1,
+    max_ranks: 4,
+    spacing_file: 1.0,
+    spacing_rank: 1.2,
+    morph_ticks: 80,
+    integrity_bonus_defence: 0.1,
+    speed_mult: 0.5,
+  },
+  {
+    id: "rome:wedge",
+    name_key: "rome.formations.wedge.name",
+    layout: "wedge",
+    default_ranks: 6,
+    min_ranks: 3,
+    max_ranks: 20,
+    spacing_file: 1.0,
+    spacing_rank: 1.2,
+    morph_ticks: 60,
+    integrity_bonus_attack: 0.1,
+    speed_mult: 1.0,
+  },
+]

@@ -1,0 +1,44 @@
+// persia:cavalry — Simulation Spec 15.2. Shock cavalry; radius and mass
+// include the horse.
+{
+  id: "persia:cavalry",
+  name_key: "persia.units.cavalry.name",
+  category: "cavalry",
+
+  soldier_radius: 0.7,
+  mass: 400,
+  hp: 160,
+
+  speed_walk: 3.0,
+  speed_run: 9.0,
+  speed_march: 3.0,
+
+  attack: 38,
+  defence: 25,
+  armour: 8,
+  damage: 35,
+  attack_interval_ticks: 30,
+  reach: 1.0,
+  charge_bonus: 0.8,
+  anti_cavalry_bonus: 0,
+  second_rank_attack: false,
+  shield: false,
+  frontal_arc_deg: 120,
+
+  morale_base: 60,
+  fatigue_rate_mult: 1.0,
+  los_radius: 300,
+
+  abilities: [],
+  formations: ["rome:wedge", "rome:line", "rome:column"],
+
+  sprite_set: "rome:sprites_cavalry",
+  sounds: {},
+
+  cost: 800,
+  upkeep: 120,
+  recruit_turns: 2,
+  regiment_size: 60,
+  tier: 2,
+  experience_tiers: [],
+}

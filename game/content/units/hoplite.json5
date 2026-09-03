@@ -1,0 +1,43 @@
+// greece:hoplite — Simulation Spec 15.2. Heavy spearmen who fight in phalanx.
+{
+  id: "greece:hoplite",
+  name_key: "greece.units.hoplite.name",
+  category: "infantry",
+
+  soldier_radius: 0.4,
+  mass: 85,
+  hp: 110,
+
+  speed_walk: 1.4,
+  speed_run: 3.6,
+  speed_march: 1.4,
+
+  attack: 32,
+  defence: 38,
+  armour: 10,
+  damage: 30,
+  attack_interval_ticks: 34,
+  reach: 1.2,
+  charge_bonus: 0.15,
+  anti_cavalry_bonus: 0.5,
+  second_rank_attack: true,
+  shield: true,
+  frontal_arc_deg: 120,
+
+  morale_base: 65,
+  fatigue_rate_mult: 1.0,
+  los_radius: 200,
+
+  abilities: [],
+  formations: ["rome:phalanx", "rome:line", "rome:column"],
+
+  sprite_set: "rome:sprites_infantry",
+  sounds: {},
+
+  cost: 450,
+  upkeep: 70,
+  recruit_turns: 1,
+  regiment_size: 160,
+  tier: 1,
+  experience_tiers: [],
+}

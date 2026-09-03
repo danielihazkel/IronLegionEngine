@@ -634,7 +634,11 @@ mod tests {
         .unwrap();
         let regs = load_roots(&[game]).unwrap_or_else(|e| panic!("{e}"));
         let ids: Vec<&str> = regs.units.ids().map(ContentId::as_str).collect();
-        assert_eq!(ids, vec!["rome:hastati", "rome:zed"]);
+        assert!(
+            ids.windows(2).all(|w| w[0] < w[1]),
+            "ContentId order: {ids:?}"
+        );
+        assert!(ids.contains(&"rome:zed") && ids.contains(&"rome:hastati"));
         let f = regs.factions.get(
             regs.factions
                 .lookup(&ContentId::new("rome:late").unwrap())

@@ -6,11 +6,15 @@
     mod: { name: "Iron Legion: Rome" },
     units: {
       hastati: { name: "Hastati" },
+      velites: { name: "Velites" },
     },
     formations: {
       line: { name: "Line" },
       column: { name: "Column" },
       loose: { name: "Loose" },
+      phalanx: { name: "Phalanx" },
+      square: { name: "Square" },
+      wedge: { name: "Wedge" },
     },
     group_formations: {
       battle_line: { name: "Battle line" },
@@ -32,6 +36,14 @@
       ford: { name: "Ford" },
       bridge: { name: "Bridge" },
     },
+  },
+  greece: {
+    units: { hoplite: { name: "Hoplite" } },
+    factions: { greece: { name: "Greek city-states" } },
+  },
+  persia: {
+    units: { cavalry: { name: "Persian cavalry" } },
+    factions: { persia: { name: "Persia" } },
   },
   il: {
     app: { title: "Iron Legion" },

@@ -1,0 +1,11 @@
+// The Persian faction, minimal until the campaign layer (Phase 4).
+{
+  id: "persia:persia",
+  name_key: "persia.factions.persia.name",
+  culture: "persian",
+  colour_primary: "#c9a227",
+  colour_secondary: "#5a2d82",
+  units: ["persia:cavalry"],
+  ai_profile: "rome:default_ai",
+  tech_tree: "persia:achaemenid_tree",
+}

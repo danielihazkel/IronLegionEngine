@@ -226,7 +226,7 @@ flowchart LR
   `notify` watcher over mod roots; on change, re-run parse, `$from`, validate, merge for that file's kind, and replace the registry item in place by ContentId keeping its index; emit `ReloadEvent`s. Structural changes (new ids) are queued for the next battle load.
   **Done when** editing `speed_walk` in `hastati.json5` while a battle runs changes regiment speed on the next tick.
 
-- [ ] **T1-026 Phase 1 content** · M · CONTENT · Refs Simulation Spec §15.2, Modding SDK §4
+- [x] **T1-026 Phase 1 content** · M · CONTENT · Refs Simulation Spec §15.2, Modding SDK §4
   `rome:hastati`, `rome:velites`, `greece:hoplite`, `persia:cavalry` unit files; formation templates `line`, `column`, `square`, `wedge`, `phalanx`, `loose`; group formations `battle_line`, `double_line`, `echelon_left`, `echelon_right`, `refused_left`, `refused_right`; zone types `open`, `road`, `forest`, `marsh`, `rock`, `ford`, `bridge`; `rules/movement.json5`, `rules/formation.json5` with the §15.1 defaults; factions `rome`, `greece`, `persia` (minimal); `locale/en.json5`.
   **Done when** `il_cli validate game/` is clean.
 
