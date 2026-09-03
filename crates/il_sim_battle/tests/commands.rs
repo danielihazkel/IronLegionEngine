@@ -153,11 +153,9 @@ fn unimplemented_variants_are_rejected_not_dropped() {
             t,
             0,
             0,
-            CommandKind::Move {
+            CommandKind::FireMode {
                 regiments: vec![RegimentId(0)],
-                target: V2::ZERO,
-                facing: None,
-                speed: SpeedMode::Walk,
+                mode: il_sim_battle::FireMode::Hold,
             },
         ),
         cmd(t, 0, 1, CommandKind::ConfirmDeployment),

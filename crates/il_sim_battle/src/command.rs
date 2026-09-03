@@ -10,9 +10,17 @@ use il_core::{Angle, PlayerId, RegimentId, S, Tick, V2, impl_hashable_fieldless_
 use il_data::ContentId;
 use serde::{Deserialize, Serialize};
 
-use crate::components::{Order, OrderKind, Regiment};
+use crate::components::{
+    Anchor, FormationState, Morale, MoraleState, Order, OrderKind, Path, Pos, Regiment, SlotRef,
+};
 use crate::events::BattleEvent;
-use crate::resources::{Clock, CommandInbox, Events, Ids, Rejected, Sides};
+use crate::formation::{
+    RegimentInfo, arrange_group, effective_ranks, set_facing, slot_world, spacing,
+};
+use crate::resources::{
+    BattlePhase, Clock, CommandInbox, Events, Ids, MapRes, PathRequests, Phase, Regs, Rejected,
+    Sides,
+};
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -315,6 +323,13 @@ pub enum RejectReason {
     Routing(RegimentId),
     /// Not allowed in the current battle phase.
     WrongPhase,
+    /// A content id the command names is not in the registries.
+    UnknownContent(ContentId),
+    /// The regiment's unit type does not list this formation template.
+    FormationNotAllowed {
+        regiment: RegimentId,
+        template: ContentId,
+    },
     /// The variant has no implementation yet; never silently dropped.
     NotImplemented,
 }
@@ -370,6 +385,13 @@ fn validate_and_apply(
         if owner != command.player {
             return Err(RejectReason::NotOwner(rid));
         }
+        // SIM-CMD-004: routing and shattered regiments take no orders.
+        let routing = world
+            .get::<Morale>(entity)
+            .is_some_and(|m| matches!(m.state, MoraleState::Routing | MoraleState::Shattered));
+        if routing && !matches!(command.kind, CommandKind::Withdraw { .. }) {
+            return Err(RejectReason::Routing(rid));
+        }
         entities.push(entity);
     }
 
@@ -378,10 +400,180 @@ fn validate_and_apply(
         CommandKind::Pause | CommandKind::SetSpeed { .. } => Ok(()),
         CommandKind::Halt { .. } => {
             for entity in entities {
-                if let Some(mut order) = world.get_mut::<Order>(entity) {
-                    order.kind = OrderKind::Idle;
+                halt(world, entity);
+            }
+            Ok(())
+        }
+        CommandKind::Move {
+            target,
+            facing,
+            speed,
+            ..
+        } => {
+            for entity in entities {
+                issue_move(
+                    world,
+                    entity,
+                    OrderKind::Move,
+                    *target,
+                    *facing,
+                    *speed,
+                    current,
+                );
+            }
+            Ok(())
+        }
+        // Until enemies engage (Phase 2) an attack-move is a move.
+        CommandKind::AttackMove { target, .. } => {
+            for entity in entities {
+                let speed = world
+                    .get::<Order>(entity)
+                    .map_or(SpeedMode::Walk, |o| o.speed);
+                issue_move(
+                    world,
+                    entity,
+                    OrderKind::AttackMove,
+                    *target,
+                    None,
+                    speed,
+                    current,
+                );
+            }
+            Ok(())
+        }
+        CommandKind::SetFormation {
+            template, ranks, ..
+        } => {
+            let handle = world
+                .resource::<Regs>()
+                .0
+                .formations
+                .lookup(template)
+                .ok_or_else(|| RejectReason::UnknownContent(template.clone()))?;
+            // Every regiment must be allowed the template before any changes.
+            for entity in &entities {
+                let regiment = world.get::<Regiment>(*entity).expect("validated");
+                let allowed = world
+                    .resource::<Regs>()
+                    .0
+                    .units
+                    .get(regiment.unit)
+                    .formations
+                    .contains(&handle);
+                if !allowed {
+                    return Err(RejectReason::FormationNotAllowed {
+                        regiment: regiment.id,
+                        template: template.clone(),
+                    });
                 }
             }
+            for entity in entities {
+                set_formation(world, entity, handle, *ranks, current);
+            }
+            Ok(())
+        }
+        CommandKind::SetFacing { facing, .. } => {
+            for entity in entities {
+                apply_facing(world, entity, *facing);
+            }
+            Ok(())
+        }
+        CommandKind::SetSpeedMode { mode, .. } => {
+            for entity in entities {
+                if let Some(mut order) = world.get_mut::<Order>(entity) {
+                    order.speed = *mode;
+                }
+            }
+            Ok(())
+        }
+        CommandKind::GroupFormation {
+            template,
+            anchor,
+            facing,
+            width,
+            ..
+        } => {
+            let regs = world.resource::<Regs>().0.clone();
+            let group = regs
+                .group_formations
+                .lookup(template)
+                .ok_or_else(|| RejectReason::UnknownContent(template.clone()))?;
+            let infos: Vec<RegimentInfo> = entities
+                .iter()
+                .map(|&e| {
+                    let r = world.get::<Regiment>(e).expect("validated");
+                    let a = world.get::<Anchor>(e).expect("anchor");
+                    let f = world.get::<FormationState>(e).expect("formation");
+                    let unit = regs.units.get(r.unit);
+                    RegimentInfo {
+                        id: r.id,
+                        pos: a.pos,
+                        category: unit.category,
+                        count: r.soldiers.len() as u16,
+                        template: f.template,
+                        radius: unit.soldier_radius,
+                    }
+                })
+                .collect();
+            let placements = arrange_group(
+                regs.group_formations.get(group),
+                &infos,
+                *anchor,
+                *facing,
+                *width,
+                &regs.rules.formation,
+                &regs,
+            );
+            for placement in placements {
+                let Some(entity) = world.resource::<Ids>().regiment_entity(placement.id) else {
+                    continue;
+                };
+                let (template, count) = {
+                    let r = world.get::<Regiment>(entity).expect("validated");
+                    let f = world.get::<FormationState>(entity).expect("formation");
+                    (f.template, r.soldiers.len() as u16)
+                };
+                let ranks =
+                    effective_ranks(regs.formations.get(template), count, Some(placement.ranks));
+                if let Some(mut state) = world.get_mut::<FormationState>(entity) {
+                    state.ranks = ranks;
+                    state.needs_reform = true;
+                }
+                let speed = world
+                    .get::<Order>(entity)
+                    .map_or(SpeedMode::Walk, |o| o.speed);
+                issue_move(
+                    world,
+                    entity,
+                    OrderKind::Move,
+                    placement.anchor,
+                    Some(placement.facing),
+                    speed,
+                    current,
+                );
+            }
+            Ok(())
+        }
+        CommandKind::Deploy {
+            position,
+            facing,
+            template,
+            ..
+        } => {
+            if world.resource::<Phase>().0 != BattlePhase::Deployment {
+                return Err(RejectReason::WrongPhase);
+            }
+            let entity = entities[0];
+            if let Some(id) = template {
+                let handle = world
+                    .resource::<Regs>()
+                    .0
+                    .formations
+                    .lookup(id)
+                    .ok_or_else(|| RejectReason::UnknownContent(id.clone()))?;
+                set_formation(world, entity, handle, None, current);
+            }
+            deploy(world, entity, *position, *facing);
             Ok(())
         }
         CommandKind::TransferControl { from, to } => {
@@ -405,5 +597,147 @@ fn validate_and_apply(
             Ok(())
         }
         _ => Err(RejectReason::NotImplemented),
+    }
+}
+
+/// `Halt`: the order ends where the regiment stands; a pending path
+/// request is dropped and no wheel target remains.
+fn halt(world: &mut World, entity: Entity) {
+    let id = world.get::<Regiment>(entity).map(|r| r.id);
+    if let Some(mut order) = world.get_mut::<Order>(entity) {
+        order.kind = OrderKind::Idle;
+        order.facing = None;
+    }
+    if let Some(mut path) = world.get_mut::<Path>(entity) {
+        *path = Path::default();
+    }
+    if let Some(id) = id {
+        world.resource_mut::<PathRequests>().0.remove(&id);
+    }
+}
+
+/// `Move` / `AttackMove` / a group placement: a fresh order and path
+/// request; the target is clamped to the map; a reform is requested
+/// (SIM-FORM-020).
+fn issue_move(
+    world: &mut World,
+    entity: Entity,
+    kind: OrderKind,
+    target: V2,
+    facing: Option<Angle<S>>,
+    speed: SpeedMode,
+    tick: Tick,
+) {
+    let target = world.resource::<MapRes>().0.clamp(target);
+    let id = world.get::<Regiment>(entity).map(|r| r.id);
+    if let Some(mut order) = world.get_mut::<Order>(entity) {
+        *order = Order {
+            kind,
+            target,
+            facing,
+            speed,
+            since: tick,
+        };
+    }
+    if let Some(mut path) = world.get_mut::<Path>(entity) {
+        *path = Path {
+            waypoints: Vec::new(),
+            next: 0,
+            requested: true,
+        };
+    }
+    if let Some(mut state) = world.get_mut::<FormationState>(entity) {
+        state.needs_reform = true;
+    }
+    if let Some(id) = id {
+        world.resource_mut::<PathRequests>().0.insert(id);
+    }
+}
+
+/// `SetFormation` (SIM-FORM-032): a morph of `morph_ticks` to the new
+/// template; an explicit order cancels any automatic corridor morph.
+fn set_formation(
+    world: &mut World,
+    entity: Entity,
+    handle: il_data::Handle<il_data::FormationTemplate>,
+    ranks: Option<u8>,
+    tick: Tick,
+) {
+    let (count, morph_ticks, new_ranks) = {
+        let regs = &world.resource::<Regs>().0;
+        let t = regs.formations.get(handle);
+        let count = world
+            .get::<Regiment>(entity)
+            .map_or(0, |r| r.soldiers.len() as u16);
+        (count, t.morph_ticks, effective_ranks(t, count, ranks))
+    };
+    let _ = count;
+    if let Some(mut state) = world.get_mut::<FormationState>(entity) {
+        if state.template != handle {
+            state.template = handle;
+            state.morph_until = Tick(tick.0 + u32::from(morph_ticks));
+        }
+        state.prior_template = None;
+        state.ranks = new_ranks;
+        state.needs_reform = true;
+    }
+}
+
+/// `SetFacing` through `formation::set_facing` (wheel or about-face).
+fn apply_facing(world: &mut World, entity: Entity, facing: Angle<S>) {
+    let sr = {
+        let regs = &world.resource::<Regs>().0;
+        let r = world.get::<Regiment>(entity).expect("validated");
+        let f = world.get::<FormationState>(entity).expect("formation");
+        spacing(
+            regs.formations.get(f.template),
+            regs.units.get(r.unit).soldier_radius,
+        )
+        .1
+    };
+    let rules = world.resource::<Regs>().0.rules.formation.clone();
+    let mut anchor = *world.get::<Anchor>(entity).expect("anchor");
+    let mut order = *world.get::<Order>(entity).expect("order");
+    let mut state = world
+        .get::<FormationState>(entity)
+        .expect("formation")
+        .clone();
+    set_facing(&mut anchor, &mut order, &mut state, &rules, sr, facing);
+    *world.get_mut::<Anchor>(entity).expect("anchor") = anchor;
+    *world.get_mut::<Order>(entity).expect("order") = order;
+    *world.get_mut::<FormationState>(entity).expect("formation") = state;
+}
+
+/// `Deploy` (position only in Phase 1): the anchor moves and every soldier
+/// is placed on its current slot around it.
+fn deploy(world: &mut World, entity: Entity, position: V2, facing: Angle<S>) {
+    let position = world.resource::<MapRes>().0.clamp(position);
+    let anchor = Anchor {
+        pos: position,
+        facing,
+    };
+    *world.get_mut::<Anchor>(entity).expect("anchor") = anchor;
+    halt(world, entity);
+    let (soldiers, slots) = {
+        let r = world.get::<Regiment>(entity).expect("validated");
+        let f = world.get::<FormationState>(entity).expect("formation");
+        (r.soldiers.clone(), f.slots.clone())
+    };
+    if let Some(mut state) = world.get_mut::<FormationState>(entity) {
+        state.laid_out_facing = facing;
+        state.needs_reform = true;
+    }
+    for sid in soldiers {
+        let Some(e) = world.resource::<Ids>().soldier_entity(sid) else {
+            continue;
+        };
+        let Some(slot) = world.get::<SlotRef>(e).and_then(|s| s.slot) else {
+            continue;
+        };
+        if let Some(target) = slots.get(usize::from(slot)).map(|s| slot_world(&anchor, s))
+            && let Some(mut pos) = world.get_mut::<Pos>(e)
+        {
+            pos.p = target;
+        }
     }
 }

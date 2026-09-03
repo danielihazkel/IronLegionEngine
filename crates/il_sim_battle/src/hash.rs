@@ -5,16 +5,19 @@ use bevy_ecs::prelude::*;
 use il_core::{StateHash, StateHasher};
 
 use crate::components::{
-    Anchor, Facing, FatigueC, Fsm, Health, Morale, Order, Pos, PrevFacing, PrevPos, Regiment,
-    SlotRef, Vel,
+    Anchor, Facing, FatigueC, FormationState, Fsm, Health, Morale, Order, Path, Pos, PrevFacing,
+    PrevPos, Regiment, SlotRef, Vel,
 };
 use crate::resources::{Clock, Events, Ids, LastHash, Phase, Rng, StepEvents};
 
-/// Hashes exactly the fields SIM-DET-004 lists, in that order:
-/// tick; phase; per regiment (ascending id) morale, morale state, soldier
-/// count, anchor, order kind, ammo; per soldier (ascending id) `p`, `v`,
-/// `hp`, `fatigue`, FSM state, slot; per projectile (ascending id) `p`, `v`;
-/// RNG stream states.
+/// Hashes exactly the fields SIM-DET-004 lists (as amended in T1-047), in
+/// that order: tick; phase; per regiment (ascending id) morale, morale
+/// state, soldier count, anchor, order (kind, target, facing, speed,
+/// since), formation (template, ranks, files, integrity, morph_until,
+/// needs_reform, prior template, laid-out facing), path (waypoints with
+/// corridors, next, requested), ammo; per soldier (ascending id) `p`, `v`,
+/// facing, `hp`, `fatigue`, FSM state, slot; per projectile (ascending id)
+/// `p`, `v`; RNG stream states.
 pub fn compute_hash(world: &mut World) -> StateHash {
     let mut h = StateHasher::new();
     h.write(&world.resource::<Clock>().tick);
@@ -24,9 +27,10 @@ pub fn compute_hash(world: &mut World) -> StateHash {
     let regiment_entities: Vec<Entity> = ids.regiment_entities.iter().map(|(_, e)| *e).collect();
     let soldier_entities: Vec<Entity> = ids.soldier_entities.iter().map(|(_, e)| *e).collect();
 
-    let mut regiments = world.query::<(&Regiment, &Morale, &Anchor, &Order)>();
+    let mut regiments =
+        world.query::<(&Regiment, &Morale, &Anchor, &Order, &FormationState, &Path)>();
     for entity in regiment_entities {
-        let (regiment, morale, anchor, order) = regiments
+        let (regiment, morale, anchor, order, formation, path) = regiments
             .get(world, entity)
             .expect("regiment entity in Ids has regiment components");
         h.write(&morale.m);
@@ -34,17 +38,20 @@ pub fn compute_hash(world: &mut World) -> StateHash {
         h.write(&(regiment.soldiers.len() as u32));
         h.write(&anchor.pos);
         h.write(&anchor.facing);
-        h.write(&order.kind);
+        h.write(order);
+        h.write(formation);
+        h.write(path);
         h.write(&regiment.ammo);
     }
 
-    let mut soldiers = world.query::<(&Pos, &Vel, &Health, &FatigueC, &Fsm, &SlotRef)>();
+    let mut soldiers = world.query::<(&Pos, &Vel, &Facing, &Health, &FatigueC, &Fsm, &SlotRef)>();
     for entity in soldier_entities {
-        let (pos, vel, health, fatigue, fsm, slot) = soldiers
+        let (pos, vel, facing, health, fatigue, fsm, slot) = soldiers
             .get(world, entity)
             .expect("soldier entity in Ids has soldier components");
         h.write(&pos.p);
         h.write(&vel.v);
+        h.write(&facing.theta);
         h.write(&health.hp);
         h.write(&fatigue.f);
         h.write(&fsm.state);

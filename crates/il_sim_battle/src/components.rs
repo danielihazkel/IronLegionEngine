@@ -273,9 +273,33 @@ impl_hashable_struct!(FatigueC { f });
 impl_hashable_struct!(SlotRef { slot });
 impl_hashable_struct!(Anchor { pos, facing });
 impl_hashable_struct!(Morale { m, state });
-// Only the kind is hashed until T1-047 fixes the final regiment layout
-// (target, facing, speed, since and the path join then).
-impl_hashable_struct!(Order { kind });
+impl_hashable_struct!(Order {
+    kind,
+    target,
+    facing,
+    speed,
+    since
+});
+impl_hashable_struct!(Waypoint { p, corridor });
+impl_hashable_struct!(Path {
+    waypoints,
+    next,
+    requested
+});
+
+impl Hashable for FormationState {
+    /// The state fields only: `slots`, `assignment` and `dirty` are derived.
+    fn hash_state(&self, h: &mut StateHasher) {
+        self.template.hash_state(h);
+        self.ranks.hash_state(h);
+        self.files.hash_state(h);
+        self.integrity.hash_state(h);
+        self.morph_until.hash_state(h);
+        self.needs_reform.hash_state(h);
+        self.prior_template.hash_state(h);
+        self.laid_out_facing.hash_state(h);
+    }
+}
 
 impl Hashable for Fsm {
     fn hash_state(&self, h: &mut StateHasher) {

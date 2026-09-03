@@ -3,11 +3,13 @@
 
 mod common;
 
+use il_core::Tick;
 use il_core::{Angle, S, Scalar, StateHash, StreamId, V2};
 use il_sim_battle::BattleWorld;
+use il_sim_battle::SpeedMode;
 use il_sim_battle::components::{
-    Anchor, Body, FatigueC, Fsm, Health, Morale, MoraleState, Order, OrderKind, Pos, PrevPos,
-    Regiment, SlotRef, SoldierState, Vel,
+    Anchor, Body, Facing, FatigueC, FormationState, Fsm, Health, Morale, MoraleState, Order,
+    OrderKind, Path, Pos, PrevPos, Regiment, SlotRef, SoldierState, Vel, Waypoint,
 };
 use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 
@@ -16,12 +18,13 @@ use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 /// in T1-041 when spawning switched to real Line slots; the 1,000-tick value
 /// again in T1-043 when soldiers started steering and in T1-044 when
 /// collisions started pushing; both again in T1-045 when the formation
-/// frame was corrected so a line spans perpendicular to its facing).
+/// frame was corrected so a line spans perpendicular to its facing; and in
+/// T1-047 when the Phase 1 hash layout was fixed).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x9c00_d41b_b133_c9a4;
+const GOLDEN_FRESH: u64 = 0x14c4_827d_8d2a_ae6a;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x3d6a_5a09_c210_61aa;
+const GOLDEN_1000: u64 = 0x2c69_ea93_03fb_b329;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -147,6 +150,149 @@ fn every_hashed_field_changes_the_hash() {
         Box::new(|w| {
             let e = regiment_entity(w, 1);
             w.ecs_mut().get_mut::<Regiment>(e).unwrap().ammo = 2;
+        }),
+    ));
+    // T1-047 layout: the rest of the order, the formation state, the path
+    // and the soldier facing.
+    cases.push((
+        "order target",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Order>(e).unwrap().target = V2::from_f32_data(1.0, 2.0);
+        }),
+    ));
+    cases.push((
+        "order facing",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Order>(e).unwrap().facing = Some(Angle::new(S::ONE));
+        }),
+    ));
+    cases.push((
+        "order speed",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Order>(e).unwrap().speed = SpeedMode::Run;
+        }),
+    ));
+    cases.push((
+        "order since",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Order>(e).unwrap().since = Tick(5);
+        }),
+    ));
+    cases.push((
+        "formation template",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            let column = w
+                .registries()
+                .formations
+                .lookup(&common::cid("rome:column"))
+                .unwrap();
+            w.ecs_mut().get_mut::<FormationState>(e).unwrap().template = column;
+        }),
+    ));
+    cases.push((
+        "formation ranks",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<FormationState>(e).unwrap().ranks += 1;
+        }),
+    ));
+    cases.push((
+        "formation files",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<FormationState>(e).unwrap().files += 1;
+        }),
+    ));
+    cases.push((
+        "integrity",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<FormationState>(e).unwrap().integrity = S::HALF;
+        }),
+    ));
+    cases.push((
+        "morph_until",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut()
+                .get_mut::<FormationState>(e)
+                .unwrap()
+                .morph_until = Tick(9);
+        }),
+    ));
+    cases.push((
+        "needs_reform",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut()
+                .get_mut::<FormationState>(e)
+                .unwrap()
+                .needs_reform = true;
+        }),
+    ));
+    cases.push((
+        "prior template",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            let line = w
+                .registries()
+                .formations
+                .lookup(&common::cid("rome:line"))
+                .unwrap();
+            w.ecs_mut()
+                .get_mut::<FormationState>(e)
+                .unwrap()
+                .prior_template = Some(line);
+        }),
+    ));
+    cases.push((
+        "laid-out facing",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut()
+                .get_mut::<FormationState>(e)
+                .unwrap()
+                .laid_out_facing = Angle::new(S::ONE);
+        }),
+    ));
+    cases.push((
+        "path waypoints",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut()
+                .get_mut::<Path>(e)
+                .unwrap()
+                .waypoints
+                .push(Waypoint {
+                    p: V2::from_f32_data(3.0, 4.0),
+                    corridor: S::from_i32(8),
+                });
+        }),
+    ));
+    cases.push((
+        "path next",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Path>(e).unwrap().next = 3;
+        }),
+    ));
+    cases.push((
+        "path requested",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Path>(e).unwrap().requested = true;
+        }),
+    ));
+    cases.push((
+        "soldier facing",
+        Box::new(|w| {
+            let e = soldier_entity(w, 3);
+            w.ecs_mut().get_mut::<Facing>(e).unwrap().theta = Angle::new(S::ONE);
         }),
     ));
     // Globals: phase, RNG.

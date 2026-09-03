@@ -276,7 +276,7 @@ flowchart LR
   `arrange_group` for all six group kinds; rank selection to match a requested width within tolerance; lateral ordering to minimise crossing.
   **Done when** a battle line of 5 regiments at width 300 m lands within 10 % of 300 m and regiments do not cross.
 
-- [ ] **T1-047 Movement command application** · M · Refs SIM-CMD-002, TDD §4.5 Stage 0
+- [x] **T1-047 Movement command application** · M · Refs SIM-CMD-002, TDD §4.5 Stage 0
   Stage 0 now applies `Move`, `AttackMove` (as `Move` until Phase 2), `Halt`, `SetFormation`, `SetFacing`, `SetSpeedMode`, `GroupFormation`, `Deploy` (position only). Events for rejections.
   **Done when** each command has a test that checks the resulting `Order`/`FormationState` and the determinism test includes a scripted command stream (T1-081).
 
