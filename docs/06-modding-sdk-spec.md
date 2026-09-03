@@ -64,32 +64,34 @@ mymod/
     formations/*.json5
     group_formations/*.json5    multi-regiment arrangements (GroupFormationTemplate)
     zones/*.json5               terrain zone types (ZoneType)
-    abilities/*.json5
-    technologies/*.json5
-    buildings/*.json5
-    maps/*.json5
+    maps/*.json5                map definitions (MapDef); the heightmap sidecar lives under assets/maps/
     sprites/*.json5             sprite sheet frame tables (SpriteSet)
-    ai/*.json5
     input/bindings.json5        key bindings (one merged object)
     rules/                      engine tunables, one merged object per file
       movement.json5
       formation.json5
-      morale.json5
-      fatigue.json5
-      combat.json5
-      battle_flow.json5
+      morale.json5              (Phase 2)
+      fatigue.json5             (Phase 2)
+      combat.json5              (Phase 2)
+      battle_flow.json5         (Phase 2)
+    abilities/*.json5           (Phase 2)
+    technologies/*.json5        (Phase 4)
+    buildings/*.json5           (Phase 4)
+    ai/*.json5                  (Phase 2)
   locale/
     en.json5
     de.json5
-  scripts/                      scripts_root (default), Tier 2 only
+  scripts/                      scripts_root (default), Tier 2 only (Phase 6)
     main.lua
     missions/*.lua
   assets/                       assets_root (default)
     sprites/                    PNG sheets referenced by content/sprites/*.json5
-    atlases/
-    sounds/
-    music/
+    maps/*.hgt                  16-bit heightmaps referenced by content/maps/*.json5
+    sounds/                     (Phase 2)
+    music/                      (Phase 2)
 ```
+
+Folders marked with a phase are reserved for that phase; at the end of Phase 1 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `input`, `rules/movement.json5`, `rules/formation.json5` and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read in Phase 1 are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `input-bindings`, `rules-movement`, `rules-formation`, `mod-manifest`).
 
 Rules:
 
@@ -564,6 +566,14 @@ Chord syntax: `[Ctrl+][Shift+][Alt+]Key`. Modifiers match exactly (`W` does not 
 Actions (Phase 1): `camera_pan_up/down/left/right`, `camera_rotate_left/right`, `camera_zoom_in/out`, `camera_drag`, `select`, `select_add`, `box_select`, `box_select_add`, `select_type`, `select_all`, `group_set_0`..`group_set_9`, `group_recall_0`..`group_recall_9`, `order_move`, `order_drag_formation`, `order_flip_facing`, `order_halt`, `toggle_run`, `formation_1`..`formation_9` (the unit type's n-th formation template), `pause`, `speed_up`, `speed_down`, `quit_to_menu`, and in developer builds `toggle_profiler`, `debug_nav_grid`, `debug_slots`, `debug_paths`, `debug_anchors`, `debug_spatial`.
 
 ---
+
+### 4.12 Group formations, zone types and sprite sets — `content/group_formations/`, `content/zones/`, `content/sprites/`
+
+Three Phase 1 kinds without a section of their own; their schemas are the reference.
+
+- **Group formations** (`group-formation.schema.json`, Simulation Spec SIM-FORM-040..042): `id`, `name_key`, `kind` (`battle_line`, `double_line`, `echelon_left`, `echelon_right`, `refused_left`, `refused_right`; `custom` is reserved), optional `gap` (m between regiments, else `formation.group_gap`), `skirmishers_forward`, `cavalry_flanks`, `lines`. The game ships `rome:battle_line` and the other five in `game/content/group_formations/standard.json5`; the UI's multi-regiment drag uses the first `battle_line` template in the registry.
+- **Zone types** (`zone-type.schema.json`, Simulation Spec §5.4): `id`, `name_key`, `move_mult`, `move_cost` (≥ 1.0), `colour` (terrain palette) required; optional `passable` (default true), `crossing` (a river cell under a crossing zone is passable: fords and bridges are zone polygons over the river), `los_mult`, `conceal`, `fatigue_mult`, `formation_integrity_mult` (read from Phase 2). Maps reference zone types by Content ID in `base_zone` and `zones[].type`; the game ships `rome:open|road|forest|marsh|rock|ford|bridge`.
+- **Sprite sets** (`sprite-set.schema.json`, TDD §10): `id`, `atlas` (PNG path under `assets_root`), `frame_w`, `frame_h`, `facings` (rows, 8), `columns`, `origin` (ground point in frame pixels), `anims` (name → columns and rate). Units reference them through `sprite_set`; `il_cli genart` regenerates the placeholder sheets and tables.
 
 ## 5. Tier 2 Lua
 

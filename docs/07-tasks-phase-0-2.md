@@ -340,8 +340,9 @@ flowchart LR
   `tests/mods/speed_override/` with a manifest and a `units/hastati.json5` containing only `$override: "merge"` and `speed_walk`; a test loads `game/` plus this mod and asserts the registry value.
   **Done when** the test passes and the same mod folder changes speed in the running app.
 
-- [ ] **T1-083 Docs update** · S
+- [x] **T1-083 Docs update** · S
   Update TDD §5 to §7, §10, §11 with any signature changes; resolve OQ-1 (4 snaps) and OQ-7 (json5 crate) in the PRD if confirmed; record measured stage costs in the TDD budget table.
+  **Done when** every TDD, SAD, Simulation Spec, SDK and PRD statement about Phase 1 code matches the code (done 2026-09-03: TDD §1, §3, §4, §5, §6, §7, §10, §11, §15 and the budget table's measured 2k/10k/20k columns; SAD §5.2 graph and rules, §9.3, §12 T-9..T-13; Simulation Spec SIM-FORM-005, SIM-MOVE-001, SIM-MOVE-042 and the §15.1 tunables; SDK §2.1 layout and §4.12; PRD OQ-1, OQ-7, OQ-9).
 
 ### Phase 1 exit checklist
 

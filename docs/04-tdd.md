@@ -13,29 +13,31 @@ Each subsystem section has the same shape: responsibilities, public API (Rust si
 
 Stage numbers refer to SAD §6.2. Rule IDs refer to the Simulation Spec. Field names match the Modding SDK schemas.
 
-Budget table (sum must fit 50 ms at P3, 25 ms at P2):
+Budget table (sum must fit 50 ms at P3, 25 ms at P2). The measured columns are Phase 1 means from `il_cli bench --ticks 600` (release, 8 threads, the move/reform script, T1-083) on the target machine in `docs/evidence/phase1/machine.md`; stages 8 to 16 hold only a placeholder system, so their numbers are schedule overhead.
 
-| Stage | Budget at 20k (ms) | Section |
-|---|---|---|
-| 0 ApplyCommands | 0.2 | §4 |
-| 1 AI | 2.0 | §8.5, §9 |
-| 2 Formation | 2.0 | §7 |
-| 3 RegimentMovement | 1.0 | §6 |
-| 4 SoldierSteering | 8.0 | §6 |
-| 5 Integrate | 0.5 | §6 |
-| 6 SpatialGrid | 2.0 | §5 |
-| 7 Collision | 8.0 | §6 |
-| 8 Visibility | 1.0 | §8.4 |
-| 9 Targeting | 4.0 | §8.1 |
-| 10 Combat | 4.0 | §8.1 |
-| 11 Projectiles | 3.0 | §8.2 |
-| 12 Abilities | 0.5 | §8.3 |
-| 13 Fatigue | 0.5 | §8.3 |
-| 14 Morale | 1.0 | §8.3 |
-| 15 Death | 1.0 | §8.1 |
-| 16 BattleFlow | 0.3 | §4 |
-| 17 Events + Hash | 3.0 | §2, §4 |
-| **Total** | **42.0** | headroom 8 ms |
+| Stage | Budget at 20k (ms) | Measured 2k | Measured 10k | Measured 20k | Section |
+|---|---|---|---|---|---|
+| 0 ApplyCommands | 0.2 | 0.00 | 0.00 | 0.00 | §4 |
+| 1 AI | 2.0 | 0.03 | 0.05 | 0.07 | §8.5, §9 |
+| 2 Formation | 2.0 | 0.17 | 0.35 | 0.58 | §7 |
+| 3 RegimentMovement | 1.0 | 0.12 | 0.25 | 0.47 | §6 |
+| 4 SoldierSteering | 8.0 | 1.03 | 3.56 | 7.74 | §6 |
+| 5 Integrate | 0.5 | 0.10 | 0.19 | 0.33 | §6 |
+| 6 SpatialGrid | 2.0 | 0.14 | 0.25 | 0.49 | §5 |
+| 7 Collision | 8.0 | 1.94 | 5.61 | 11.16 | §6 |
+| 8 Visibility | 1.0 | 0.07 | 0.10 | 0.11 | §8.4 |
+| 9 Targeting | 4.0 | 0.06 | 0.06 | 0.08 | §8.1 |
+| 10 Combat | 4.0 | 0.04 | 0.05 | 0.06 | §8.1 |
+| 11 Projectiles | 3.0 | 0.04 | 0.04 | 0.06 | §8.2 |
+| 12 Abilities | 0.5 | 0.03 | 0.04 | 0.05 | §8.3 |
+| 13 Fatigue | 0.5 | 0.03 | 0.03 | 0.05 | §8.3 |
+| 14 Morale | 1.0 | 0.03 | 0.03 | 0.04 | §8.3 |
+| 15 Death | 1.0 | 0.03 | 0.03 | 0.04 | §8.1 |
+| 16 BattleFlow | 0.3 | 0.03 | 0.03 | 0.03 | §4 |
+| 17 Events + Hash | 3.0 | 0.12 | 0.49 | 1.07 | §2, §4 |
+| **Total** | **42.0** | **4.03** | **11.17** | **22.43** | headroom 8 ms; p95 tick 6.4 / 16.7 / 32.9 ms |
+
+At 20k the two soldier-level stages already sit at their Phase 3 budgets (Collision 11.2 ms against 8, Steering 7.7 against 8) while every other stage is far under; Phase 2 combat work must not grow them, and SAD §12 carries the item.
 
 ---
 
@@ -73,14 +75,14 @@ lto = "thin"
 
 Dependency rules are enforced by `tests/tests/dep_rules.rs`, which parses every `crates/il_*/Cargo.toml`; cargo-deny is not used (T0-002).
 
-Feature flags:
+Feature flags (as built at the end of Phase 1):
 
 | Flag | Crate | Effect |
 |---|---|---|
-| `dev` | il_app, il_data | hot reload, debug overlays, per-tick hashing |
-| `trace` | all | `tracing` spans per system |
-| `headless` | il_cli | no render/ui crates linked |
-| `fixed` | il_core | `Scalar = Fixed32` (Phase 7) |
+| `dev` (default on) | il_app | hot reload (enables `il_data/hot-reload`), debug overlays, the profiler and event panels; CI also builds `--no-default-features` |
+| `hot-reload` | il_data | the `notify` watcher and `HotReload` (T1-025) |
+
+The `trace`, `headless` and `fixed` flags of the Phase 0 plan were never needed: il_cli links no render crate, profiling goes through `StageObserver` (SAD §9.3) and `Scalar` has one representation.
 
 ### 1.2 Dependencies (pinned per phase)
 
@@ -88,29 +90,28 @@ Phase 0 pins (T0-003) are the versions in the table; later phases pin their own 
 
 | Crate | Version (initial) | Why | Used by |
 |---|---|---|---|
-| `bevy_ecs` | 0.19.1 (feature `multi_threaded`) | standalone ECS with schedules and parallel executor | il_sim_*, il_render (read) |
+| `bevy_ecs` | 0.19.1 (feature `multi_threaded`) | standalone ECS with schedules and parallel executor | il_sim_battle, benches |
 | `bevy_tasks` | 0.19.1 | `ComputeTaskPool` for `BattleWorld::set_threads` | il_sim_battle |
 | `wgpu` | 30.0.1 | GPU API | il_render |
-| `winit` | 0.30.13 | window and input events | il_app, il_ui (event types) |
-| `egui`, `egui-wgpu`, `egui-winit` | 0.36.1 | UI (`egui-wgpu` paint pass lives in il_render) | il_ui, il_render |
-| `serde`, `serde_derive` | 1 | serialisation | all |
-| `json5` | 1.3 | test fixtures only since T1-081; scenarios and content go through `il_data::json5`, a span-carrying parser written in T1-020 because per-field positions are needed for diagnostics and merge provenance (OQ-7 amended) | il_sim_battle, il_render (dev-dependencies) |
+| `winit` | 0.30.13 | window and input events | il_app, il_ui (event types; a direct dependency so `cargo test -p il_ui` unifies winit's features like il_app) |
+| `egui`, `egui-wgpu`, `egui-winit` | 0.36.1 | UI (`egui-wgpu` paint pass lives in il_render) | il_render (`egui`, `egui-wgpu` with feature `winit`), il_ui (`egui`, `egui-winit` without default features), il_app (`egui`) |
+| `serde` (feature `derive`) | 1 | serialisation | il_core, il_data, il_sim_battle, il_cli |
+| `json5` | 1.3 | test fixtures only since T1-081; scenarios and content go through `il_data::json5`, a span-carrying parser written in T1-020 because per-field positions are needed for diagnostics and merge provenance (OQ-7 amended) | il_sim_battle, il_render, il_ui (dev-dependencies) |
 | `semver` | 1 | manifest versions and ranges | il_data |
-| `serde_json` | 1 | save headers, schema validation input | il_data, il_save |
+| `serde_json` | 1 | save headers, schema validation input | il_data, il_sim_battle, il_cli, tests (il_save when it arrives) |
 | `jsonschema` | 0.53 (`default-features = false`) | content validation, draft 2020-12 | il_data |
-| `postcard` | 1.1 | snapshot encoding (OQ-2 resolved in Phase 0) | il_save, il_sim_* |
-| `mlua` (`lua54`, `vendored`) | 0.10 | Lua | il_script |
-| `glam` | 0.33.6 | render-side math only (never in sim) | il_render, il_ui |
-| `png`, `bytemuck`, `pollster` | 0.18.1 / 1 / 0.4 | atlas files, GPU buffer casts, blocking on device creation | il_render, il_cli (`genart`) |
-| `rayon` | 1 | not used directly; bevy_ecs task pool only | — |
+| `postcard` | 1.1 (feature `use-std`) | snapshot encoding (OQ-2 resolved in Phase 0) | il_sim_battle (il_save when it arrives) |
+| `mlua` (`lua54`, `vendored`) | 0.10 | Lua | il_script (Phase 6; not in the workspace yet) |
+| `glam` | 0.33.6 | render-side math only (never in sim) | il_render, il_ui, il_app |
+| `png`, `bytemuck`, `pollster` | 0.18.1 / 1 / 0.4 | atlas files, GPU buffer casts, blocking on device creation | il_render; il_cli uses `png` only (`genart`) |
 | `xxhash-rust` (`xxh3`) | 0.8 | state hash | il_core |
-| `tracing`, `tracing-subscriber` | 0.1 / 0.3 | spans | all |
-| `criterion` | 0.8.2 | benchmarks (`benches/benches/*.rs`, `harness = false`; first bench in T1-031) | benches |
-| `kira` | 0.9 | audio (OQ-8: chosen for game-oriented mixing) | il_audio |
-| `notify` | 6 | hot reload file watcher (dev) | il_data |
+| `tracing` | 0.1 | one `warn!` in `Locale` for a missing key; no subscriber is installed yet and il_sim_battle declares it without using it (SAD §12 T-11) | il_data, il_sim_battle |
+| `criterion` | 0.8.2 | benchmarks (`benches/benches/*.rs`, `harness = false`; first bench in T1-031) | benches (dev-dependency; `il_cli` is a dev-dependency too, for the generated bench setups) |
+| `kira` | 0.9 | audio (OQ-8: chosen for game-oriented mixing) | il_audio (Phase 2; not in the workspace yet) |
+| `notify` | 8.2 (optional, behind `hot-reload`) | hot reload file watcher (dev) | il_data |
 | `thiserror`, `anyhow` | 2 / 1 | errors (anyhow only in binaries and their libs) | all |
 | `clap` | 4 (`derive`) | command-line parsing | il_cli, il_app |
-| `toml` | 0.8 | manifest parsing in the dependency-rule test | tests |
+| `toml` | 0.8 | manifest parsing in the dependency-rule test | tests (dev-dependency) |
 
 ## 2. Core (`il_core`)
 
@@ -224,66 +225,98 @@ Mod discovery, manifest parsing, load order, JSON5 parsing, schema validation, o
 ### 3.2 Public API
 
 ```rust
-pub struct ContentId(Arc<str>);              // "modid:item_id", interned
-pub struct Handle<T> { index: u32, _m: PhantomData<T> }   // Copy, Hashable
-pub struct Registry<T: ContentKind> { items: Vec<T>, by_id: HashMap<ContentId, u32>, ids: Vec<ContentId> }
-impl<T: ContentKind> Registry<T> {
+// As built (T1-020..T1-025). Kinds for later phases (abilities, technologies, buildings, AI profiles, sound sets) join `Registries` with their phases.
+pub struct ContentId(Arc<str>);              // "modid:item_id" matching ^[a-z0-9_]+:[a-z0-9_]+$; `ContentId::new(&str) -> Result<Self, InvalidContentId>`; one Arc per value, no intern table
+pub struct Handle<T> { index: u32, _marker: PhantomData<fn() -> T> }   // Copy, Hashable; `index()`
+pub struct Registry<T> { items: Vec<T>, ids: Vec<ContentId>, by_id: HashMap<ContentId, u32> /* lookup only, never iterated */, removed: BTreeSet<u32> /* hot-reload tombstones */ }
+impl<T> Registry<T> {
     pub fn get(&self, h: Handle<T>) -> &T;                  // infallible; handles are validated at load
-    pub fn lookup(&self, id: &ContentId) -> Option<Handle<T>>;
+    pub fn lookup(&self, id: &ContentId) -> Option<Handle<T>>;   // None for removed slots (`lookup_any` sees them)
     pub fn id_of(&self, h: Handle<T>) -> &ContentId;
-    pub fn iter(&self) -> impl Iterator<Item=(Handle<T>, &T)>;   // ascending index = deterministic
+    pub fn iter(&self) -> impl Iterator<Item = (Handle<T>, &T)>;   // ascending index, skipping removed slots = deterministic
+    pub fn ids(&self) -> impl Iterator<Item = &ContentId>;  // plus all_ids, slots, len, is_empty, contains, is_removed, removed_ids, ids_added_after
 }
-pub trait ContentKind: DeserializeOwned + 'static { const DIR: &'static str; const TAG: KindTag; fn id(&self) -> &ContentId; fn resolve(&mut self, reg: &Registries) -> Result<(), ResolveError>; }  // TAG selects the embedded schema (T1-021); il_data::validate::validate_value maps every schema error back to the key's line and column
+impl<T: ContentKind> Registry<T> { pub fn insert(&mut self, item: T) -> Result<Handle<T>, DuplicateId>; }
+pub trait ContentKind: DeserializeOwned + Clone + Send + Sync + 'static {
+    const DIR: &'static str; const TAG: KindTag;            // TAG selects the embedded schema (T1-021)
+    fn id(&self) -> &ContentId;
+    fn resolve(&mut self, lookup: &Lookup, errors: &mut Vec<ResolveError>) {}   // ContentIds → handles; each unknown reference is one positioned error with a suggestion
+    fn hash_content(&self, h: &mut StateHasher) {}          // the sim-relevant fields; references hash as ContentIds
+}
 
 pub struct Registries {
-    pub units: Registry<UnitType>, pub factions: Registry<Faction>, pub formations: Registry<FormationTemplate>,
-    pub group_formations: Registry<GroupFormationTemplate>, pub abilities: Registry<Ability>,
-    pub technologies: Registry<Technology>, pub buildings: Registry<Building>, pub maps: Registry<MapDef>,
-    pub zones: Registry<ZoneType>, pub ai_profiles: Registry<AiProfile>, pub ai_actions: Registry<AiActionSet>,
-    pub rules: Rules,                         // morale, fatigue, combat, movement, formation, general, visibility, battle_flow, ai, campaign, diplomacy
-    pub locale: Locale, pub sprite_sets: Registry<SpriteSet>, pub sound_sets: Registry<SoundSet>,
-    pub content_registry_hash: u64,                    // xxh3 over the typed sim-relevant fields (`ContentKind::hash_content`), kinds in a fixed order, items in ContentId order, references as ContentIds; independent of file order, whitespace, key order and registry layout (Networking Spec §4.2). As built in T1-023 the struct holds units, formations, group_formations, factions, zones, maps, sprite_sets, rules {movement, formation}, input (bindings), mods, mod_list_hash; the other registries arrive with their phases. References are resolved in two passes (ids registered first, then `resolve`), so file order never matters; Faction.ai_profile and tech_tree stay ContentIds until their kinds exist.
+    pub units: Registry<UnitType>, pub formations: Registry<FormationTemplate>, pub group_formations: Registry<GroupFormationTemplate>,
+    pub factions: Registry<Faction>, pub zones: Registry<ZoneType>, pub maps: Registry<MapDef>, pub sprite_sets: Registry<SpriteSet>,
+    pub rules: Rules,                         // `Rules { movement: MovementRules, formation: FormationRules }`, every field required (§3.3 step 6); `il_sim_battle::Rules` re-exports it
+    pub input: InputBindings, pub locale: Locale, pub mods: Vec<ModInfo>,
+    pub mod_list_hash: u64,                   // xxh3 over (id, version) pairs in load order
+    pub content_registry_hash: u64,           // `compute_content_hash()`: xxh3 over `hash_content` of every item, kinds in a fixed order, items in ContentId order; independent of file order, whitespace, key order and registry layout (Networking Spec §4.2)
+}
+// Typed kinds exported with it: UnitType (Ranged, ExperienceTier, UnitCategory, UnitSounds, ProjectileArc), FormationTemplate (Layout, RoleZone),
+// GroupFormationTemplate (GroupKind), Faction (DiplomacyPersonality), ZoneType, MapDef (MapSize, HeightmapRef, ZonePolygon, River, DeploymentZone,
+// ReinforcementEdge, MapEdge), SpriteSet (Anim), InputBindings (Binding), MovementRules, FormationRules, de::Rgb; `merge::{KindAccumulator, MergedItem, Tombstone}`, `Sources`/`SourceFile` and `Lookup` are the pipeline's working types.
+
+pub struct ModSet { pub mods: Vec<LoadedMod>, pub warnings: Vec<String> }   // resolved load order; `index_of`, `mod_list_hash`
+pub struct LoadedMod { pub manifest: Manifest, pub root: PathBuf, pub is_game: bool }   // `namespaces()`
+pub struct ManifestWithPath { pub manifest: Manifest, pub root: PathBuf, pub is_game: bool }
+pub fn read_manifest(root: &Path, is_game: bool) -> Result<ManifestWithPath, Diagnostics>;   // validated against mod-manifest.schema.json
+pub fn discover(roots: &[PathBuf]) -> Result<Vec<ManifestWithPath>, Diagnostics>;
+pub fn resolve_load_order(found: &[ManifestWithPath], enabled: &[String]) -> Result<ModSet, Vec<LoadOrderError>>;   // `Edge`, `EdgeKind` name the graph edges in errors
+pub fn discover_set(roots: &[PathBuf]) -> Result<ModSet, Diagnostics>;
+pub fn load(set: &ModSet) -> Result<Registries, Diagnostics>;        // collects ALL diagnostics before failing
+pub fn load_roots(roots: &[PathBuf]) -> Result<Registries, Diagnostics>;   // discover_set + load; what il_cli, il_app and the tests call
+pub struct LoadReport { pub registries: Option<Registries>, pub diagnostics: Diagnostics }
+pub fn load_report(set: &ModSet) -> LoadReport;                     // warnings alongside a successful load (il_cli validate)
+pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadReport;   // index-stable relayout for hot reload
+pub fn validate_value(..) / validate_merged(..);                     // schema validation of a merged value; every error maps to the key's line and column (T1-021)
+
+pub struct Diagnostic { pub severity: Severity /* Error | Warning */, pub file: PathBuf, pub line: u32, pub col: u32, pub field: String, pub message: String, pub expected: Option<String> }   // builders file_level/at/field/expected/warning; `is_error`
+pub struct Diagnostics(pub Vec<Diagnostic>);   // has_errors, errors(), warnings(), into_result; Display lists every one; implements Error
+
+pub mod json5 {   // the engine's own JSON5 parser (T1-020): every key and value keeps its position, for diagnostics and merge provenance
+    pub fn parse_json5(src: &str, file: FileId) -> Result<SpannedValue, ParseError>;   // full JSON5; duplicate keys, Infinity and NaN are errors
+    pub struct FileId(pub u32); pub struct Span { pub file: FileId, pub line: u32, pub col: u32 }   // 1-based
+    pub struct SpannedValue { pub span: Span, pub kind: ValueKind }   // Null | Bool | Num(Int(i64) | Float(f64)) | Str | Array | Object(Vec<(Key, SpannedValue)>) in source order
+    // as_object/as_array/as_str/as_bool, get/get_mut/remove, key_span, at_path(&[PathSeg]), to_json() -> serde_json::Value, span_display
 }
 
-pub struct ModSet { pub mods: Vec<LoadedMod> }                // in resolved load order
-pub struct LoadedMod { pub manifest: Manifest, pub root: PathBuf }
-pub fn discover(roots: &[PathBuf]) -> Result<Vec<ManifestWithPath>, DataError>;
-pub fn resolve_load_order(found: &[ManifestWithPath], enabled: &[String]) -> Result<ModSet, LoadOrderError>;
-pub fn load(set: &ModSet) -> Result<Registries, Diagnostics>;  // collects ALL diagnostics before failing
-
-pub struct Diagnostic { pub file: PathBuf, pub line: u32, pub col: u32, pub field: String, pub message: String, pub expected: Option<String> }
-pub struct Diagnostics(pub Vec<Diagnostic>);
-
-pub struct Locale { tables: BTreeMap<String /*lang*/, BTreeMap<String, String>>, current: String, show_keys: AtomicBool, missing: Mutex<BTreeSet<String>> }   // as built (T1-024): fallback is always "en"; misses are recorded once and logged with tracing::warn
-impl Locale { pub fn get<'a>(&'a self, key: &'a str) -> &'a str;  /* current → en → the key itself */ pub fn fmt(&self, key: &str, args: &[(&str, &dyn Display)]) -> String; pub fn set_language(&mut self, lang: &str) -> bool; pub fn set_show_keys(&self, on: bool); pub fn missing_keys(&self) -> Vec<String>; }
+pub struct Locale { tables: BTreeMap<String /*lang*/, BTreeMap<String, String>>, current: String, show_keys: AtomicBool, missing: Mutex<BTreeSet<String>> }   // as built (T1-024): fallback is always FALLBACK_LANGUAGE = "en"; misses are recorded once and logged with tracing::warn
+impl Locale { pub fn get<'a>(&'a self, key: &'a str) -> &'a str;  /* current → en → the key itself */ pub fn fmt(&self, key: &str, args: &[(&str, &dyn Display)]) -> String; pub fn has(&self, key: &str) -> bool; pub fn set_language(&mut self, lang: &str) -> bool; pub fn language(&self) -> &str; pub fn languages(&self) -> Vec<&str>; pub fn set_show_keys(&self, on: bool); pub fn show_keys(&self) -> bool; pub fn missing_keys(&self) -> Vec<String>; pub fn insert(&mut self, lang: &str, key: &str, text: &str); }
 
 #[cfg(feature = "hot-reload")]   // il_app enables it through its `dev` feature
-pub struct HotReload { watcher: notify::RecommendedWatcher, rx: Receiver<notify::Result<notify::Event>>, set: ModSet, current: Arc<Registries>, dirty: Vec<PathBuf>, quiet_polls: u32, events: Vec<ReloadEvent> }
+pub const QUIET_POLLS: u32 = 6;      // polls without a change (≈ 100 ms at 60 Hz) before a rebuild; il_data reads no clock
+pub enum ReloadEvent { Swapped { files: Vec<PathBuf> }, Structural { added: Vec<(KindTag, ContentId)>, removed: Vec<(KindTag, ContentId)> }, Failed(Diagnostics), ManifestIgnored(PathBuf) }
+pub struct HotReload { _watcher: notify::RecommendedWatcher, rx: Receiver<notify::Result<notify::Event>>, set: ModSet, current: Arc<Registries>, dirty: Vec<PathBuf>, quiet_polls: u32, events: Vec<ReloadEvent> }
 impl HotReload {
     pub fn new(set: ModSet, current: Arc<Registries>) -> notify::Result<Self>;   // watches every mod's content and locale folders
-    pub fn poll(&mut self) -> Option<Arc<Registries>>;   // per frame; after ~100 ms of quiet re-runs the whole pipeline laid out like `current` (old ids keep their index, deleted ids stay as removed slots, new ids append); the app calls BattleWorld::replace_registries between ticks
+    pub fn poll(&mut self) -> Option<Arc<Registries>>;   // per frame; after QUIET_POLLS quiet polls re-runs the whole pipeline laid out like `current` (old ids keep their index, deleted ids stay as removed slots, new ids append); the app calls BattleWorld::replace_registries between ticks
     pub fn rebuild_now(&mut self) -> Option<Arc<Registries>>;
-    pub fn take_events(&mut self) -> Vec<ReloadEvent>;   // Swapped { files } | Structural { added, removed } | Failed(Diagnostics) (old registries kept) | ManifestIgnored(path)
-}  // replaces item in place by ContentId; index stable
+    pub fn take_events(&mut self) -> Vec<ReloadEvent>;   // Failed keeps the old registries; ManifestIgnored because manifests are read at startup only
+    pub fn current(&self) -> &Arc<Registries>; pub fn mod_set(&self) -> &ModSet;
+}
 ```
 
 ### 3.3 Load pipeline
 
-1. `discover`: read every `mod.json5` under the configured roots (`game/`, `mods/`, user mods dir).
+1. `discover`: read every `mod.json5` under the given roots (the game root first; `--mod` on il_cli and il_app adds folders); each manifest is validated against `mod-manifest.schema.json`.
 2. `resolve_load_order`: Kahn topological sort over `dependencies`, `load_after`, `load_before`; ties by mod id ascending; cycle → error listing the cycle.
 3. For each mod in order, for each `ContentKind::DIR`, parse every `*.json5` with `il_data::json5::parse_json5` into a `SpannedValue` (every key and value keeps `file:line:col`; `to_json()` gives the plain `serde_json::Value`). Per-file checks are limited to the object shape, the `id`, directive syntax and duplicate ids within the mod. Objects then merge into the kind's accumulating map keyed by ContentId (`il_data::merge`): `$from` copies an existing item of the same kind as the base (forward references inside a mod are applied first; depth <= 8; cycles are errors), then `$override`, `$delete` and list directives apply per Modding SDK §3.4.1; directives never survive into the map. A merged leaf keeps the key span of the mod that first wrote the field and takes the value span of the last writer. Validation runs on the **merged result only** (SDK §3.4.1 rule 4, decided in Phase 1): errors point at the original key and, when another mod wrote the value, add `after merge by "<mod>" (<file>:<line>:<col>)`. Merge fragments and `$delete` objects therefore never fail the `required` list.
-4. Deserialise merged values into typed structs; call `resolve` to turn ContentIds into handles (two-pass: all ids registered first, then references resolved, so order between files does not matter).
-5. Compute `content_registry_hash`.
-6. Rules files: exactly one merged object per rules kind; missing fields fall back to engine defaults *only* for Could-tier fields; Must-tier fields missing are diagnostics.
+4. Deserialise merged values into typed structs; call `resolve` to turn ContentIds into handles (two-pass: all ids registered first, then references resolved, so order between files does not matter). Ids that failed validation are registered as invalid, so a reference to one is not reported a second time.
+5. Singleton kinds (`input/bindings.json5`, one merged object per rules file) and the locale tables (`locale/<lang>.json5`, deep-merged per language) go through the same merge; the heightmap sidecar of every map (`.hgt`, 16-bit little-endian samples at `height_cell`) is read from the `assets_root` of the mod that last wrote `heightmap.path`, so the sim never touches the filesystem. Then `content_registry_hash` and `mod_list_hash`.
+6. Rules files: exactly one merged object per rules kind; every field is required and a missing file or field is an error (Phase 1 decision: no engine numeric defaults, Simulation Spec §15.1 lists them all). Loading continues with zeroed rules so every diagnostic is reported in one run.
 
 Budget: load of the flagship game < 1 s; not per tick.
 
 ### 3.4 Tests
 
-- Golden diagnostics for malformed files (file:line:col in the message).
-- Load-order tests: diamond dependencies, cycles, `load_before` vs dependency conflict.
-- Override tests: replace, deep merge, `$append`/`$remove`/`$replace`, `$delete`.
-- `content_registry_hash` stability across file order and whitespace.
+- Golden diagnostics for malformed files (file:line:col in the message); the broken fixture mod under `tests/fixtures/` yields exactly its expected positioned errors (`tests/tests/content.rs`).
+- Load-order tests: diamond dependencies with the id tie-break, hard cycles named in the error, soft cycles dropping the first soft edge, `load_before` contradicting a dependency, the game always first, missing dependencies and version mismatches, duplicate and unknown enabled ids, disabled mods not constraining the order, `mod_list_hash` depending on order and version.
+- Override tests: replace, deep merge, `$append`/`$remove`/`$replace`, `$delete`, `null` removing a key, plain lists replacing, `$from` with forward references, depth limit and cycles, the namespace rule, directive syntax errors; a second mod merging into a game unit (`tests/tests/mod_override.rs`) and the SDK worked example (`tests/tests/sdk_example.rs`).
+- Registries: the game root populates every Phase 1 registry; handles resolve regardless of file order; unknown references are positioned with a suggestion; every rules field is required; one tweaked rule changes the content hash.
+- `content_registry_hash` stability across file layout, whitespace, key order and number spelling.
+- Locale: a miss returns the key and is recorded once; the fallback chain; `fmt` placeholders; `show_keys`.
+- Schemas: every embedded schema compiles; manifests validate.
+- Hot reload (`tests/tests/hot_reload_sim.rs`): an edited number is swapped into a running `BattleWorld` between ticks with the index layout preserved; a structural change is reported; a failing edit keeps the old registries.
 
 ## 4. Battle simulation core (`il_sim_battle`)
 
@@ -303,23 +336,35 @@ pub mod interface {
         pub count: u16, pub experience: u8, pub fatigue: f32 /* data-side f32, converted */, pub formation: Option<ContentId>,
         pub position: Option<[f32; 2]>, pub facing_deg: Option<f32> /* TEMPORARY Phase 0 anchor (SAD T-7); removed in T2-070 */ }
     // `map_id` is required (T1-030); `BattleWorld::new` fails with `SetupError::UnknownMap`, `MissingDeploymentZone` or `PositionOutOfMap`.
-    pub struct BattleResult { pub winner: Option<u8>, pub duration_ticks: u32, pub sides: Vec<SideResult>, pub summary: BattleSummary }
+    pub const SOLDIER_CAP: u32 = 32_768;                  // `BattleSetup::soldier_total()` (initial plus reinforcements) above it is `SetupError::OverCap` (SIM-CORE-006)
+    pub enum Weather { Clear, Rain, Fog }   pub struct VictoryRules { pub timeout_winner: Option<u8> }
+    pub struct GeneralSetup { pub unit_type: ContentId, pub rank: u8, pub name_key: String }
+    pub struct ReinforcementGroup { pub arrival_tick: u32, pub edge: u8, pub regiments: Vec<RegimentSetup> }
+    pub struct Scenario { #[serde(flatten)] pub setup: BattleSetup, pub commands: Vec<Command> }   // a scenario file (T1-081); `script() -> ScriptedCommands`
+    pub struct ScriptedCommands { .. }   // sorted by (tick, player, seq); `take_for(tick) -> Vec<Command>` hands over everything stamped `tick` or earlier (stale ones too, so the sim rejects them visibly), `remaining`, `is_empty`
+    pub struct BattleResult { pub winner: Option<u8>, pub duration_ticks: u32, pub sides: Vec<SideResult>, pub summary: BattleSummary { total_killed, total_fled } }
     pub struct SideResult { pub regiments: Vec<RegimentResult>, pub general_fate: GeneralFate, pub loot: i64 }
     pub struct RegimentResult { pub id: u32, pub initial: u16, pub survivors: u16, pub fled: u16, pub killed: u16, pub experience_gain: u16, pub ammo_left: u16 }
     pub enum GeneralFate { Alive, Wounded, Dead, Captured }
 }
 
-pub struct BattleWorld { world: bevy_ecs::World, schedule: Schedule, tick: Tick, phase: BattlePhase }
+pub struct BattleWorld { world: bevy_ecs::World, view_queries: ViewQueries /* cached QueryStates for view() */, schedules: Vec<Schedule> /* one per Stage, §4.5 */, tick: Tick, phase: BattlePhase }
 impl BattleWorld {
     pub fn new(setup: &BattleSetup, regs: Arc<Registries>) -> Result<Self, SetupError>;   // validates SIM-FLOW-019; the world keeps the Arc
     pub fn step(&mut self, commands: &[Command]) -> StepOutput;   // exactly one tick: simulates tick() + 1; commands must be stamped with that tick
     pub fn tick(&self) -> Tick;                                    // completed ticks; the app gathers commands for tick() + 1 (§15)
     pub fn phase(&self) -> BattlePhase;
-    pub fn snapshot(&self) -> Snapshot;                            // postcard bytes of all Hashable+Serialize components and resources
+    pub fn empty(seed: u64, regs: Arc<Registries>, phase: BattlePhase) -> Self;   // no map, no soldiers (tests, tools)
+    pub fn snapshot(&self) -> Snapshot;                            // an owned copy of all Hashable+Serialize components and resources; `Snapshot::to_bytes() -> Vec<u8>` / `from_bytes(&[u8]) -> Result<Snapshot, RestoreError>` are the postcard encoding (§4.6)
     pub fn restore(snapshot: &Snapshot, regs: Arc<Registries>) -> Result<Self, RestoreError>;  // rebuilds derived data (paths, flow fields, grid)
     pub fn hash(&self) -> StateHash;                               // same value as StepOutput.hash of the last step (or of the initial state)
-    pub fn result(&self) -> Option<BattleResult>;                  // Some once phase == Ended
-    pub fn view(&self) -> BattleView<'_>;                          // read-only accessors for render/ui/ai (T1-052): tick, phase, regs, sides, soldiers()/soldiers_unordered()/soldier(id) -> SoldierRow, regiments()/regiment(id) -> RegimentRow; cached QueryStates refreshed by step/new/restore/recompute_hash
+    // `result(&self) -> Option<BattleResult>` arrives with the battle flow in Phase 2; Phase 1 never reaches `Ended`
+    pub fn step_observed(&mut self, commands: &[Command], observer: &mut dyn StageObserver) -> StepOutput;   // `step` with `NoopObserver`; begin/end around every stage (§4.5, SAD §9.3)
+    pub fn view(&self) -> BattleView<'_>;                          // read-only accessors for render/ui/ai (T1-052): tick(), phase(), regs(), rules(), sides(), map(), nav_grid(), spatial_grid(), anchor_grid(), soldier_count(), regiment_count(), soldiers()/soldiers_unordered()/soldier(id) -> SoldierRow { id, regiment, unit, category, pos, prev_pos, facing, prev_facing, state, hp, slot }, regiments()/regiment(id) -> RegimentRow { id, side, unit, anchor_pos, anchor_facing, order, morale, morale_state, soldier_count, integrity, formation, ranks, files }, formation_state(id), path(id), slots_world(&row); cached QueryStates refreshed by step/new/restore/recompute_hash
+    pub fn map(&self) -> &Arc<LoadedMap>; pub fn nav_grid(&self) -> &NavGrid; pub fn setup(&self) -> Option<&BattleSetup>; pub fn registries(&self) -> &Arc<Registries>;
+    pub fn soldier_ids(&self) / regiment_ids(&self) -> impl Iterator; pub fn soldier_count(&self) / regiment_count(&self) -> usize;
+    pub fn replace_registries(&mut self, regs: Arc<Registries>);   // hot reload (T1-025): asserts the old id list is a prefix of the new one per kind; values copied at spawn (`Body`) do not update
+    pub fn threads(&self) -> usize; pub fn recompute_hash(&mut self) -> StateHash; pub fn ecs(&self) -> &World; pub fn debug_translate_all(&mut self, delta: V2, facing: Option<Angle<S>>);   // tools and tests
     pub fn set_threads(&mut self, n: usize);                       // n <= 1: SingleThreadedExecutor; else MultiThreadedExecutor on the process-global
                                                                    // ComputeTaskPool (sized by the first such call). Determinism test runs 1 and 8.
     pub fn ecs_mut(&mut self) -> &mut World;                       // tests and tools only; call recompute_hash() afterwards
@@ -361,6 +406,8 @@ pub enum BattleEvent {
 pub enum BattlePhase { Deployment, Battle, Pursuit, Ended }
 pub enum SpeedMode { Walk, Run, March }
 pub enum FireMode { FireAtWill, Hold, Target(RegimentId) }
+pub enum AbilityTarget { SelfTarget, Point(V2), Regiment(RegimentId) }
+pub enum RejectReason { StaleTick { command_tick: Tick, current: Tick }, UnknownRegiment(RegimentId), NotOwner(RegimentId), Routing(RegimentId), WrongPhase, UnknownContent(ContentId), FormationNotAllowed { regiment: RegimentId, template: ContentId }, NotImplemented }
 ```
 
 ### 4.3 Components (soldier-level, SoA via bevy_ecs tables)
@@ -376,31 +423,32 @@ pub enum FireMode { FireAtWill, Hold, Target(RegimentId) }
 | `FatigueC` | `f: S` | yes | — |
 | `SlotRef` | `slot: Option<u16>` | yes | — |
 | `Fsm` | `state: SoldierState, since: Tick` | yes | — |
-| `MeleeState` | `target: Option<SoldierId>, cooldown: u16, attackers: u8` | yes | — |
-| `RangedState` | `ammo: u16, cooldown: u16` | yes | — |
-| `Rank` | `rank: u8, file: u8` | no | — |
-| `GeneralTag` | marker + `rank: u8` | — | — |
-| `Dead` | marker, removed at Stage 15 | — | — |
+| `MeleeState` (Phase 2) | `target: Option<SoldierId>, cooldown: u16, attackers: u8` | yes | — |
+| `RangedState` (Phase 2) | `ammo: u16, cooldown: u16` | yes | — |
+| `Rank` | `rank: u8, file: u16` | no | — |
+| `GeneralTag` (Phase 2) | marker + `rank: u8` | — | — |
+| `Dead` (Phase 2) | marker, removed at Stage 15 | — | — |
 
-Regiment-level components live on regiment entities (≈ 200): `Regiment { id, army, faction, units: SmallVec<[Handle<UnitType>;2]>, soldiers: Vec<SoldierId> (ascending) }`, `Anchor { pos: V2, facing: Angle<S> }`, `FormationState { template, ranks, files, slots: Vec<Slot>, integrity: S, morph_until: Tick }`, `Order { kind: OrderKind, target: V2, facing: Option<Angle<S>>, speed: SpeedMode, since: Tick }`, `Path { waypoints: Vec<Waypoint { p: V2, corridor: S }>, next: u16, requested: bool }` (stored and snapshotted, T1-032), `Morale { m: S, state: MoraleState, rout_count: u8, deaths_5s: RingBuffer<u16, 100>, engaged_since: Option<Tick>, initial: u16 }`, `Fire { mode, target: Option<RegimentId>, retarget_at: Tick }`, `Energy { e: S }`, `Statuses { list: SmallVec<[StatusEffect; 4]> }`, `Cooldowns { list: SmallVec<[(Handle<Ability>, u16); 4]> }`, `Experience(u8)`, `Visible { by_faction: u8 /* bitmask */ }`.
+Regiment-level components live on regiment entities (≈ 200). As built (Phase 1): `Regiment { id, side: u8, setup_id: u32, unit: Handle<UnitType>, soldiers: Vec<SoldierId> (ascending), ammo: u16 }` (one unit type per regiment until Phase 3, plan S15), `Anchor { pos: V2, facing: Angle<S> }`, `FormationState { template, ranks: u8, files: u16, slots: Vec<Slot> (derived), assignment: Vec<Option<u16>>, integrity: S, morph_until: Tick, needs_reform: bool, prior_template: Option<Handle<FormationTemplate>> (corridor morph), laid_out_facing: Angle<S>, dirty: bool }` (`FormationState::new(template, ranks, slots, facing)`), `Order { kind: OrderKind, target: V2, facing: Option<Angle<S>>, speed: SpeedMode, since: Tick }` (`OrderKind::moves()`), `Path { waypoints: Vec<Waypoint { p: V2, corridor: S }>, next: u16, requested: bool }` (stored, hashed and snapshotted, T1-032; `is_active()`, `current()`), `Morale { m: S, state: MoraleState }`. `SoldierState` is `Idle | MoveToSlot | Fighting | Routing | Withdrawing | Dead`. Phase 2 adds `Morale { rout_count: u8, deaths_5s: RingBuffer<u16, 100>, engaged_since: Option<Tick>, initial: u16 }`, `Fire { mode, target: Option<RegimentId>, retarget_at: Tick }`, `Energy { e: S }`, `Statuses { list: SmallVec<[StatusEffect; 4]> }`, `Cooldowns { list: SmallVec<[(Handle<Ability>, u16); 4]> }`, `Experience(u8)`, `Visible { by_faction: u8 /* bitmask */ }`.
 
-Projectiles: `Projectile { id, shooter_regiment, side, launch_tick, land_tick, start: V2, end: V2, apex: S, kind, damage, pen }`, `Pos`, plus a `ProjectilePool` resource of free entities (REQ-PERF-008).
+Projectiles (Phase 2, T2-030): `Projectile { id, shooter_regiment, side, launch_tick, land_tick, start: V2, end: V2, apex: S, kind, damage, pen }`, `Pos`, plus a `ProjectilePool` resource of free entities (REQ-PERF-008).
 
 ### 4.4 Resources
 
-`Clock { tick }`, `Phase`, `Sides: Vec<SideState>` (deployment confirmed, defeated, edge, flow field handle), `MapRes(Arc<LoadedMap>)` (heightmap, zone raster, river flags, deployment polygons, inert walls and gates; built by `new`/`restore` from `map_id`, `BattleWorld::empty` holds a flat placeholder `engine:flat`), `SpatialGrid`, `NavGrid`, `HpaGraph`, `FlowFields`, `CommandQueue`, `Rng { streams: [RngStream; 9] }`, `Ids { soldiers, regiments, projectiles: IdAllocator }`, `Events: EventQueue<BattleEvent>`, `Rules: Arc<Rules>`, `Regs: Arc<Registries>`, `Weather`, `Timer`, `PendingDamage: Vec<(Tick, SoldierId, S, Angle<S>)>` (SIM-PROJ-008), `ThreadCount`.
+As built (Phase 1): `Clock { tick }`, `Phase`, `Sides(Vec<SideState { player, faction, deployment_zone, deployment_confirmed, defeated }>)`, `MapRes(Arc<LoadedMap>)` (heightmap, zone raster, river flags, deployment polygons; built by `new`/`restore` from `map_id`, `BattleWorld::empty` holds a flat placeholder `engine:flat`), `SpatialGridRes(SpatialGrid<SoldierId>)`, `AnchorGridRes(SpatialGrid<RegimentId>)`, `NavGridRes(NavGrid)`, `PathfinderRes(AStar)`, `PathRequests(BTreeSet<RegimentId>)`, `CommandInbox(Vec<Command>)`, `Rejected(Vec<(Command, RejectReason)>)`, `StepEvents(Vec<BattleEvent>)`, `LastHash(StateHash)`, `Rng { seed: u64, streams: [RngStream; StreamId::COUNT = 9] }`, `Ids { soldiers, regiments, projectiles: IdAllocator, soldier_entities: Vec<(SoldierId, Entity)>, regiment_entities: Vec<(RegimentId, Entity)> }` (the canonical ascending order every exclusive system iterates), `Regs(Arc<Registries>)` (rules are read as `Regs.0.rules`, so a hot-reload swap carries them; there is no separate `Rules` resource), `SetupRes(Option<BattleSetup>)`, `ThreadCount`. Later phases add `HpaGraph`, `FlowFields`, `Weather`, `Timer`, `PendingDamage: Vec<(Tick, SoldierId, S, Angle<S>)>` (SIM-PROJ-008) and the side's edge and flow-field handle.
 
 ### 4.5 Schedule
 
-One `Schedule` per stage, run in `Stage::ALL` order by `step` (T1-060; stages were already totally ordered, so nothing is lost and each stage can be timed through `StageObserver`), with one `SystemSet` per stage inside it. Within a set, systems are added with explicit `.after()` where order matters; otherwise bevy_ecs may parallelise. Systems that must be single-threaded for determinism are marked `.run_if(always)` and take `&mut World` exclusively (the apply steps).
+One `Schedule` per stage, run in `Stage::ALL` order by `step` (T1-060; stages were already totally ordered, so nothing is lost and each stage can be timed through `StageObserver`), with one `SystemSet` per stage inside it. As built the systems of a stage are `.chain()`ed (explicit total order); parallelism lives *inside* systems (`par_iter` over soldiers, `ComputeTaskPool::scope` over grid rows), never between them. Every schedule is built with the `SingleThreadedExecutor`; `set_threads(n > 1)` swaps all 18 to the multi-threaded executor on the process-global pool. Systems that must be exclusive for determinism take `&mut World` (the apply steps). `Stage` exposes `COUNT = 18`, `ALL`, `index()`, `name()`; `build_schedules() -> Vec<Schedule>`; `StageObserver { begin(Stage), end(Stage) }` with `NoopObserver` for plain `step`. The ten stages without Phase 1 systems (1, 8..16) each hold one empty system named after the stage so the profiler shows every row (SAD §12 T-9).
 
 Stage 0 `apply_commands`: sort incoming by `(player, seq)`, validate per SIM-CMD-003/004, mutate `Order`, `FormationState`, `Fire`, `Sides`; push `CommandRejected` events. As built (T1-047): `Move` / `AttackMove` (a move until Phase 2) write a fresh `Order` (target clamped to the map), clear the path, queue a `PathRequests` entry and request a reform; `Halt` ends the order and drops the path and wheel target; `SetFormation` rejects `UnknownContent` and `FormationNotAllowed` (template not in the unit's `formations`), then sets the template with `morph_until = tick + morph_ticks`, `ranks` (the template default when `None`), cancels any corridor morph and requests a reform; `SetFacing` goes through `formation::set_facing`; `SetSpeedMode` sets `Order.speed`; `GroupFormation` runs `arrange_group` and issues one move per placement with its ranks; `Deploy` is `WrongPhase` outside the deployment phase and otherwise teleports the anchor and its soldiers onto their slots; routing or shattered regiments reject everything but `Withdraw` (SIM-CMD-004).
-Stage 16 `battle_flow`: SIM-FLOW-011..017.
+Stage 2 `formation_layout`, `formation_apply`, `formation_integrity` (§7); Stage 3 `serve_path_requests`, `regiment_follow_path`; Stage 4 `soldier_steer`; Stage 5 `integrate`; Stage 6 `rebuild_spatial_grids`; Stage 7 `collision_resolve` (§5, §6).
+Stage 16 `battle_flow`: SIM-FLOW-011..017 (Phase 2; an empty placeholder in Phase 1).
 Stage 17 `flush_events_and_hash`: copy `Pos→PrevPos`, `Facing→PrevFacing`; hash per SIM-DET-004 in ascending id (iterate a sorted `Vec<Entity>` maintained by the `Ids` resource); drain events.
 
 ### 4.6 Snapshot
 
-`Snapshot { version: u32, tick, phase, setup: BattleSetup, ids, rng, sides, regiments: Vec<RegimentSnap>, soldiers: Vec<SoldierSnap>, projectiles: Vec<ProjectileSnap>, pending_damage, timer }` encoded with postcard (`SNAPSHOT_VERSION = 2` since T1-030, when `map_id` became required; Phase 0 snapshots are not migrated). Phase 0 layout: `RegimentSnap { id, side, setup_id, unit_type: ContentId, anchor_pos, anchor_facing, morale, morale_state, order, ammo }`, `SoldierSnap { id, regiment, p, v, facing, hp, fatigue, slot, fsm_state, fsm_since }`, `IdsSnap { soldiers_next, regiments_next, projectiles_next }`; `PrevPos`/`PrevFacing` and `Body` are rebuilt on restore. As built (T1-030..T1-048) `RegimentSnap` also carries the order (target, facing, speed, since), the stored path (waypoints with corridors, next, requested) and the formation state (template and prior template as ContentIds, ranks, integrity, morph_until, needs_reform, laid-out facing); `restore` installs the map from `setup.map_id`, then `rebuild_derived` rebuilds the spatial and anchor grids (from positions), the `NavGrid` (from the map; `HpaGraph`/`FlowFields` and gate states arrive with their phases), the `PathRequests` queue (from `Path.requested`), the formation slot tables (from template, count and ranks) and `Rank` (from `SlotRef`). Paths are stored, not re-requested (SIM-DET-005). Snapshot of 32k soldiers ≈ 32k × 40 B ≈ 1.3 MB.
+`Snapshot { version: u32, tick, phase, setup: BattleSetup, ids, rng, sides, regiments: Vec<RegimentSnap>, soldiers: Vec<SoldierSnap>, projectiles: Vec<()> /* ProjectileSnap from T2-030 */, pending_damage: Vec<()> /* T2-031 */, timer }` encoded with postcard (`SNAPSHOT_VERSION = 2` since T1-030, when `map_id` became required; Phase 0 snapshots are not migrated). Phase 0 layout: `RegimentSnap { id, side, setup_id, unit_type: ContentId, anchor_pos, anchor_facing, morale, morale_state, order, ammo }`, `SoldierSnap { id, regiment, p, v, facing, hp, fatigue, slot, fsm_state, fsm_since }`, `IdsSnap { soldiers_next, regiments_next, projectiles_next }`; `PrevPos`/`PrevFacing` and `Body` are rebuilt on restore. As built (T1-030..T1-048) `RegimentSnap` also carries the order (target, facing, speed, since), the stored path (waypoints with corridors, next, requested) and the formation state (`formation` and `prior_formation` as ContentIds, `ranks`, `integrity`, `morph_until`, `needs_reform`, `laid_out_facing`); `restore` installs the map from `setup.map_id`, then `rebuild_derived` rebuilds the spatial and anchor grids (from positions), the `NavGrid` (from the map; `HpaGraph`/`FlowFields` and gate states arrive with their phases), the `PathRequests` queue (from `Path.requested`), the formation slot tables (from template, count and ranks) and `Rank` (from `SlotRef`). Paths are stored, not re-requested (SIM-DET-005). Snapshot of 32k soldiers ≈ 32k × 40 B ≈ 1.3 MB.
 
 ### 4.7 Tests
 
@@ -414,23 +462,25 @@ Stage 17 `flush_events_and_hash`: copy `Pos→PrevPos`, `Facing→PrevFacing`; h
 ```rust
 // As built (T1-031): generic over the stable id so the same type indexes soldiers and regiment anchors.
 pub struct Entry<Id> { pub id: Id, pub entity: Entity, pub pos: V2 }
-pub struct SpatialGrid<Id> { cell: S, cols: u32, rows: u32, heads: Vec<u32> /* per cell, first index */, next: Vec<u32> /* per entry */, entries: Vec<Entry<Id>> /* ascending id */ }
+pub struct SpatialGrid<Id> { cell: S, inv_cell: S, cols: u32, rows: u32, heads: Vec<u32> /* per cell, first index */, next: Vec<u32> /* per entry */, entries: Vec<Entry<Id>> /* ascending id */, slots: Vec<u32> /* rebuild scratch */ }
 impl<Id: Copy + Ord> SpatialGrid<Id> {
     pub fn new(width: S, height: S, cell: S) -> Self;                 // cols/rows = ceil(extent / cell); a non-positive cell means one cell
     pub fn ensure(&mut self, width: S, height: S, cell: S) -> bool;   // re-dimensions when the map or the rules changed (hot reload)
     pub fn rebuild(&mut self, iter: impl IntoIterator<Item = Entry<Id>>);   // sorted by id, inserted back to front so every cell chain ascends → deterministic bucket order
-    pub fn cell_entries(&self, cx: u32, cy: u32) -> impl Iterator<Item = usize>;   // indices into entries(), ascending id
+    pub fn cell_entries(&self, cx: u32, cy: u32) -> CellIter<'_, Id>;   // indices into entries(), ascending id
     pub fn query_circle(&self, c: V2, r: S, out: &mut Vec<Entry<Id>>);         // ascending id (sorted after collection); query_circle_indices for the index form
     pub fn for_each_pair(&self, f: impl FnMut(usize, usize));       // i<j within same and neighbouring cells, each pair once (self, E, NE, N, NW), rows ascending
     pub fn for_each_pair_in_row(&self, cy: u32, f: impl FnMut(usize, usize));   // the pairs of one row, so rows can run in parallel into per-row buffers
     pub fn cell_of(&self, p: V2) -> (u32, u32);                      // clamped to the grid
+    pub fn query_circle_indices(&self, c: V2, r: S, out: &mut Vec<usize>);   // the index form of query_circle
+    pub fn cell(&self) -> S; pub fn cols(&self) / rows(&self) -> u32; pub fn entries(&self) -> &[Entry<Id>]; pub fn len(&self) -> usize; pub fn is_empty(&self) -> bool;
 }
 pub fn rebuild_spatial_grids(/* Stage 6 system */);                 // SpatialGridRes (soldiers, movement.spatial_cell) and AnchorGridRes (anchors, movement.anchor_cell); also run by rebuild_derived
 ```
 
-- Cell size `spatial.cell` = 4 m (about 10 soldier diameters); at 2 km × 2 km that is 250k cells, 1 MB of heads. Rebuilt every tick (Stage 6) rather than incrementally: 32k inserts ≈ 0.3 ms; a full rebuild is simpler to keep deterministic (ADR-013).
+- Cell size `movement.spatial_cell` = 4 m (about 10 soldier diameters); at 2 km × 2 km that is 250k cells, 1 MB of heads. Rebuilt every tick (Stage 6) rather than incrementally: 32k inserts ≈ 0.3 ms; a full rebuild is simpler to keep deterministic (ADR-013).
 - Pair iteration for collision uses the half-neighbourhood pattern (self, E, NE, N, NW) so each pair is visited once; pairs are collected per cell into a buffer, sorted by `(i, j)` id, then processed. Parallel over cell rows with results in per-soldier push buffers, applied in id order (SAD §8).
-- A second grid instance with `cell = 16 m` indexes regiment anchors for AI and visibility queries.
+- A second grid instance (`AnchorGridRes`, `movement.anchor_cell` = 16 m) indexes regiment anchors for AI and visibility queries.
 
 Tests: query results equal brute force on random layouts; pair enumeration is a permutation-invariant set.
 
@@ -439,20 +489,26 @@ Tests: query results equal brute force on random layouts; pair enumeration is a 
 ### 6.1 Nav grid and paths
 
 ```rust
-pub struct NavGrid { cell: S, cols: u32, rows: u32, cost: Vec<u16> /* 0 = impassable; else cost×100 */, passable_run_x: Vec<u8>, passable_run_y: Vec<u8> }
-impl NavGrid { pub fn from_map(map: &LoadedMap, rules: &MovementRules) -> Self; pub fn update_gate(&mut self, gate: GateId, state: GateState) -> DirtyRect; }
+pub struct NavGrid { cell: S, inv_cell: S, cols: u32, rows: u32, cost: Vec<u16> /* 0 = impassable; else cost×100 */, passable_run_x: Vec<u8>, passable_run_y: Vec<u8> }
+impl NavGrid {
+    pub fn from_map(map: &LoadedMap, regs: &Registries, rules: &MovementRules) -> Self;   pub fn from_costs(cell: S, cols: u32, rows: u32, cost: Vec<u16>) -> Self;   // tests
+    pub fn cell(&self) / cols / rows / cell_count; pub fn index(cx, cy) / coords(index); pub fn cell_of(p) / cell_center(cx, cy) / in_bounds(cx: i64, cy: i64);
+    pub fn cost(cx, cy) -> u16; pub fn is_passable(cx, cy) / is_passable_at(p); pub fn corridor_width_at(p) -> S; pub fn passable_run_x / passable_run_y(cx, cy) -> u8; pub fn nearest_passable(cx, cy) -> Option<(u32, u32)>; pub fn segment_clear(a: V2, b: V2) -> bool;
+    // Phase 5 (gates): pub fn update_gate(&mut self, gate: GateId, state: GateState) -> DirtyRect;
+}
+// Phase 3 (REQ-PATH-002):
 pub struct HpaGraph { cluster: u32, gates: Vec<GateNode>, edges: Vec<(u32, u32, u32)>, cluster_of: Vec<u16> }
 impl HpaGraph { pub fn build(nav: &NavGrid, cluster: u32) -> Self; pub fn repair(&mut self, nav: &NavGrid, dirty: DirtyRect); }
 pub trait Pathfinder { fn find(&mut self, nav: &NavGrid, from: V2, to: V2, out: &mut Vec<V2>) -> PathResult; }
-pub struct AStar { open: BinaryHeap<(Reverse<u32>, u32)>, g: Vec<u32>, came: Vec<u32>, closed_epoch: Vec<u32>, epoch: u32 }
-pub struct Hpa { abstract_astar: AStar, refine: AStar, graph: HpaGraph }
+pub struct AStar { open: BinaryHeap<Reverse<(u32 /* f */, u32 /* node */)>>, g: Vec<u32>, came: Vec<u32>, g_epoch: Vec<u32>, closed_epoch: Vec<u32>, epoch: u32 }   // `new()`, `search_cells(nav, start, goal, out: &mut Vec<(u32, u32)>) -> Option<u32>` (cell path and cost); `dijkstra_cost(nav, start, goal)` is the test oracle
+pub struct Hpa { abstract_astar: AStar, refine: AStar, graph: HpaGraph }   // Phase 3
 pub fn string_pull(nav: &NavGrid, path: &mut Vec<V2>);
-pub struct PathRequests { queue: BTreeSet<RegimentId> }   // served ascending, `movement.paths_per_tick` per tick (SIM-MOVE-005)
+pub struct PathRequests(pub BTreeSet<RegimentId>);   // a resource (§4.4), served ascending, `movement.paths_per_tick` per tick (SIM-MOVE-005)
 ```
 
 - A\* uses integer costs (octile × 100) so the heap order is deterministic regardless of `Scalar`. Ties in the heap are broken by node index.
 - `Pathfinder` is a resource swapped by phase: `AStar` in Phase 1, `Hpa` from Phase 3 (REQ-PATH-002).
-- As built (T1-032): `NavGrid::from_map(&LoadedMap, &Registries, &MovementRules)` marks a nav cell impassable when any zone cell whose centre lies in it is `passable: false` or a river cell without a `crossing` zone, and costs it the largest `move_cost × 100` of those zone cells (slope is not in the cost; `from_costs` builds test grids). Diagonal steps cost `ceil(cost × 141 / 100)` and never cut an impassable corner. `Pathfinder::find(nav, from, to, out) -> PathResult::{Found, NoPath, StartBlocked, GoalBlocked}`: blocked endpoints snap to the nearest passable cell within 8 rings (ties by smaller `(cy, cx)`), `out[0] == from`, the last point is `to` (or the snapped cell centre); `string_pull` is greedy farthest-visible over `segment_clear`, a supercover DDA that also tests both side cells at an exact corner crossing. `corridor_width_at(p)` = `min(passable_run_x, passable_run_y) × cell`; each `Waypoint { p, corridor }` stores it so the corridor morph (SIM-MOVE-004) compares against the regiment's current width at follow time instead of a baked flag. `serve_path_requests` (Stage 3, exclusive) pops up to `paths_per_tick` ids from `PathRequests` (a `BTreeSet<RegimentId>`, rebuilt on restore from `Path.requested`), writes `Path { waypoints, next: 1, requested: false }`, and on failure resets the order to Idle with a `PathNotFound` event. `dijkstra_cost` is the optimality oracle.
+- As built (T1-032): `NavGrid::from_map(&LoadedMap, &Registries, &MovementRules)` marks a nav cell impassable when any zone cell whose centre lies in it is `passable: false` or a river cell without a `crossing` zone, and costs it the largest `move_cost × 100` of those zone cells (slope is not in the cost; `from_costs` builds test grids). Diagonal steps cost `ceil(cost × 141 / 100)` and never cut an impassable corner. `Pathfinder::find(nav, from, to, out) -> PathResult::{Found, NoPath, StartBlocked, GoalBlocked}`: blocked endpoints snap to the nearest passable cell within `SNAP_RADIUS` = 8 rings (ties by smaller `(cy, cx)`), `out[0] == from`, the last point is `to` (or the snapped cell centre); `string_pull` is greedy farthest-visible over `segment_clear`, a supercover DDA that also tests both side cells at an exact corner crossing. `corridor_width_at(p)` = `min(passable_run_x, passable_run_y) × cell`; each `Waypoint { p, corridor }` stores it so the corridor morph (SIM-MOVE-004) compares against the regiment's current width at follow time instead of a baked flag. `serve_path_requests` (Stage 3, exclusive) pops up to `paths_per_tick` ids from `PathRequests` (a `BTreeSet<RegimentId>`, rebuilt on restore from `Path.requested`), writes `Path { waypoints, next: 1, requested: false }`, and on failure resets the order to Idle with a `PathNotFound` event. `dijkstra_cost` is the optimality oracle.
 
 ### 6.2 Systems
 
@@ -463,7 +519,10 @@ pub struct PathRequests { queue: BTreeSet<RegimentId> }   // served ascending, `
 | `soldier_steer` (seek/flow, separation via grid, avoidance) → writes `Vel`, `Facing`, `Fsm` | 4 | par_iter over soldiers (reads previous tick grid) | SIM-MOVE-020..025, SIM-FLOW-002; as built (T1-043): the slot comes from the regiment's `Anchor` + `FormationState` through `Ids`, `v_max = mode_speed(unit, order.speed) × zone × slope`, neighbours are the `sep_max_neighbours` nearest grid entries (ties by id) within `2r_i + 2r_j + sep_margin` with `r_j` read from the neighbour's `Body`, avoidance tries ±15°, ±30°, ±45°, ±60°, ±90° against `NavGrid::segment_clear` over `lookahead_ticks` and stops when none is clear; facing tracks the slot facing within `slot_arrive_radius`, else the velocity |
 | `integrate` | 5 | par_iter | `p += v × dt`; SIM-MOVE-042 clamp; as built (T1-043) `push_out` tries the full move, then x only, then y only, else stays (Phase 1 plan S12) |
 | `collision_resolve` | 7 | pair buffers per cell row → id-order apply, ×`collision_iterations` | SIM-MOVE-040..043; as built (T1-044): the pair lists of this tick's grid are enumerated once per row (rows in parallel through `ComputeTaskPool::scope` when a pool exists), sorted `(i, j)`, then each pass folds them in row order into per-soldier pushes from the current positions and applies the pushes in ascending id through `push_out`; positions are written back once; coincident centres separate along +x |
-| `compute_flow_fields` | on demand (start, nav change) | no | SIM-FLOW-001/003 |
+| `rebuild_spatial_grids` | 6 | no | §5: soldiers into `SpatialGridRes`, anchors into `AnchorGridRes`, from end-of-tick positions |
+| `compute_flow_fields` | on demand (start, nav change); Phase 3 | no | SIM-FLOW-001/003 |
+
+Helpers exported from `movement` for tests and tools: `push_out` (integrate), `Disc`, `accumulate_pushes`, `pair_push` (collision), `seek_velocity` (steer), `mode_speed`, `zone_move_mult`, `slope_mult`, `formation_width`, `tick_dt`, `deg_to_rad` (regiment).
 
 Note on Stage 4 reading the grid: steering at tick *t* uses the grid built at Stage 6 of tick *t−1* (end-of-tick positions of the previous tick). Collision at Stage 7 uses the grid rebuilt at Stage 6 of the same tick and, when it moved anyone, rebuilds it from the pushed positions (T1-044): the grid then always indexes end-of-tick positions, which is exactly what `rebuild_derived` reconstructs after a restore (SIM-DET-005); a grid of pre-collision positions could not be recovered from a snapshot.
 
@@ -483,15 +542,17 @@ pub enum Layout { Line, Column, Square, Wedge, Phalanx, Loose, Custom }
 pub struct Slot { pub offset: V2, pub facing_offset: Angle<S>, pub rank: u8, pub file: u16 /* u16 since T1-040: a 2,000-man single rank */, pub category: Option<UnitCategory> }
 pub trait LayoutFn { fn layout(&self, t: &FormationTemplate, n: u16, ranks: u8, radius: S, out: &mut Vec<Slot>); }
 pub fn layout_for(layout: Layout) -> &'static dyn LayoutFn;   // SIM-FORM-003..009
-// As built (T1-040): layout_slots(t, n, ranks, radius, out) dispatches on t.layout; effective_ranks(t, n, requested) clamps to [min_ranks, max_ranks] and to n;
-// files_for(n, ranks) = ceil(n / ranks); spacing(t, radius) = (spacing_file, spacing_rank) × 2 radius; ranks_used / files_used read a table back.
+// As built (T1-040): layout_slots(t, n, ranks, radius, out) dispatches on t.layout; effective_ranks(t, n, requested) clamps to [max(min_ranks, 1), max_ranks] and to n, never below 1;
+// files_for(n, ranks) = max(ceil(n / ranks), 1); spacing(t, radius) = (spacing_file, spacing_rank) × 2 radius; ranks_used / files_used read a table back.
 // Column widens beyond default_files_column only if it would exceed 255 ranks; Wedge ignores `ranks`; Square uses `ranks` as the depth of each side.
 pub fn assign_slots(soldiers: &[AssignSoldier { id, pos, category }], slots: &[Slot], anchor: &Anchor, rules: &FormationRules, prev: &[Option<u16>], out: &mut Vec<Option<u16>>, scratch: &mut AssignScratch);  // SIM-FORM-022; as built (T1-041) the grid it searches is a private one over the *slots* (rings of keep_slot_radius doubling up to assign_search_radius, brute force beyond), rebuilt per call into `scratch`; the soldier grid is not needed
-pub fn slot_world(anchor: &Anchor, slot: &Slot) -> V2;   // a + R(θ_a) · o (SIM-FORM-001)
-pub fn integrity(regiment: &Regiment, anchor: &Anchor, state: &FormationState, soldiers: &Query<(&Soldier, &Pos, &SlotRef)>, ids: &Ids, radius: S) -> S;  // SIM-FORM-030, as built (T1-045); `formation_integrity` runs it every integrity_period_ticks with radius = integrity_radius × sf
+pub fn slot_world(anchor: &Anchor, slot: &Slot) -> V2;   // a + R(θ_a) · o (SIM-FORM-001); `frame(anchor) -> (right, forward)` gives the axes (`forward = (cos θ, sin θ)`, `right = (sin θ, −cos θ)`), `local_to_world(anchor, offset)` the same map
+pub fn integrity(regiment: &Regiment, anchor: &Anchor, state: &FormationState, soldiers: &SoldierRead /* SystemParam alias over (&Soldier, &Pos, &SlotRef) */, ids: &Ids, radius: S) -> S;  // SIM-FORM-030, as built (T1-045); `formation_integrity` runs it every integrity_period_ticks with radius = integrity_radius × sf
 pub fn set_facing(anchor: &mut Anchor, order: &mut Order, state: &mut FormationState, rules: &FormationRules, sr: S, facing: Angle<S>) -> bool;  // SIM-FORM-024 (T1-045): order.facing becomes the wheel target that regiment_follow_path turns toward at wheel_rate while halted; beyond turn_in_place_angle a halted regiment about-faces instead (anchor to the rear rank's centre, facing + π, reform), returning true
 pub struct GroupFormationTemplate { pub id: ContentId, pub kind: GroupKind, pub gap: S, pub skirmishers_forward: bool, pub cavalry_flanks: bool, pub lines: u8 }
 pub fn arrange_group(t: &GroupFormationTemplate, regiments: &[RegimentInfo { id, pos, category, count, template, radius }], anchor: V2, facing: Angle<S>, width: S, rules: &FormationRules, regs: &Registries) -> Vec<Placement { id, anchor, facing, ranks }>;  // SIM-FORM-040..042; as built (T1-046): regiments ordered by their anchor's projection on the group's right axis (ties by id), cavalry alternated onto the outer positions, skirmishers `skirmish_offset` ahead; ranks start at each template's minimum and the widest regiment deepens one rank at a time until the line (widths + gaps) fits `width × (1 + width_tolerance)`; double_line alternates regiments into `lines` lines `2 × gap` apart, echelons step successive regiments toward the named flank `2 × gap` back, refused flanks pull the flank regiment `3 × gap` back and turn it 45° inward; output ascending by id
+pub fn ranks_for_width(t: &FormationTemplate, count: u16, radius: S, width: S, tolerance: S) -> u8;   // the SIM-FORM-042 loop for one regiment (the UI's single-regiment drag, T1-062)
+pub fn lateral_order(regiments: &[RegimentInfo], right: V2, cavalry_flanks: bool) -> Vec<usize>; pub fn arranged_width(..) -> S;   // the pieces of arrange_group, exposed for tests
 ```
 
 Systems: `formation_layout` (Stage 2, per regiment whose `needs_reform` is set, whose soldier count differs from its slot count, or whose anchor facing moved more than `reform_angle` since the last layout; parallel over regiments when a task pool exists and serial otherwise, each writing only its own `FormationState`), then `formation_apply` (Stage 2, exclusive: writes `SlotRef` and `Rank` to the soldiers in regiment id order), `formation_integrity` (Stage 2, every `integrity_period_ticks`). Resize (SIM-FORM-021) falls out of the assignment: a soldier whose slot vanished takes the nearest free one, so the rearmost soldiers close the front-rank gaps. `rebuild_formation_derived` recomputes slots and `Rank` on restore.
@@ -623,37 +684,50 @@ Tests: economy arithmetic golden; interception creates exactly one battle with r
 
 - **Projection.** World (x, y, h) → screen: isometric with fixed pitch. `screen = P × R(k × 90°) × (x, y)` plus `−h × pitch_scale` on screen y, where `k ∈ 0..4` is the snap rotation (OQ-1 resolved as 4 snaps for MVP; 8 as Could). Sprite facing index = `(facing8 − 2k) mod 8`, so 8 facing sets suffice for all snaps. As built (T1-052): `Camera { center: Vec2 (world), zoom (px/m, 2..96), rotation: u8 (0..=3, quarter turns clockwise), pitch (0.5), elevation (0.8) }`; world → view applies `R(−k·90°)`; `world_to_screen`, `screen_to_world`, `pan_screen`, `zoom_at` (keeps the point under the cursor fixed), `rotate`, `visible_bounds` (culling AABB).
 - **Depth.** Painter's order by projected y (back to front), with instance sort per frame on the CPU (32k sort ≈ 1 ms) or by depth in a depth buffer using projected y as z; the latter is chosen (no CPU sort, alpha edges handled by alpha-to-coverage).
-- **Instancing.** One draw per (atlas, LOD tier). Instance layout 32 bytes (as built in T1-051; wgpu has no scalar `f16` vertex format): `pos: [f32; 2]` (projected screen pixels), `depth: f32`, `frame_facing: u32` (atlas column in bits 0..16, facing row in bits 16..24), `tint: [u8; 4]`, `scale: f32`, `flags: u32` (bit 0 selected, bit 1 hovered), `reserved: u32`. 32k instances = 1 MB per frame, written with `queue.write_buffer` into a ring of 3 buffers. The colour target is 4× MSAA with alpha-to-coverage, resolved to the surface. Sprite sheets are `SpriteSet` content files (`content/sprites/*.json5`: atlas path, frame size, facings as rows, columns as frames, ground origin, named animations) over a PNG under `assets/`; `il_cli genart` generates the placeholder sheets.
+- **Instancing.** One draw per atlas (LOD tiers are Phase 3). Instance layout 32 bytes (as built in T1-051; wgpu has no scalar `f16` vertex format): `pos: [f32; 2]` (projected screen pixels), `depth: f32`, `frame_facing: u32` (atlas column in bits 0..16, facing row in bits 16..24), `tint: [u8; 4]`, `scale: f32`, `flags: u32` (bit 0 selected, bit 1 hovered), `_reserved: u32` (`SpriteInstance`, `SpriteInstance::SIZE`, `pack_frame_facing`). 32k instances = 1 MB per frame, written with `queue.write_buffer` into a ring of 3 buffers. The colour target is 4× MSAA with alpha-to-coverage, resolved to the surface. Sprite sheets are `SpriteSet` content files (`content/sprites/*.json5`: atlas path, frame size, facings as rows, columns as frames, ground origin, named animations) over a PNG under `assets/`; `il_cli genart` generates the placeholder sheets.
 - **Interpolation.** `p = lerp(prev, cur, alpha)`; facing snaps when the angle crosses a facing8 boundary (no angular lerp for sprites).
-- **LOD.** `zoom < z1`: Detailed (full atlas frame, animation); `z1..z2`: Reduced (single frame per state, no animation); `> z2`: Aggregation — one quad per regiment rank block coloured by faction and shaded by density, computed from `FormationState` (REQ-RNDR-004).
+- **LOD.** Phase 3 (REQ-RNDR-004); nothing of it is built in Phase 1. `zoom < z1`: Detailed (full atlas frame, animation); `z1..z2`: Reduced (single frame per state, no animation); `> z2`: Aggregation — one quad per regiment rank block coloured by faction and shaded by density, computed from `FormationState` (REQ-RNDR-004).
 - **Terrain.** As built (T1-053): `il_render::terrain::TerrainMesh::build(&LoadedMap, &Registries)` makes one vertex per height sample (`pos`, `height`, `shade` from the finite-difference normal under a fixed north-west light; 16 bytes) and two triangles per `height_cell` cell, plus an `R8Uint` zone-index raster at `zone_cell` (rows padded to 256 bytes; river cells without a `crossing` zone take slot 255 = water) and a 256-entry linear palette from `ZoneType.colour`. `terrain.wgsl` projects vertices with a 64-byte camera uniform that mirrors `Camera::world_to_screen`, writes depth 1.0 with no depth write so every sprite draws over it, and colours fragments from the palette times the shade with 2 m contour lines. Rivers and roads therefore come from the raster rather than separate strips; walls and gates as sprite strips arrive in Phase 5. `Renderer::set_terrain(&TerrainMesh)` uploads once per battle; `Renderer::render(&FrameScene { clear, camera, sprites, lines }, ui)` draws terrain, sprites and lines in one MSAA pass. Sprites take `height` from `LoadedMap::height_at` in `build_snapshot`. A line-list pipeline (`lines.rs`, `LineScene { vertices: Vec<LineVertex { pos, colour }> }`, screen-space, alpha-blended, no depth) draws the deployment outlines (`deployment_outlines`, ground-following, side tint) and serves the debug overlays (T1-054).
 - **Debug overlays.** Line list pipeline fed from `BattleView` (nav grid, slots, paths, LOS radii, morale bars) toggled by `DebugFlags`. As built (T1-054): `il_render::debug::build_debug_lines(view, DebugFlags { nav_grid, slots, paths, anchors, spatial_cells }, camera, screen, &mut LineScene)` appends to the frame's line scene after the deployment outlines; every point is projected onto the terrain; grids are clipped to the visible bounds and skipped beyond 40k cells; the app toggles the flags through the `debug_nav_grid`, `debug_slots`, `debug_paths`, `debug_anchors`, `debug_spatial` bindings (F5..F9 by default; F1..F4 are the formation hotkeys) in `dev` builds and shows the enabled ones in the title.
 - **Threading.** Phase 1: render on the main thread after the sim step from a `RenderSnapshot` (positions ×2, facings ×2, regiment blocks, projectiles, camera). Phase 3: the snapshot is sent over a channel to a render thread (REQ-RNDR-007); the snapshot type is designed now so only the plumbing changes (T-5).
 
 ```rust
-pub struct Renderer { device, queue, surface, sprite_pipe, terrain_pipe, line_pipe, atlases: Vec<Atlas>, instance_ring: [Buffer; 3], camera: Camera }
-pub struct Camera { pub center: V2f, pub zoom: f32, pub rotation: u8 /* 0..4 */, pub pitch_scale: f32 }
-pub struct RenderSnapshot { pub tick: Tick, pub alpha: f32, pub soldiers: Vec<SoldierInst>, pub projectiles: Vec<ProjInst>, pub regiments: Vec<RegimentBlock>, pub fog: FogMask, pub debug: DebugLines }
-impl Renderer { pub fn render(&mut self, colour: ClearColour, scene: &SpriteScene, ui: Option<&EguiPaint>) -> Result<(), RenderError>; }  // as built: the sprite pass (MSAA, resolved to the surface) then the egui-wgpu paint pass over it; `EguiPaint` borrows il_ui's tessellated `UiOutput`
-pub fn build_snapshot(view: &BattleView, input: &SnapshotInput { alpha, camera, screen, selected }, out: &mut RenderSnapshot);  // as built (T1-052): clears and refills `out` (no per-frame allocation), lerps positions, snaps facing8, culls to camera bounds; `lod`, `flags` and `faction` join the input as their features land (T1-054, Phase 2/3)
-pub fn scene_from_snapshot(snap: &RenderSnapshot, screen: Vec2, time: f32, categories: &[CategoryAtlas], out: &mut SpriteScene);  // projection, depth from projected ground y, facing remap, animation column, side tint
+// As built (T1-050..T1-054). Planned fields for later phases (projectiles, fog mask, LOD) join RenderSnapshot with their features.
+pub struct Renderer { surface, device, queue, config, targets /* MSAA colour + depth, recreated on resize */, terrain_pipe, terrain: Option<TerrainGpu>, sprites: SpritePipeline, lines: LinePipeline, egui: EguiPass, atlases: Vec<Atlas> }
+impl Renderer {
+    pub fn new(window, size, vsync) -> Result<Self, RenderError>; pub fn resize(&mut self, size); pub fn set_vsync(&mut self, on: bool); pub fn size(&self); pub fn surface_format(&self); pub fn device(&self); pub fn queue(&self);
+    pub fn load_atlas(&mut self, png: &[u8], ..) -> Result<AtlasId, AtlasError>; pub fn atlas(&self, id: AtlasId) -> &Atlas;   // `atlas_path` resolves a sprite set's sheet under the mod's assets root; `anim_column` picks the frame
+    pub fn set_terrain(&mut self, mesh: &TerrainMesh); pub fn clear_terrain(&mut self); pub fn has_terrain(&self) -> bool;
+    pub fn render(&mut self, frame: &FrameScene<'_> { clear: ClearColour /* ClearColour::FIELD */, camera: Option<Camera>, sprites: &SpriteScene, lines: &LineScene }, ui: Option<&mut EguiPaint<'_>>) -> Result<(), RenderError>;   // terrain, sprites and lines in one 4× MSAA pass resolved to the surface, then the egui-wgpu paint pass; `EguiPaint` borrows il_ui's tessellated `UiOutput`
+}
+pub struct Camera { pub center: Vec2 /* world m */, pub zoom: f32 /* px per m, MIN_ZOOM 2 ..= MAX_ZOOM 96, DEFAULT_ZOOM 12 */, pub rotation: u8 /* 0..=3 quarter turns */, pub pitch: f32 /* 0.5 */, pub elevation: f32 /* 0.8 */ }
+impl Camera { pub fn new(center) -> Self; pub fn world_to_screen / screen_to_world / pan_screen / zoom_at / rotate / visible_bounds; pub fn rotate_to_view / rotate_to_world; pub fn facing_index(&self, facing8: u8) -> u8 /* (facing8 + 8 − 2·rotation) mod 8 */ }
+pub struct RenderSnapshot { pub tick: Tick, pub alpha: f32, pub camera: Camera, pub soldiers: Vec<SoldierInst>, pub regiments: Vec<RegimentBlock>, pub counts: EntityCounts { soldiers, visible_soldiers, regiments } }
+pub struct SoldierInst { pub pos: [f32; 2] /* world, interpolated */, pub height: f32, pub facing8: u8 /* not interpolated: facing snaps */, pub sprite_set: u16, pub side: u8, pub moving: bool, pub selected: bool }
+pub struct SnapshotInput<'a> { pub alpha: f32, pub camera: Camera, pub screen: Vec2, pub selected: &'a BTreeSet<RegimentId> }
+pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut RenderSnapshot);   // T1-052: clears and refills `out` (no per-frame allocation), lerps positions, snaps facing8, culls to camera bounds padded by CULL_PAD_METRES = 4; `height` from `LoadedMap::height_at`
+pub struct SetAtlas<'a> { pub atlas: AtlasId, pub set: &'a SpriteSet }
+pub fn scene_from_snapshot(snap: &RenderSnapshot, screen: Vec2, time: f32, sets: &[SetAtlas<'_>], out: &mut SpriteScene);   // projection, depth from projected ground y, facing remap, animation column (`SHEET_PIXELS_PER_METRE` = 30), `side_tint(side) -> [u8; 4]`
+pub struct SpriteScene { pub batches: Vec<SpriteBatch { atlas, instances: Vec<SpriteInstance> }> }   pub struct LineScene { pub vertices: Vec<LineVertex { pos, colour }> }
+pub struct TerrainVertex { pos, height, shade }   pub fn ground_height(map, p) -> f32;
 ```
 
 Budget: 32k instances at 60 FPS: snapshot build ≈ 1.5 ms, GPU ≈ 2 ms on the target GPU.
 
-Tests: projection round trip; facing index under rotation; LOD tier selection; headless `wgpu` test with a software adapter renders one frame without panic (CI, best effort).
+Tests: projection round trip; facing index under rotation; snapshot culling, interpolation and selection flags (`crates/il_render/tests/snapshot.rs`); debug line generation (`tests/debug.rs`); the 32k-sprite frame-time check is `il_app --bench-sprites` (T1-051). LOD tier selection and a headless software-adapter frame remain planned with the LOD work (Phase 3).
 
 ## 11. UI and input (`il_ui`)
 
-- **Input mapping.** `Bindings` loaded from `content/input/bindings.json5` (REQ-INP-005): `{ action: "select_all", keys: ["Ctrl+A"] }`. `InputState` accumulates winit events per frame; `Gestures` produce `UiIntent`s: `Select(box|click)`, `OrderMove { target, facing, width }` from right-drag (drag vector defines facing perpendicular and width), `AttackMove`, `Halt`, `SetFormation`, `Ability`, `CameraPan/Zoom/Rotate`, `Pause`, `Speed`. As built (T1-061): `il_ui::Bindings::from_content(&InputBindings) -> (Bindings, Vec<BindingError>)` parses chords (`[Ctrl+][Shift+][Alt+]Key`, Modding SDK §4.11) into `Chord { mods, trigger: Key(KeyCode) | Click(b) | DoubleClick(b) | Drag(b) | WheelUp | WheelDown | ModifierOnly }` keyed by `Action`; `InputState::on_window_event(&WindowEvent, consumed_by_egui)` tracks held keys, modifiers, cursor and wheel and recognises gestures itself (a press moving under 4 px is a `Click`, past it a `DragStart`/`DragEnd`; a second click within 0.35 s and 6 px is `double`), then `pressed / held / wheel_for / gesture / drag(&Bindings, Action)` answer the app per frame; the app hands in wall time, il_ui reads no clock.
-- **Selection model.** `Selection { regiments: BTreeSet<RegimentId>, groups: [BTreeSet<RegimentId>; 10] }`, only own faction, only visible. As built (T1-061): `Selection::{click(hit, add), box_select(hits, add), set, set_group(n), recall_group(n, add), retain}`; hit testing lives in `il_ui::pick` (`pick_regiment`, `regiments_in_box`, `regiments_of_type_on_screen`, `own_regiments`) over `BattleView` soldier positions through a `Fn(V2) -> Vec2` projection closure the app builds from `Camera` and `ground_height`, so il_ui never depends on il_render; only regiments whose side belongs to the local player are returned; a soldier's hit circle is centred half a body above its ground point with radius `max(6 px, 1.5 × drawn radius)`.
-- **Command emission.** `UiIntent → Command` with `tick = now + input_delay`, `seq` from a per-player counter. Drag-formation → `GroupFormation` if > 1 regiment else `Move { facing }` and `SetFormation { ranks }` derived per SIM-FORM-042. As built (T1-062): `il_ui::orders::drag_formation(from, to, centroid, flip) -> Option<DragFormation { anchor, forward, width }>` works in world metres (the app unprojects the screen points): `anchor` is the drag midpoint, `width` its length (under 1 m is no gesture), `forward` the perpendicular pointing away from the selection's anchor centroid, negated by `flip` (the `order_flip_facing` modifier); `UiIntent::{Move, DragFormation, Halt, Formation(n), SpeedMode}` and `commands_for(intent, OrderContext { view, regiments, speed })` return the `CommandKind`s in queue order: a single-regiment drag gives `SetFormation { ranks: Some(il_sim_battle::ranks_for_width(..)) }` then `Move { facing }`, a multi-regiment drag `SetSpeedMode` (the run toggle; `GroupFormation` moves at each regiment's current order speed) then `GroupFormation` with the registry's first `battle_line` template; `Formation(n)` is one `SetFormation { ranks: None }` per distinct n-th template of the selected unit types; `BattleSession::queue` stamps `tick + input_delay` and the per-player `seq`.
-- **Panels (egui).** Battle: regiment cards (top), command card (bottom), minimap with fog (bottom-right, rendered from `FogMask` and regiment blocks into an egui texture), clock and speed (top-right), casualties. Deployment: regiment tray, zone outline, confirm. Campaign: province, settlement, army, diplomacy, research, faction, turn log, end-turn. Menus: main, custom battle (map, sides, roster builder from registries), settings (bindings, audio, video), load/save (headers from `il_save`).
-- **Localisation.** All labels via `Locale::get`; a debug toggle shows keys.
+- **Input mapping.** `Bindings` loaded from `content/input/bindings.json5` (REQ-INP-005): `{ action: "select_all", keys: ["Ctrl+A"] }`. As built (T1-061): `il_ui::Bindings::from_content(&InputBindings) -> (Bindings, Vec<BindingError>)` parses chords (`[Ctrl+][Shift+][Alt+]Key`, Modding SDK §4.11) into `Chord { mods, trigger: Key(KeyCode) | Click(b) | DoubleClick(b) | Drag(b) | WheelUp | WheelDown | ModifierOnly }` keyed by `Action`; `InputState` accumulates winit events per frame (`begin_frame(time_seconds)`, `on_window_event(&WindowEvent, consumed_by_egui)` or the granular `key` / `cursor_moved` / `cursor_left` / `button` / `wheel` / `set_modifiers`, then `end_frame`) and recognises gestures itself (a press moving under `DRAG_THRESHOLD_PX` = 4 px is a `Click`, past it a `DragStart`/`DragEnd`; a second click within `DOUBLE_CLICK_SECONDS` = 0.35 s and `DOUBLE_CLICK_PX` = 6 px is `double`); `pressed / held / key_held / wheel_for / gesture / gestures / drag / button_dragging` (each against `&Bindings, Action`) and `gesture_matches` answer the app per frame, with `mods`, `cursor`, `cursor_delta` for raw state; the app hands in wall time, il_ui reads no clock. The planned intent set (`Select`, `AttackMove`, `Ability`, camera, pause and speed intents) did not materialise as intents: camera, pause, speed, selection and control groups are driven by the app straight from bindings, and `UiIntent` covers orders only (below).
+- **Selection model.** `Selection { regiments: BTreeSet<RegimentId>, groups: [BTreeSet<RegimentId>; GROUPS = 10] }`, only own faction, only visible. As built (T1-061): `Selection::{new, click(hit, add), box_select(hits, add), set, set_group(n), recall_group(n, add), retain, contains, len, is_empty, clear}`; hit testing lives in `il_ui::pick` (`pick_regiment`, `regiments_in_box`, `regiments_of_type_on_screen`, `own_regiments`, `owned(view, id, player)`) over `BattleView` soldier positions through a `Project<'a> = dyn Fn(V2) -> Vec2 + 'a` projection closure the app builds from `Camera` and `ground_height`, so il_ui never depends on il_render; only regiments whose side belongs to the local player are returned; a soldier's hit circle is centred half a body above its ground point with radius `max(6 px, 1.5 × drawn radius)`.
+- **Command emission.** `UiIntent → Command` with `tick = now + 1 + input_delay`, `seq` from a per-player counter. Drag-formation → `GroupFormation` if > 1 regiment else `Move { facing }` and `SetFormation { ranks }` derived per SIM-FORM-042. As built (T1-062): `il_ui::orders::drag_formation(from, to, centroid, flip) -> Option<DragFormation { anchor, forward, width }>` works in world metres (the app unprojects the screen points): `anchor` is the drag midpoint, `width` its length (under `MIN_DRAG_WIDTH_M` = 1 m is no gesture), `forward` the perpendicular pointing away from the selection's anchor centroid (`selection_centroid`), negated by `flip` (the `order_flip_facing` modifier); `DragFormation::facing() -> Angle<S>`. `UiIntent::{Move { target }, DragFormation(DragFormation), Halt, Formation(u8), SpeedMode(SpeedMode)}` and `commands_for(intent, &OrderContext { view, regiments, speed })` return the `CommandKind`s in queue order: a single-regiment drag gives `SetFormation { ranks: Some(il_sim_battle::ranks_for_width(..)) }` then `Move { facing }`, a multi-regiment drag `SetSpeedMode` (the run toggle; `GroupFormation` moves at each regiment's current order speed) then `GroupFormation` with `battle_line_template` (the registry's first `battle_line` template); `Formation(n)` is one `SetFormation { ranks: None }` per distinct n-th template of the selected unit types; `BattleSession::queue` stamps `tick + 1 + input_delay` and the per-player `seq`.
+- **Overlays.** `il_ui::overlay::{selection_box, drag_formation_preview}` draw the box-select rectangle and the drag-formation preview through egui's painter.
+- **Panels (egui).** Planned: battle regiment cards (top), command card (bottom), minimap with fog (bottom-right, rendered from `FogMask` and regiment blocks into an egui texture), clock and speed (top-right), casualties; deployment tray, zone outline, confirm; campaign province, settlement, army, diplomacy, research, faction, turn log, end-turn; menus: main, custom battle (map, sides, roster builder from registries), settings (bindings, audio, video), load/save (headers from `il_save`). As built (T1-070): `main_menu(ctx, &MenuModel) -> Option<MenuChoice>`, `battle_hud(ctx, &HudModel) -> Option<HudAction>` (`clock(tick) -> String` as `mm:ss`, speed, pause, menu, the `SelectedRegiment` card), `event_panel(ctx, &[EventLine])`, `profiler_overlay(ctx, &ProfilerStats { stages: Vec<StageStat { name, last_ms, mean_ms, max_ms }>, tick_last_ms, tick_mean_ms, tick_max_ms, ticks_sampled, frame_ms, fps, soldiers, regiments, visible_soldiers, ticks_last_frame, accumulator_alpha })`; `UiContext` / `UiOutput` wrap egui-winit so the app hands the tessellated output to il_render's `EguiPaint`. The rest arrives with its phase.
+- **Localisation.** All labels via `Locale::get`; `il_app --show-keys` shows keys.
 
 Budget: egui ≈ 1 ms per frame; minimap texture regenerated every 10 frames.
 
-Tests: gesture geometry (drag vector → facing, width); binding parse; selection rules; snapshot tests of intent → command conversion.
+Tests: gesture geometry (drag vector → facing, width) and intent → command conversion on the ten-regiment scenario (`crates/il_ui/tests/orders.rs`); picking (`tests/pick.rs`); binding parse and selection rules inline in `bindings.rs` and `selection.rs`.
 
 ## 12. Audio (`il_audio`)
 
@@ -700,15 +774,20 @@ Tests: header round trip; migration chain; mod mismatch policies; replay verify 
 ## 15. App shell (`il_app`)
 
 ```rust
-enum AppState { MainMenu, Campaign(CampaignSession), Battle(BattleSession), Editor(EditorSession) }
-struct BattleSession { world: BattleWorld, accumulator: f64, speed: f32, paused: bool, input_delay: u16, local_player: PlayerId, pending: Vec<Command>, replay: Replay, net: Option<LockstepSession> }
+// As built (T1-070); Campaign and Editor states, `replay: Replay` and `net: Option<LockstepSession>` join with their phases.
+pub enum AppState { MainMenu(MenuState { scenarios: Vec<PathBuf>, mods: Vec<PathBuf>, error: Option<String> }), Battle(Box<BattleSession>) }
+pub enum Transition { StartBattle(PathBuf), QuitToMenu }
+pub struct BattleSession { world: BattleWorld, accumulator: f64, speed: f32, paused: bool, local_player: PlayerId, input_delay: u32 /* 0 in Phase 1 */, next_seq: u16, pending: Vec<Command>, script: ScriptedCommands, command_log: Vec<Command>, events: VecDeque<EventLine> /* EVENT_RING = 256 */ }
+impl BattleSession { pub fn new(world, local_player, script); pub fn queue(&mut self, kind: CommandKind); pub fn target_tick(&self) -> Tick /* tick + 1 + input_delay */; pub fn advance(&mut self, dt: f64) -> Vec<StepOutput>; pub fn advance_with(&mut self, dt: f64, observer: &mut dyn StageObserver) -> Vec<StepOutput>; pub fn alpha(&self) -> f32; pub fn speed / set_speed(f32) /* records SetSpeed { mult_x100 } */; pub fn paused / set_paused(bool) /* records Pause */; pub fn local_player; pub fn command_log; pub fn events }
+pub const TICK: f64 = TICK_SECONDS; pub const MAX_CATCHUP_TICKS: u32 = 4;
+pub struct Profiler;   // the app's StageObserver over `Instant` (SAD §9.3): `frame(frame_seconds, ticks_stepped)`, `stats() -> ProfilerStats` over a 60-tick window
 ```
 
-Frame: poll winit → `il_ui` intents → commands stamped `tick + input_delay` into `pending` → `accumulator += dt × speed` (capped at `app.max_catchup_ticks` = 4 ticks) → while `accumulator ≥ TICK`: gather commands for `world.tick()+1` (local pending, AI internal, network) → `step` → route events to audio/UI/replay → `accumulator −= TICK` → build `RenderSnapshot(alpha)` → render → egui. Campaign state runs `apply` on intents and `end_turn` on End Turn; `BattleRequested` switches state; `Ended` returns the result via `resume_after_battle` or the auto-resolve path.
+Frame: poll winit → `il_ui` intents → commands stamped `tick + 1 + input_delay` into `pending` → `accumulator += dt × speed` (capped at `MAX_CATCHUP_TICKS` = 4 ticks, a constant in `session.rs` rather than a rules field) → while `accumulator ≥ TICK`: gather commands for `world.tick()+1` (local pending, AI internal, network) → `step` → route events to audio/UI/replay → `accumulator −= TICK` → build `RenderSnapshot(alpha)` → render → egui. Campaign state runs `apply` on intents and `end_turn` on End Turn; `BattleRequested` switches state; `Ended` returns the result via `resume_after_battle` or the auto-resolve path.
 
-Tests: accumulator never runs more than the cap; pause records a `Pause` command; state transitions.
+Tests (inline in `state.rs`, `session.rs`, `profiler.rs`): accumulator never runs more than the cap; pause records a `Pause` command; state transitions; the profiler window.
 
-As built (T1-070): `il_app::state::AppState::{MainMenu(MenuState), Battle(Box<BattleSession>)}` with `AppState::apply(self, Transition::{StartBattle(path), QuitToMenu}, start, menu)` a pure function (a failed start keeps the menu up with the error); `MenuState::scan(scenarios_dir, mods)` lists `*.json5` under `--scenarios-dir` (default `tests/scenarios`) and the mod roots; the menu is `il_ui::main_menu`, the battle HUD (`mm:ss` clock, speed, pause, menu, the selection card with localised unit and formation names) `il_ui::battle_hud`, and `il_ui::event_panel` shows the session's 256-entry event ring (`BattleSession::events`, the routing stub: every `BattleEvent` and rejected command as text) in `dev` builds with the profiler. `BattleSession { world, accumulator: f64, speed: f32, paused, local_player, input_delay: u32 (0 in Phase 1), next_seq: u16, pending, script: ScriptedCommands, command_log, events }`; `queue(kind)` stamps `tick + 1 + input_delay` and the per-player `seq`; `advance_with(dt, observer)` caps the accumulator at `MAX_CATCHUP_TICKS = 4` ticks and returns one `StepOutput` per tick; `alpha()` feeds `build_snapshot`. A scenario on the command line starts in `Battle`; the `quit_to_menu` binding (Escape) or the HUD's Menu button returns to the menu and drops the session; transitions apply after the frame's render.
+As built (T1-070): `il_app::state::AppState::{MainMenu(MenuState), Battle(Box<BattleSession>)}` with `AppState::apply(self, Transition::{StartBattle(path), QuitToMenu}, start, menu)` a pure function (a failed start keeps the menu up with the error); `MenuState::scan(scenarios_dir, mods)` lists `*.json5` under `--scenarios-dir` (default `tests/scenarios`) and the mod roots; the menu is `il_ui::main_menu`, the battle HUD (`mm:ss` clock, speed, pause, menu, the selection card with localised unit and formation names) `il_ui::battle_hud`, and `il_ui::event_panel` shows the session's 256-entry event ring (`BattleSession::events`, the routing stub: every `BattleEvent` and rejected command as text) in `dev` builds with the profiler. `BattleSession { world, accumulator: f64, speed: f32, paused, local_player, input_delay: u32 (0 in Phase 1), next_seq: u16, pending, script: ScriptedCommands, command_log, events }`; `queue(kind)` stamps `tick + 1 + input_delay` and the per-player `seq`; `advance_with(dt, observer)` caps the accumulator at `MAX_CATCHUP_TICKS = 4` ticks and returns one `StepOutput` per tick; `alpha()` feeds `build_snapshot`. A scenario on the command line starts in `Battle`; the `quit_to_menu` binding (Escape) or the HUD's Menu button returns to the menu and drops the session; transitions apply after the frame's render. Command line: `il_app [scenario.json5] [--content-root game] [--mod DIR]... [--scenarios-dir tests/scenarios] [--threads 1] [--bench-sprites] [--show-keys]` (`Launch { content_root, mods, scenarios_dir, threads, bench_sprites }`). The `dev` feature (on by default) starts `il_data::HotReload` over the mod roots and polls it every frame, shows the profiler and event panels (`toggle_profiler`, F12) and the F5..F9 debug overlays; `cargo build -p il_app --no-default-features` is the shipping configuration and CI builds both.
 
 ## 16. Editors (`il_editor`)
 

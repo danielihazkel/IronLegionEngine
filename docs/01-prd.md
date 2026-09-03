@@ -588,12 +588,12 @@ The project is successful when all of the following hold:
 
 | # | Question | Owner doc | Needed by |
 |---|---|---|---|
-| OQ-1 | Camera rotation: 4 snap directions (4 sprite facing sets suffice at cost of diagonal facings) or 8 (8 facing sets, more art)? | TDD renderer section | Phase 1 |
+| OQ-1 | Camera rotation: 4 snap directions (4 sprite facing sets suffice at cost of diagonal facings) or 8 (8 facing sets, more art)? **Resolved (Phase 1, T1-052): 4 camera snaps with 8 sprite facings. `Camera.rotation` is a quarter turn 0..=3 and the drawn facing is `(facing8 − 2·rotation) mod 8`, so one 8-row sheet serves every snap and diagonal facings are kept; 8 snaps stay a Could.** | TDD §10 | Phase 1 |
 | OQ-2 | postcard or bincode for snapshots? **Resolved (Phase 0, T0-034): postcard 1.1.** | TDD save section | Phase 0 |
 | OQ-3 | Auto-resolve: headless simulation at accelerated speed (consistent, slow for big battles) or a statistical model (fast, second balance surface)? | Simulation Spec §14 | Phase 4 |
 | OQ-4 | Should far-from-combat regiments update at reduced tick rate (simulation LOD) if R-1 materialises? | Simulation Spec | Phase 3 |
 | OQ-5 | Reinforcement arrival: timed groups only, or also driven by campaign distance? | Simulation Spec §12 | Phase 4 |
 | OQ-6 | Does fog of war apply in the deployment phase (blind deployment) or is the enemy deployment visible? | Simulation Spec §12 | Phase 2 |
-| OQ-7 | Which JSON5 crate: `json5` (serde, mature) or `serde_json5`? **Resolved (Phase 0, T0-020): `json5` 1.3; its errors carry line and column.** | TDD data section | Phase 1 |
+| OQ-7 | Which JSON5 crate: `json5` (serde, mature) or `serde_json5`? **Resolved (Phase 0, T0-020): `json5` 1.3. Amended (Phase 1, T1-020): content and scenarios are parsed by `il_data::json5`, an own span-carrying parser, because diagnostics and merge provenance need a position per field; the `json5` crate remains only as a dev-dependency for test fixtures.** | TDD §3 | Phase 1 |
 | OQ-8 | Audio crate: `kira` (game-oriented) or `rodio`? | TDD audio section | Phase 2 |
-| OQ-9 | `RegimentSetup.position` / `facing_deg` were added in Phase 0 to place regiments without deployment zones (SAD T-7). Remove them in T2-070, or keep them as an optional scenario-file override that skips deployment for tests? | TDD §4.2 | Phase 2 |
+| OQ-9 | `RegimentSetup.position` / `facing_deg` were added in Phase 0 to place regiments without deployment zones (SAD T-7). Remove them in T2-070, or keep them as an optional scenario-file override that skips deployment for tests? *Phase 1 note (T1-083): every scenario in `tests/scenarios/`, the determinism test and the `il_cli bench` generator place regiments this way, and T1-030 validates the positions against the map; the decision stays with T2-070, which must keep those tests placing regiments somehow.* | TDD §4.2 | Phase 2 |

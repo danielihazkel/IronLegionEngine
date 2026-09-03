@@ -95,55 +95,61 @@ IronLegionEngine/
 
 ```mermaid
 flowchart TD
+    %% Solid edges exist at the end of Phase 1 (T1-083); dotted edges are crates and edges planned for later phases.
     core[il_core]
     data[il_data] --> core
-    ai[il_ai] --> core
     simb[il_sim_battle] --> core
     simb --> data
-    simb --> ai
-    simc[il_sim_campaign] --> core
-    simc --> data
-    simc --> ai
-    simc -->|BattleSetup / BattleResult types| simb
-    save[il_save] --> simb
-    save --> simc
     render[il_render] --> core
-    render -->|read-only state| simb
+    render --> data
+    render -->|read-only BattleView| simb
     ui[il_ui] --> core
-    ui -->|read-only state, emits Commands| simb
-    ui --> simc
-    audio[il_audio] --> core
-    script[il_script] --> simc
-    script --> data
-    net[il_net] --> simb
-    editor[il_editor] --> data
-    editor --> render
-    editor --> ui
+    ui --> data
+    ui -->|read-only BattleView, emits Commands| simb
     app[il_app] --> render
     app --> ui
-    app --> audio
-    app --> save
-    app --> script
-    app --> net
-    app --> editor
     app --> simb
-    app --> simc
+    app --> data
+    app -->|scenario loading| cli
     cli[il_cli] --> simb
-    cli --> simc
-    cli --> save
     cli --> data
+    benches[benches/] --> simb
+    benches -.->|dev: bench setups| cli
+    tests[tests/] --> cli
+    tests --> simb
+    tests --> data
     game[game/] -.->|content loaded at runtime| data
-    game_rules[game/rules] --> simb
-    game_rules --> simc
-    app --> game_rules
+    ai[il_ai] -.-> core
+    simb -.-> ai
+    simc[il_sim_campaign] -.-> data
+    simc -.-> ai
+    simc -.->|BattleSetup / BattleResult types| simb
+    save[il_save] -.-> simb
+    save -.-> simc
+    audio[il_audio] -.-> core
+    script[il_script] -.-> simc
+    net[il_net] -.-> simb
+    editor[il_editor] -.-> ui
+    editor -.-> render
+    app -.-> save
+    app -.-> audio
+    app -.-> script
+    app -.-> net
+    app -.-> editor
+    app -.-> simc
+    cli -.-> simc
+    cli -.-> save
+    game_rules[game/rules] -.-> simb
+    game_rules -.-> simc
 ```
 
-Hard rules, enforced by `cargo deny` or a workspace test that parses `Cargo.toml` files:
+Hard rules, enforced by `tests/tests/dep_rules.rs` (four tests over every `Cargo.toml`, all three dependency tables; cargo-deny is not used, T0-002):
 
-- `il_core`, `il_data`, `il_ai`, `il_sim_battle`, `il_sim_campaign` must not depend on `wgpu`, `winit`, `egui`, any audio crate, `std::time::Instant` for logic, `std::fs` for logic (the loader in `il_data` is the one exception and runs only at load), or `rand` with OS seeding.
-- `il_render`, `il_ui`, `il_audio` receive `&BattleWorld` (read-only) and never hold `&mut`.
-- No `il_*` crate depends on `game/`.
-- `il_sim_campaign` depends on `il_sim_battle` only for the shared `BattleSetup` and `BattleResult` types (they live in `il_sim_battle::interface`).
+- Sim crates (`il_core`, `il_data`, `il_ai`, `il_sim_battle`, `il_sim_campaign`) must not depend on `wgpu`, `winit`, `egui`, `egui-wgpu`, `egui-winit`, any audio crate (`kira`, `rodio`, `cpal`), `rand`, `glam`, `game_rules`, or any non-sim workspace crate (`il_render`, `il_ui`, `il_audio`, `il_app`, `il_cli`, `il_save`, `il_net`, `il_editor`, `il_script`). Clock and filesystem use are not manifest facts, so clippy carries them: `disallowed_methods` bans `Instant::now` and `SystemTime::now` in the sim crates and in `il_cli` (its bench `StageTimer` is the one marked exception, §9.3), and `il_sim_battle`'s clippy bans `std::fs` (the loader in `il_data` runs only at load).
+- Presentation crates `il_render` and `il_ui` (and `il_audio` when it arrives) may depend on `il_core`, `il_data` and `il_sim_battle` and on nothing else in the workspace; `il_render` never depends on `winit`, `il_ui` never on `wgpu`. They read the sim only through `BattleWorld::view() -> BattleView` and never hold `&mut`.
+- No `il_*` crate depends on `game/` or on `game_rules`.
+- `il_sim_campaign` will depend on `il_sim_battle` only for the shared `BattleSetup` and `BattleResult` types (they live in `il_sim_battle::interface`).
+- Every sim crate manifest must exist, so a renamed crate fails the test instead of escaping it.
 
 ### 5.3 Crate responsibilities and requirement coverage
 
@@ -317,9 +323,9 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 
 ### 9.3 Logging, tracing, profiling
 
-- Per-stage timings come from `BattleWorld::step_observed(commands, &mut dyn StageObserver)`: the sim calls `begin(stage)`/`end(stage)` around each of its 18 per-stage schedules and never reads a clock; the app's observer uses `Instant` and feeds the in-game profiler overlay (REQ-TOOL-003, T1-060). `tracing` spans per system are optional (`trace` feature) for external profilers.
+- Per-stage timings come from `BattleWorld::step_observed(&mut self, commands: &[Command], observer: &mut dyn StageObserver) -> StepOutput`: the sim calls `begin(stage)` / `end(stage)` around each of its 18 per-stage schedules and never reads a clock (plain `step` passes a `NoopObserver`). Two observers exist: `il_app::profiler::Profiler` (`Instant` around every stage, a 60-tick window, `frame(frame_seconds, ticks_stepped)` and `stats() -> il_ui::ProfilerStats` for the overlay; REQ-TOOL-003, T1-060) and `il_cli::bench::StageTimer` (every sample kept, mean/p95/max per stage in the bench report; the one clippy-allowed clock read in il_cli, T1-080). No `tracing` layer: a per-system layer over bevy_ecs's `trace` feature was considered and rejected (a global subscriber and a mutex per span exit for detail the stage observer already gives). `tracing` itself is only used for the missing-locale-key warning.
 - Log levels: sim emits `debug` only in dev builds; Events are the sanctioned way to observe the sim.
-- Benchmarks (`criterion`) per system at 2k, 10k, 20k soldiers (REQ-TOOL-002).
+- Benchmarks (REQ-TOOL-002, T1-080): `il_cli bench --soldiers 2000|10000|20000` on a generated move/reform setup, compared against `benches/baseline.json` (`--strict` fails at +20 % on the target machine, CI warns), plus criterion micro-benches `spatial`, `formation`, `nav`, `layout`, `tick` under `benches/benches/`. Measured Phase 1 stage costs are in the TDD budget table.
 
 ### 9.4 Hot reload (dev only)
 
@@ -370,7 +376,12 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 | T-2 | Double-buffered interpolation components double position memory | Debt | il_render | Acceptable at 32k entities (a few MB); revisit if memory budget (REQ-PERF-007) is threatened. |
 | T-3 | Statistical projectile fallback must match simulated expected value | Risk | Simulation Spec §6 | Scenario tests compare casualty distributions between the two paths. |
 | T-4 | Hash cost per tick at 32k entities | Risk | il_core | Hash only components in the documented set; measure; allow hashing every N ticks in release with full hash in tests. |
-| T-5 | Sim on main thread until Phase 3 | Debt | il_app | Render snapshot design from Phase 1 so moving to a render thread is mechanical. |
+| T-5 | Sim on main thread until Phase 3 | Debt | il_app | `RenderSnapshot` (owned data, built after stepping) exists since T1-052, so moving to a render thread is plumbing only. |
 | T-6 | Game-specific Rust in `game/rules` | Debt | game | Each addition logged as an open question in the PRD for generalisation. |
 | T-7 | `RegimentSetup.position` and `facing_deg` place regiments directly because deployment zones do not exist yet (Phase 0) | Debt | il_sim_battle | Remove in T2-070 when `Deploy` and deployment zones arrive; PRD OQ-9 decides whether a scenario-file override survives. |
 | T-8 | `ComputeTaskPool` is process-global, so the first `set_threads(n > 1)` fixes the worker count for the process | Debt | il_sim_battle | Acceptable for the app (one pool) and the tests (single N); revisit if a tool needs two pool sizes in one process. |
+| T-9 | Ten of the 18 stages (1, 8..16) run an empty placeholder system so the profiler shows every row; together they cost ≈ 0.3 ms of schedule overhead per tick at 20k | Debt | il_sim_battle | Each placeholder is replaced by its real systems in Phase 2; if any stage stays empty after that, drop its schedule. |
+| T-10 | At 20k soldiers `Collision` (11.2 ms) and `SoldierSteering` (7.7 ms) already sit at their Phase 3 budgets (TDD budget table, T1-083) | Risk | il_sim_battle | Phase 2 combat must not grow them; candidates are a narrower pair neighbourhood, fewer `collision_iterations` when nobody moved and per-row buffers reused across ticks. |
+| T-11 | Lint opt-outs: `il_render` (`unsafe_code = "deny"` for the wgpu surface, `float_arithmetic = "allow"`), `il_ui` and `il_app` (`float_arithmetic = "allow"`); `il_cli::bench::StageTimer` allows `Instant::now`; `il_sim_battle` declares `tracing` without using it | Debt | presentation crates | Each carries its reason in the manifest or attribute; the render-side float allowance is by design (no sim arithmetic there). Drop `tracing` from il_sim_battle when the next dependency pass happens. |
+| T-12 | `il_ai`, `il_save`, `il_sim_campaign` and `game/rules` are empty placeholder crates, so several §5.2 edges cannot be enforced yet | Debt | workspace | Filled by their phases; `dep_rules.rs` already lists them so the rules apply the moment they gain dependencies. |
+| T-13 | Hot reload reads manifests at startup only (`ReloadEvent::ManifestIgnored`) and debounces by poll count (`QUIET_POLLS` = 6) rather than time | Debt | il_data | Acceptable for a dev feature; a manifest change needs a restart. |

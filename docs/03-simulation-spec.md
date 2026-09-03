@@ -75,7 +75,7 @@ Conventions:
 | SIM-FORM-002 | `files = ceil(n / ranks)`. Spacing: `sf = template.spacing_file × unit.soldier_radius × 2`, `sr = template.spacing_rank × unit.soldier_radius × 2`. | REQ-FORM-001 |
 | SIM-FORM-003 | **Line**: slot `(k)` for `k in 0..n`: rank `q = k / files`, file `f = k % files`; `o = ((f − (files−1)/2) · sf, −q · sr)`. Front rank is `q = 0` at `y = 0`; the anchor is the centre of the front rank. The last rank may be short; its slots are centred. | REQ-FORM-002 |
 | SIM-FORM-004 | **Column**: Line with `files = template.default_files_column` (default 4) and ranks derived. | REQ-FORM-002 |
-| SIM-FORM-005 | **Square**: four outward-facing sides of `⌊n/4⌋` soldiers each, the remainder `n − 4·⌊n/4⌋` joining the rear side; each side is `ranks` deep (rows inset by `sr` toward the centre) and holds `ceil(count / ranks)` files at `sf`, so the side length is `ceil(⌈n/4⌉ / ranks) · sf`. The front side is the front rank at `y = 0` (the anchor is its centre) and the square extends one side length behind it; facing offsets are 0 (front, +y), −90° (right, +x), 180° (rear, −y), +90° (left, −x). | REQ-FORM-002 |
+| SIM-FORM-005 | **Square**: four outward-facing sides of `⌊n/4⌋` soldiers each, the remainder `n − 4·⌊n/4⌋` joining the rear side; each side is `depth = min(ranks, ⌈n/4⌉)` deep (rows inset by `sr` toward the centre) and holds `ceil(count / depth)` files at `sf`, with a corner band of `depth · sr` at both ends of every side so the sides never overlap; the side length is therefore `ceil((⌊n/4⌋ + remainder) / depth) · sf + 2 · depth · sr` (the rear side is the longest and sets it). The front side is the front rank at `y = 0` (the anchor is its centre) and the square extends one side length behind it; facing offsets are 0 (front, +y), −90° (right, +x), 180° (rear, −y), +90° (left, −x). | REQ-FORM-002 |
 | SIM-FORM-006 | **Wedge**: rank `q` has `2q + 1` slots centred on the axis, spacing `sf`, until `n` is placed; the last rank is centred. Anchor is the apex. | REQ-FORM-002 |
 | SIM-FORM-007 | **Phalanx**: Line with `spacing_file` and `spacing_rank` from the template (tighter defaults, §15) and `template.min_ranks` enforced (default 4). Grants `second_rank_attack` regardless of unit flag when ranks ≥ 2 (SIM-CMBT-012). | REQ-FORM-002 |
 | SIM-FORM-008 | **Loose**: Line with spacing multiplied by `template.loose_mult` (default 2.0). | REQ-FORM-002 |
@@ -116,7 +116,7 @@ Conventions:
 
 | Rule | Statement | Satisfies |
 |---|---|---|
-| SIM-MOVE-001 | The nav grid has cell size `movement.nav_cell` (default 4 m). A cell is impassable if any part of it lies in a `rock` zone, a river not at a ford or bridge, a wall, or a closed gate. Cell cost = zone `move_cost` (§5.4) × slope factor (SIM-MOVE-030). | REQ-PATH-001, REQ-PATH-002 |
+| SIM-MOVE-001 | The nav grid has cell size `movement.nav_cell` (default 4 m). A cell is impassable if any part of it lies in a `rock` zone, a river not at a ford or bridge, a wall, or a closed gate. Cell cost = the largest zone `move_cost` (§5.4) among the zone cells inside it; slope is not part of the cost (it scales speed only, SIM-MOVE-030; Phase 1 decision 11). | REQ-PATH-001, REQ-PATH-002 |
 | SIM-MOVE-002 | Regiment paths are computed by A* (Phase 1) or HPA* (Phase 3) from the anchor to the target on the nav grid with 8-connectivity and octile heuristic. The path is a list of waypoints after string-pulling (line-of-walkability smoothing). | REQ-PATH-001, REQ-PATH-002 |
 | SIM-MOVE-003 | HPA* clusters are `movement.hpa_cluster` cells square (default 16); gates are maximal passable runs along cluster borders, one gate node per run at its centre plus at ends if the run exceeds `movement.hpa_gate_split` (default 6 cells). Intra-cluster costs are precomputed at map load; the abstract graph is searched first, then each cluster segment is refined with A*. | REQ-PATH-001 |
 | SIM-MOVE-004 | Each waypoint stores the passable corridor width of its nav cell (`min(passable_run_x, passable_run_y) · nav_cell`). When the regiment's width (`files · sf`) exceeds the corridor of the waypoint it is heading for, it morphs to the first Column template in its unit's `formations` (remembering the prior template) and morphs back once no remaining waypoint is narrower than the prior formation's width, or on arrival. Automatic morphs carry no `morph_speed_mult` penalty. | REQ-PATH-006, REQ-SIM-042 |
@@ -158,7 +158,7 @@ Conventions:
 |---|---|---|
 | SIM-MOVE-040 | After integration, for every pair `(i, j)` with `i < j` (ascending id) from the spatial grid with `d = |p_i − p_j| < r_i + r_j`: overlap `o = r_i + r_j − d`; push `i` by `−n × o × m_j / (m_i + m_j)` and `j` by `+n × o × m_i / (m_i + m_j)` where `n = (p_j − p_i)/d`. Pushes are accumulated into per-soldier buffers and applied after all pairs are processed. | REQ-SIM-024 |
 | SIM-MOVE-041 | The collision pass runs `movement.collision_iterations` (default 2) times. | REQ-SIM-024 |
-| SIM-MOVE-042 | Positions are clamped to the map rectangle and pushed out of impassable cells along the nearest passable direction. | REQ-SIM-024 |
+| SIM-MOVE-042 | Positions are clamped to the map rectangle. A move (integration or collision push) whose destination cell is impassable is retried with its x component only, then its y component only, and otherwise the soldier stays where it was (deterministic push-out, Phase 1 plan S12). | REQ-SIM-024 |
 | SIM-MOVE-043 | Charging soldiers (regiment in `run` mode within `combat.charge_window_ticks` of first contact) push with `m × combat.charge_mass_mult` (default 2.0). | REQ-CMBT-005 |
 
 ### 5.6 Flow fields
@@ -429,6 +429,15 @@ These live in `game/content/rules/*.json5` and unit files. Values are starting p
 | `visibility.period_ticks` | 10 | `battle_flow.time_limit_ticks` | 48000 |
 | `visibility.conceal_radius` | 25 | `battle_flow.pursuit_ticks` | 2400 |
 | `ai.army_period_ticks` / `regiment_period_ticks` | 40 / 20 | `battle_flow.fled_return_fraction` | 0.5 |
+| `movement.hpa_gate_split` | 6 nav cells | `movement.straggler_radius` | 3 × sf |
+| `movement.straggler_fraction` / `straggler_slowdown` | 0.25 / 0.5 | `movement.sep_margin` / `sep_max_neighbours` | 0.2 / 8 |
+| `movement.arrive_damping` | 0.5 | `movement.lookahead_ticks` | 4 |
+| `movement.soldier_turn_rate` | 360 °/s | `movement.slope_min_mult` / `slope_max_mult` | 0.4 / 1.2 |
+| `movement.ford_defence_mult` | 0.7 | `movement.spatial_cell` / `anchor_cell` / `zone_cell` | 4 / 16 / 2 |
+| `formation.reform_angle` | 10° | `formation.assign_search_radius` | 30 |
+| `formation.swap_passes` | 2 | `formation.turn_in_place_angle` | 120° |
+| `formation.integrity_period_ticks` | 5 | `formation.skirmish_offset` | 20 |
+| `formation.width_tolerance` | 0.1 | | |
 
 Morale factor weights (`morale.w_*`, points per second at full effect): casualty_rate −6, casualty_total −2 (per second level), fatigue −1.5, general_aura +1, allies_near +1, allies_routing −3, high_ground +0.5, fear −4, flanked −3, outnumbered −2, integrity −1.5, engaged_duration −1, winning +2, recovery +3.
 
