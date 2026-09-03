@@ -2,6 +2,10 @@
 //! frame time, entity counts. The numbers come from the app, which owns the
 //! clock; this module only draws them.
 
+use std::fmt::Display;
+
+use il_data::Locale;
+
 /// One stage's timings in milliseconds over the recent window.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StageStat {
@@ -32,28 +36,33 @@ pub struct ProfilerStats {
 }
 
 /// Draws the overlay window. Returns nothing; the caller decides visibility.
-pub fn profiler_overlay(ctx: &egui::Context, stats: &ProfilerStats) {
-    egui::Window::new("Profiler")
+pub fn profiler_overlay(ctx: &egui::Context, locale: &Locale, stats: &ProfilerStats) {
+    egui::Window::new(locale.get("il.profiler.title"))
+        .id(egui::Id::new("il_profiler"))
         .default_pos(egui::pos2(8.0, 8.0))
         .default_width(360.0)
         .resizable(false)
         .show(ctx, |ui| {
-            ui.label(format!(
-                "frame {:.2} ms ({:.0} FPS) · tick {:.2} ms last / {:.2} mean / {:.2} max over {} ticks",
-                stats.frame_ms,
-                stats.fps,
-                stats.tick_last_ms,
-                stats.tick_mean_ms,
-                stats.tick_max_ms,
-                stats.ticks_sampled
+            ui.label(locale.fmt(
+                "il.profiler.frame",
+                &[
+                    ("ms", &format!("{:.2}", stats.frame_ms) as &dyn Display),
+                    ("fps", &format!("{:.0}", stats.fps)),
+                    ("last", &format!("{:.2}", stats.tick_last_ms)),
+                    ("mean", &format!("{:.2}", stats.tick_mean_ms)),
+                    ("max", &format!("{:.2}", stats.tick_max_ms)),
+                    ("ticks", &stats.ticks_sampled),
+                ],
             ));
-            ui.label(format!(
-                "{} soldiers ({} drawn) · {} regiments · {} ticks this frame · alpha {:.2}",
-                stats.soldiers,
-                stats.visible_soldiers,
-                stats.regiments,
-                stats.ticks_last_frame,
-                stats.accumulator_alpha
+            ui.label(locale.fmt(
+                "il.profiler.counts",
+                &[
+                    ("soldiers", &stats.soldiers as &dyn Display),
+                    ("drawn", &stats.visible_soldiers),
+                    ("regiments", &stats.regiments),
+                    ("ticks", &stats.ticks_last_frame),
+                    ("alpha", &format!("{:.2}", stats.accumulator_alpha)),
+                ],
             ));
             ui.separator();
             egui::Grid::new("stages")
@@ -61,10 +70,10 @@ pub fn profiler_overlay(ctx: &egui::Context, stats: &ProfilerStats) {
                 .striped(true)
                 .min_col_width(60.0)
                 .show(ui, |ui| {
-                    ui.strong("stage");
-                    ui.strong("last ms");
-                    ui.strong("mean ms");
-                    ui.strong("max ms");
+                    ui.strong(locale.get("il.profiler.stage"));
+                    ui.strong(locale.get("il.profiler.last"));
+                    ui.strong(locale.get("il.profiler.mean"));
+                    ui.strong(locale.get("il.profiler.max"));
                     ui.end_row();
                     for (i, s) in stats.stages.iter().enumerate() {
                         ui.monospace(format!("{i:>2} {}", s.name));

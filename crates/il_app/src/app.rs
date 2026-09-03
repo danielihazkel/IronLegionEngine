@@ -8,6 +8,7 @@
 //! queued on the session → `advance` (accumulator, capped catch-up) →
 //! snapshot with `alpha` → render → egui → apply the state transition.
 
+use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -560,13 +561,16 @@ impl App {
                     .get(&regs.formations.get(r.formation).name_key)
                     .to_string(),
                 ranks: r.ranks,
-                order: match r.order {
-                    OrderKind::Idle => "idle",
-                    OrderKind::Move => "moving",
-                    OrderKind::AttackMove => "attack-moving",
-                    OrderKind::AttackRegiment => "attacking",
-                    OrderKind::Withdraw => "withdrawing",
-                },
+                order: regs
+                    .locale
+                    .get(match r.order {
+                        OrderKind::Idle => "il.order.idle",
+                        OrderKind::Move => "il.order.move",
+                        OrderKind::AttackMove => "il.order.attack_move",
+                        OrderKind::AttackRegiment => "il.order.attack_regiment",
+                        OrderKind::Withdraw => "il.order.withdraw",
+                    })
+                    .to_string(),
             })
             .collect()
     }
@@ -693,13 +697,15 @@ impl App {
                         run: self.run,
                         selection: &rows,
                         commands: session.command_log().len(),
+                        locale: &self.regs.locale,
                     };
+                    let locale = &self.regs.locale;
                     let events: Vec<_> = session.events().iter().cloned().collect();
                     let mut action = None;
                     let out = ui.run(window, |ctx| {
                         if show_profiler {
-                            profiler_overlay(ctx, &stats);
-                            event_panel(ctx, &events);
+                            profiler_overlay(ctx, locale, &stats);
+                            event_panel(ctx, locale, &events);
                         }
                         if let Some((from, to)) = box_drag {
                             selection_box(ctx, from, to);
@@ -722,6 +728,7 @@ impl App {
                         scenarios: &scenarios,
                         mods: &mods,
                         error: menu.error.as_deref(),
+                        locale: &self.regs.locale,
                     };
                     let mut choice = None;
                     let out = ui.run(window, |ctx| {
@@ -797,7 +804,7 @@ impl App {
             (Some(bench), _) => {
                 format!("Iron Legion — sprite bench — frame {}", bench.frames_done)
             }
-            (None, AppState::MainMenu(_)) => "Iron Legion".to_string(),
+            (None, AppState::MainMenu(_)) => self.regs.locale.get("il.app.title").to_string(),
             (None, AppState::Battle(session)) => {
                 let per_tick_ms = if self.ticks_since_title > 0 {
                     self.step_seconds * 1000.0 / f64::from(self.ticks_since_title)
@@ -805,19 +812,33 @@ impl App {
                     0.0
                 };
                 let cam = self.camera.unwrap_or_else(|| Camera::new(Vec2::ZERO));
-                format!(
-                    "Iron Legion — tick {} — {}/{} soldiers drawn — sim {:.2} ms/tick — speed x{:.2} — {} selected{} — {} commands — zoom {:.1} px/m rot {}{}",
-                    session.world.tick().0,
-                    self.snapshot.counts.visible_soldiers,
-                    self.snapshot.counts.soldiers,
-                    per_tick_ms,
-                    session.speed(),
-                    self.selection.len(),
-                    if self.run { " (run)" } else { "" },
-                    session.command_log().len(),
-                    cam.zoom,
-                    cam.rotation,
-                    if session.paused() { " — paused" } else { "" }
+                let l = &self.regs.locale;
+                let run = if self.run {
+                    format!(" ({})", l.get("il.battle.running"))
+                } else {
+                    String::new()
+                };
+                let paused = if session.paused() {
+                    format!(" — {}", l.get("il.battle.paused"))
+                } else {
+                    String::new()
+                };
+                l.fmt(
+                    "il.app.battle_title",
+                    &[
+                        ("title", &l.get("il.app.title") as &dyn Display),
+                        ("tick", &session.world.tick().0),
+                        ("drawn", &self.snapshot.counts.visible_soldiers),
+                        ("total", &self.snapshot.counts.soldiers),
+                        ("ms", &format!("{per_tick_ms:.2}")),
+                        ("speed", &format!("{:.2}", session.speed())),
+                        ("selected", &self.selection.len()),
+                        ("run", &run),
+                        ("commands", &session.command_log().len()),
+                        ("zoom", &format!("{:.1}", cam.zoom)),
+                        ("rot", &cam.rotation),
+                        ("paused", &paused),
+                    ],
                 ) + &debug_suffix(self.debug)
             }
         };

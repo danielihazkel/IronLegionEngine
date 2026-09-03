@@ -20,8 +20,9 @@ new one with `il_cli bench --record-baseline` and note the machine here.
 ## Exit checklist evidence
 
 `profiler_2000_moving.png`: `il_app tests/scenarios/move_reform_2000.json5 --threads 8`
-(release, `dev` feature) at tick 263, all ten regiments running for the river
-crossings, profiler overlay open (F12). Frame 16.65 ms (60 FPS, vsync); sim tick
-7.12 ms last / 6.45 ms mean / 7.92 ms max over 60 ticks; Collision 2.28 ms and
-SoldierSteering 1.77 ms mean. The tick is dearer than the headless `il_cli bench`
+(release, `dev` feature) at tick 268, all ten regiments running for the river
+crossings, profiler overlay open (F12). Frame 16.67 ms (60 FPS, vsync); sim tick
+5.87 ms last / 6.07 ms mean / 7.72 ms max over 60 ticks; Collision 2.21 ms and
+SoldierSteering 1.69 ms mean. Every label on screen comes from `game/locale/en.json5`
+(REQ-LOC-001). The tick is dearer than the headless `il_cli bench`
 figure (4.0 ms) because the renderer and egui share the machine with the sim.

@@ -49,19 +49,48 @@
     factions: { persia: { name: "Persia" } },
   },
   il: {
-    app: { title: "Iron Legion" },
+    app: {
+      title: "Iron Legion",
+      // Window title in battle; developer telemetry, so it stays terse.
+      battle_title: "{title} — tick {tick} — {drawn}/{total} soldiers drawn — sim {ms} ms/tick — speed x{speed} — {selected} selected{run} — {commands} commands — zoom {zoom} px/m rot {rot}{paused}",
+    },
+    menu: {
+      custom_battle: "Custom battle from a scenario file",
+      no_scenarios: "No scenario files found (pass --scenarios-dir).",
+      mods: "Mods: {list}",
+      exit: "Exit",
+    },
+    order: {
+      idle: "idle",
+      move: "moving",
+      attack_move: "attack-moving",
+      attack_regiment: "attacking",
+      withdraw: "withdrawing",
+    },
+    events: {
+      title: "Events",
+      none: "no events yet",
+    },
     profiler: {
       title: "Profiler",
-      frame: "frame {ms} ms ({fps} FPS)",
+      frame: "frame {ms} ms ({fps} FPS) · tick {last} ms last / {mean} mean / {max} max over {ticks} ticks",
+      counts: "{soldiers} soldiers ({drawn} drawn) · {regiments} regiments · {ticks} ticks this frame · alpha {alpha}",
       stage: "stage",
       last: "last ms",
       mean: "mean ms",
       max: "max ms",
     },
     battle: {
-      paused: "Paused",
-      speed: "Speed x{mult}",
-      soldiers: "{drawn}/{total} soldiers drawn",
+      paused: "paused",
+      speed: "x{mult}",
+      pause: "Pause",
+      resume: "Resume",
+      menu: "Menu",
+      running: "running",
+      walking: "walking",
+      commands: "{count} commands · {mode}",
+      soldiers: "{count} soldiers",
+      formation: "{formation} · {ranks} ranks",
     },
   },
 }

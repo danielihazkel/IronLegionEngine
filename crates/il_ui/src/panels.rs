@@ -2,8 +2,13 @@
 //! battle from a scenario file), the battle HUD (clock, speed, pause, the
 //! selection card) and the developer event panel. Panels draw a model the
 //! app fills and return what the player clicked; they never touch the sim.
+//! Every label comes from the locale under `il.*` (REQ-LOC-001), so a mod
+//! can translate or reword the engine UI.
+
+use std::fmt::Display;
 
 use il_core::{RegimentId, TICK_SECONDS, Tick};
+use il_data::Locale;
 
 /// What the main menu shows.
 pub struct MenuModel<'a> {
@@ -13,6 +18,7 @@ pub struct MenuModel<'a> {
     pub mods: &'a [String],
     /// The last failure to start a battle.
     pub error: Option<&'a str>,
+    pub locale: &'a Locale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -25,7 +31,8 @@ pub enum MenuChoice {
 /// Draws the main menu; returns the click, if any.
 pub fn main_menu(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoice> {
     let mut choice = None;
-    egui::Window::new("Main menu")
+    let l = model.locale;
+    egui::Window::new("il_main_menu")
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .title_bar(false)
         .resizable(false)
@@ -33,11 +40,11 @@ pub fn main_menu(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoic
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(24.0);
-                ui.heading("Iron Legion");
-                ui.label("Custom battle from a scenario file");
+                ui.heading(l.get("il.app.title"));
+                ui.label(l.get("il.menu.custom_battle"));
                 ui.add_space(16.0);
                 if model.scenarios.is_empty() {
-                    ui.label("No scenario files found (pass --scenarios-dir).");
+                    ui.label(l.get("il.menu.no_scenarios"));
                 }
                 for (i, name) in model.scenarios.iter().enumerate() {
                     if ui.button(name).clicked() {
@@ -46,14 +53,14 @@ pub fn main_menu(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoic
                 }
                 ui.add_space(16.0);
                 if !model.mods.is_empty() {
-                    ui.label(format!("Mods: {}", model.mods.join(", ")));
+                    ui.label(l.fmt("il.menu.mods", &[("list", &model.mods.join(", "))]));
                 }
                 if let Some(e) = model.error {
                     ui.add_space(8.0);
                     ui.colored_label(egui::Color32::from_rgb(255, 120, 120), e);
                 }
                 ui.add_space(24.0);
-                if ui.button("Exit").clicked() {
+                if ui.button(l.get("il.menu.exit")).clicked() {
                     choice = Some(MenuChoice::Exit);
                 }
             });
@@ -71,7 +78,8 @@ pub struct SelectedRegiment {
     /// Localised formation name and current ranks.
     pub formation: String,
     pub ranks: u8,
-    pub order: &'static str,
+    /// Localised order label (`il.order.*`).
+    pub order: String,
 }
 
 pub struct HudModel<'a> {
@@ -83,6 +91,7 @@ pub struct HudModel<'a> {
     pub selection: &'a [SelectedRegiment],
     /// Commands recorded so far (the replay-to-be).
     pub commands: usize,
+    pub locale: &'a Locale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -102,36 +111,48 @@ pub fn clock(tick: Tick) -> String {
 /// Draws the battle HUD; returns the click, if any.
 pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction> {
     let mut action = None;
-    egui::Window::new("Battle")
+    let l = model.locale;
+    egui::Window::new("il_battle_hud")
         .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 8.0))
         .title_bar(false)
         .resizable(false)
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.monospace(clock(model.tick));
-                ui.label(format!("x{:.2}", model.speed));
+                ui.label(l.fmt(
+                    "il.battle.speed",
+                    &[("mult", &format!("{:.2}", model.speed))],
+                ));
                 if ui.small_button("-").clicked() {
                     action = Some(HudAction::SpeedDown);
                 }
                 if ui.small_button("+").clicked() {
                     action = Some(HudAction::SpeedUp);
                 }
-                let pause = if model.paused { "Resume" } else { "Pause" };
+                let pause = if model.paused {
+                    l.get("il.battle.resume")
+                } else {
+                    l.get("il.battle.pause")
+                };
                 if ui.small_button(pause).clicked() {
                     action = Some(HudAction::TogglePause);
                 }
-                if ui.small_button("Menu").clicked() {
+                if ui.small_button(l.get("il.battle.menu")).clicked() {
                     action = Some(HudAction::QuitToMenu);
                 }
             });
-            ui.label(format!(
-                "{} commands · {}",
-                model.commands,
-                if model.run { "running" } else { "walking" }
+            let mode = if model.run {
+                l.get("il.battle.running")
+            } else {
+                l.get("il.battle.walking")
+            };
+            ui.label(l.fmt(
+                "il.battle.commands",
+                &[("count", &model.commands as &dyn Display), ("mode", &mode)],
             ));
         });
     if !model.selection.is_empty() {
-        egui::Window::new("Selection")
+        egui::Window::new("il_selection")
             .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -8.0))
             .title_bar(false)
             .resizable(false)
@@ -140,9 +161,15 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
                     for r in model.selection {
                         ui.monospace(format!("#{}", r.id.0));
                         ui.label(&r.unit);
-                        ui.label(format!("{} soldiers", r.soldiers));
-                        ui.label(format!("{} · {} ranks", r.formation, r.ranks));
-                        ui.label(r.order);
+                        ui.label(l.fmt("il.battle.soldiers", &[("count", &r.soldiers)]));
+                        ui.label(l.fmt(
+                            "il.battle.formation",
+                            &[
+                                ("formation", &r.formation as &dyn Display),
+                                ("ranks", &r.ranks),
+                            ],
+                        ));
+                        ui.label(&r.order);
                         ui.end_row();
                     }
                 });
@@ -159,8 +186,9 @@ pub struct EventLine {
 }
 
 /// Draws the most recent events, newest last.
-pub fn event_panel(ctx: &egui::Context, lines: &[EventLine]) {
-    egui::Window::new("Events")
+pub fn event_panel(ctx: &egui::Context, locale: &Locale, lines: &[EventLine]) {
+    egui::Window::new(locale.get("il.events.title"))
+        .id(egui::Id::new("il_events"))
         .anchor(egui::Align2::LEFT_BOTTOM, egui::vec2(8.0, -8.0))
         .default_width(420.0)
         .resizable(true)
@@ -170,7 +198,7 @@ pub fn event_panel(ctx: &egui::Context, lines: &[EventLine]) {
                 .stick_to_bottom(true)
                 .show(ui, |ui| {
                     if lines.is_empty() {
-                        ui.label("no events yet");
+                        ui.label(locale.get("il.events.none"));
                     }
                     for l in lines {
                         ui.monospace(format!("{:>6} {}", l.tick.0, l.text));
