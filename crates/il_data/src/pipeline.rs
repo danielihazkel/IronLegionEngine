@@ -291,8 +291,24 @@ pub fn merged_json<T: ContentKind>(
     diags.into_result(out)
 }
 
+/// The outcome of a load: registries when there were no errors, plus every
+/// diagnostic (warnings included) either way.
+pub struct LoadReport {
+    pub registries: Option<Registries>,
+    pub diagnostics: Diagnostics,
+}
+
 /// Loads every registry from a resolved mod set.
 pub fn load(set: &ModSet) -> Result<Registries, Diagnostics> {
+    let report = load_report(set);
+    match report.registries {
+        Some(regs) => Ok(regs),
+        None => Err(report.diagnostics),
+    }
+}
+
+/// [`load`] keeping the warnings of a successful load (for `il_cli validate`).
+pub fn load_report(set: &ModSet) -> LoadReport {
     let mut sources = Sources::new();
     let mut diags = Diagnostics::new();
 
@@ -432,7 +448,10 @@ pub fn load(set: &ModSet) -> Result<Registries, Diagnostics> {
         content_registry_hash: 0,
     };
     regs.content_registry_hash = regs.compute_content_hash();
-    diags.into_result(regs)
+    LoadReport {
+        registries: if diags.has_errors() { None } else { Some(regs) },
+        diagnostics: diags,
+    }
 }
 
 /// Discovers, orders and loads the mods under `roots` (first root = game).

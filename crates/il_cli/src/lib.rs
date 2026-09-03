@@ -4,6 +4,7 @@
 //! in-process; `main.rs` is a thin clap wrapper.
 
 pub mod genart;
+pub mod validate;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

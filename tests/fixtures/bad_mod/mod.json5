@@ -1,0 +1,8 @@
+// A deliberately broken mod for the validate test: three content errors.
+{
+  id: "badmod",
+  name_key: "badmod.mod.name",
+  version: "0.1.0",
+  engine_version: "*",
+  dependencies: [{ id: "rome", version: ">=0.1.0" }],
+}

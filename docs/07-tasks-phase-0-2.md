@@ -230,7 +230,7 @@ flowchart LR
   `rome:hastati`, `rome:velites`, `greece:hoplite`, `persia:cavalry` unit files; formation templates `line`, `column`, `square`, `wedge`, `phalanx`, `loose`; group formations `battle_line`, `double_line`, `echelon_left`, `echelon_right`, `refused_left`, `refused_right`; zone types `open`, `road`, `forest`, `marsh`, `rock`, `ford`, `bridge`; `rules/movement.json5`, `rules/formation.json5` with the §15.1 defaults; factions `rome`, `greece`, `persia` (minimal); `locale/en.json5`.
   **Done when** `il_cli validate game/` is clean.
 
-- [ ] **T1-027 `il_cli validate`** · S · Refs REQ-TEST-005
+- [x] **T1-027 `il_cli validate`** · S · Refs REQ-TEST-005
   Loads the given mod roots and prints diagnostics, exit code 1 on any.
   **Done when** CI runs it over `game/`.
 

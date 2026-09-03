@@ -1,0 +1,12 @@
+{
+  id: "badmod:broken",
+  name_key: "badmod.units.broken.name",
+  category: "infantree",
+  hp: 80, speed_walk: 1.8, speed_run: 4.5,
+  attack: 25, defence: 20, damage: 25,
+  armour: -2,
+  formations: ["rome:line"],
+  sprite_set: "rome:sprites_infantry",
+  amour: 1,
+  cost: 250, upkeep: 40,
+}

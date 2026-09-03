@@ -18,6 +18,21 @@ enum Command {
     Run(RunArgs),
     /// Regenerate the placeholder sprite sheets and frame tables (T1-051).
     Genart(GenartArgs),
+    /// Load the given mod roots and print every diagnostic; exit 1 on errors.
+    Validate(ValidateArgs),
+}
+
+#[derive(Args)]
+struct ValidateArgs {
+    /// Mod roots; the first is the game.
+    #[arg(default_value = "game")]
+    roots: Vec<PathBuf>,
+    /// Fail on warnings too.
+    #[arg(long)]
+    deny_warnings: bool,
+    /// Print the load order, hashes and registry counts.
+    #[arg(long)]
+    verbose: bool,
 }
 
 #[derive(Args)]
@@ -77,6 +92,20 @@ fn main() -> anyhow::Result<()> {
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();
             il_cli::genart::generate(&a.mod_root, &mut lock)
+        }
+        Command::Validate(a) => {
+            let opts = il_cli::validate::ValidateOptions {
+                roots: a.roots,
+                deny_warnings: a.deny_warnings,
+                verbose: a.verbose,
+            };
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            let report = il_cli::validate::validate(&opts, &mut lock)?;
+            if !report.ok(opts.deny_warnings) {
+                std::process::exit(1);
+            }
+            Ok(())
         }
     }
 }
