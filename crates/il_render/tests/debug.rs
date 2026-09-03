@@ -51,53 +51,86 @@ fn segments(world: &BattleWorld, flags: DebugFlags, camera: &Camera) -> usize {
 #[test]
 fn every_toggle_adds_segments_from_the_view() {
     let world = world();
-    let camera = Camera::new(Vec2::new(300.0, 170.0));
+    // Over the regiment (slots, anchors, cells) and over the river (the
+    // nav grid draws only impassable and costly cells).
+    let near = Camera::new(Vec2::new(300.0, 170.0));
+    let river = Camera::new(Vec2::new(400.0, 300.0));
     let none = DebugFlags::default();
-    assert_eq!(segments(&world, none, &camera), 0);
+    assert_eq!(segments(&world, none, &near), 0);
+    assert_eq!(segments(&world, none, &river), 0);
     let flags = [
-        DebugFlags {
-            nav_grid: true,
-            ..none
-        },
-        DebugFlags {
-            slots: true,
-            ..none
-        },
-        DebugFlags {
-            paths: true,
-            ..none
-        },
-        DebugFlags {
-            anchors: true,
-            ..none
-        },
-        DebugFlags {
-            spatial_cells: true,
-            ..none
-        },
+        (
+            DebugFlags {
+                nav_grid: true,
+                ..none
+            },
+            &river,
+        ),
+        (
+            DebugFlags {
+                slots: true,
+                ..none
+            },
+            &near,
+        ),
+        (
+            DebugFlags {
+                paths: true,
+                ..none
+            },
+            &near,
+        ),
+        (
+            DebugFlags {
+                anchors: true,
+                ..none
+            },
+            &near,
+        ),
+        (
+            DebugFlags {
+                spatial_cells: true,
+                ..none
+            },
+            &near,
+        ),
     ];
     let mut sum = 0;
-    for f in flags {
-        let n = segments(&world, f, &camera);
+    for (f, camera) in flags {
+        let n = segments(&world, f, camera);
         assert!(n > 0, "{f:?} drew nothing");
-        sum += n;
+        if std::ptr::eq(camera, &near) {
+            sum += n;
+        }
     }
-    let all = DebugFlags {
-        nav_grid: true,
+    let all_near = DebugFlags {
         slots: true,
         paths: true,
         anchors: true,
         spatial_cells: true,
+        ..none
     };
-    assert_eq!(segments(&world, all, &camera), sum);
+    assert_eq!(segments(&world, all_near, &near), sum);
     // The path crosses the bridge, whose corridor is narrower than the
     // 10-file line: the narrow marker (a 4-chord circle) is drawn.
     let only_paths = DebugFlags {
         paths: true,
         ..none
     };
-    assert!(segments(&world, only_paths, &camera) >= 4 + 2);
-    // Nothing on screen far away: only the grids remain.
+    assert!(segments(&world, only_paths, &near) >= 4 + 2);
+    // Open ground draws no nav cells; a regiment off screen draws no
+    // slots or anchors.
+    assert_eq!(
+        segments(
+            &world,
+            DebugFlags {
+                nav_grid: true,
+                ..none
+            },
+            &near
+        ),
+        0
+    );
     let far = Camera::new(Vec2::new(750.0, 550.0));
     assert_eq!(
         segments(
