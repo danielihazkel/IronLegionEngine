@@ -272,7 +272,7 @@ flowchart LR
   `formation_integrity` system every `integrity_period_ticks`; `SetFacing` wheel versus about-face rule.
   **Done when** integrity reads 1.0 for a settled regiment and drops during a wheel.
 
-- [ ] **T1-046 Group formations and drag width** · M · Refs SIM-FORM-040..042, TDD §7 `arrange_group`
+- [x] **T1-046 Group formations and drag width** · M · Refs SIM-FORM-040..042, TDD §7 `arrange_group`
   `arrange_group` for all six group kinds; rank selection to match a requested width within tolerance; lateral ordering to minimise crossing.
   **Done when** a battle line of 5 regiments at width 300 m lands within 10 % of 300 m and regiments do not cross.
 
