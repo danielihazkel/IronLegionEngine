@@ -3,8 +3,8 @@
 
 mod common;
 
-use il_core::{PlayerId, RegimentId, Tick, V2};
-use il_sim_battle::{BattleEvent, Command, CommandKind, RejectReason, SpeedMode};
+use il_core::{PlayerId, RegimentId, Tick};
+use il_sim_battle::{BattleEvent, Command, CommandKind, RejectReason};
 
 fn cmd(tick: Tick, player: u8, seq: u16, kind: CommandKind) -> Command {
     Command {
