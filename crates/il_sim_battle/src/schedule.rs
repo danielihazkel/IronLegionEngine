@@ -14,7 +14,7 @@ use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 use crate::command::apply_commands;
 use crate::formation::{formation_apply, formation_layout};
 use crate::hash::flush_events_and_hash;
-use crate::movement::regiment_follow_path;
+use crate::movement::{integrate, regiment_follow_path, soldier_steer};
 use crate::nav::serve_path_requests;
 use crate::spatial::rebuild_spatial_grids;
 
@@ -132,8 +132,6 @@ impl StageObserver for NoopObserver {
 // Placeholder systems, one per stage without real systems yet, so every
 // stage shows up in the profiler with its own timing.
 fn stage_ai() {}
-fn stage_soldier_steering() {}
-fn stage_integrate() {}
 fn stage_collision() {}
 fn stage_visibility() {}
 fn stage_targeting() {}
@@ -159,8 +157,8 @@ fn stage_schedule(stage: Stage) -> Schedule {
                 .chain()
                 .in_set(stage),
         ),
-        Stage::SoldierSteering => s.add_systems(stage_soldier_steering.in_set(stage)),
-        Stage::Integrate => s.add_systems(stage_integrate.in_set(stage)),
+        Stage::SoldierSteering => s.add_systems(soldier_steer.in_set(stage)),
+        Stage::Integrate => s.add_systems(integrate.in_set(stage)),
         Stage::SpatialGrid => s.add_systems(rebuild_spatial_grids.in_set(stage)),
         Stage::Collision => s.add_systems(stage_collision.in_set(stage)),
         Stage::Visibility => s.add_systems(stage_visibility.in_set(stage)),

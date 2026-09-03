@@ -260,7 +260,7 @@ flowchart LR
   `Order`, `Path` components; anchor movement toward waypoints, wheel at `wheel_rate`, cohesion slowdown, arrival facing; `SpeedMode` (the order's mode); slope factor; corridor Column morph per SIM-MOVE-004 against each waypoint's stored corridor width.
   **Done when** a regiment ordered across a test map arrives within `waypoint_radius`, faces the ordered direction, and a regiment ordered through the 8 m bridge (the narrowest corridor a 4 m nav grid holds) morphs to Column and back.
 
-- [ ] **T1-043 Soldier steering** · L · Refs SIM-MOVE-020..025, SIM-CORE-010..011, TDD §6.2 `soldier_steer`
+- [x] **T1-043 Soldier steering** · L · Refs SIM-MOVE-020..025, SIM-CORE-010..011, TDD §6.2 `soldier_steer`
   Soldier FSM (`Idle`, `MoveToSlot` only in Phase 1); seek with arrive damping, separation from the previous tick's grid, obstacle avoidance by sampled rotations, `clamp_length`, facing tracking; Stage 4 `par_iter`; Stage 5 integrate with map clamp.
   **Done when** 2,000 soldiers reforming from Line to Column and back settle to integrity ≥ 0.95 within 15 seconds of sim time, and the determinism test passes at 1 and 8 threads.
 

@@ -293,9 +293,8 @@ impl BattleWorld {
         &self.world
     }
 
-    /// Tools only (like [`ecs_mut`](Self::ecs_mut)): moves every soldier and
-    /// regiment anchor by `delta` and sets every facing. Drives
-    /// `il_app --demo-circle` until movement exists (T1-043); removed then.
+    /// Tools and tests only (like [`ecs_mut`](Self::ecs_mut)): moves every
+    /// soldier and regiment anchor by `delta` and sets every facing.
     pub fn debug_translate_all(&mut self, delta: V2, facing: Option<Angle<S>>) {
         for (mut pos, mut f) in self
             .world

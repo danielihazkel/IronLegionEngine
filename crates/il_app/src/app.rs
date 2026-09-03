@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use glam::Vec2;
-use il_core::{Angle, RegimentId, S, Scalar, V2};
+use il_core::{RegimentId, Scalar};
 use il_data::Registries;
 use il_render::{
     AtlasId, Camera, ClearColour, EguiPaint, FrameScene, LineScene, RenderSnapshot, Renderer,
@@ -59,8 +59,6 @@ pub struct App {
     #[allow(dead_code, reason = "unused without the dev feature")]
     hot_reload: HotReloadHandle,
     content_root: PathBuf,
-    /// `--demo-circle`: walk every regiment around a circle (T1-052 check).
-    demo_circle: bool,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     ui: Option<UiContext>,
@@ -91,14 +89,12 @@ impl App {
         regs: Arc<Registries>,
         hot_reload: HotReloadHandle,
         content_root: PathBuf,
-        demo_circle: bool,
     ) -> Self {
         Self {
             mode,
             regs,
             hot_reload,
             content_root,
-            demo_circle,
             window: None,
             renderer: None,
             ui: None,
@@ -225,19 +221,6 @@ impl App {
         }
     }
 
-    /// Moves every regiment along a 40 m circle at 20 Hz: prev/current
-    /// positions differ every tick, so interpolation stutter is visible.
-    fn demo_circle_step(session: &mut BattleSession) {
-        let t = session.world.tick().0 as f32 * il_core::TICK_SECONDS;
-        let omega = std::f32::consts::TAU / 40.0;
-        let radius = 40.0;
-        let v = Vec2::new(-(omega * t).sin(), (omega * t).cos()) * radius * omega;
-        let delta = v * il_core::TICK_SECONDS;
-        let delta = V2::from_f32_data(delta.x, delta.y);
-        let facing = Angle::<S>::from_direction(delta);
-        session.world.debug_translate_all(delta, Some(facing));
-    }
-
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let dt = self
@@ -270,11 +253,6 @@ impl App {
                 self.step_seconds += before.elapsed().as_secs_f64();
                 self.ticks_since_title += stepped;
                 self.profiler.frame(dt, stepped);
-                if self.demo_circle {
-                    for _ in 0..stepped {
-                        Self::demo_circle_step(session);
-                    }
-                }
             }
             Mode::BenchSprites => {
                 if let Some(bench) = self.bench.as_mut() {

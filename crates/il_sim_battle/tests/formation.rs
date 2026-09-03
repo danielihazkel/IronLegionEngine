@@ -81,14 +81,23 @@ fn a_facing_change_beyond_reform_angle_reforms_and_is_thread_independent() {
     assert_eq!(state.laid_out_facing, Angle::from_degrees_data(90.0));
     assert_eq!(members(&a, 0), members(&b, 0));
     assert_eq!(a.hash(), b.hash());
-    // A small facing change does not reform.
-    let before = members(&a, 1);
+    // A small facing change does not reform: every soldier keeps its slot
+    // (positions drift as they track the moved slots).
+    let slots_before: Vec<Option<u16>> = members(&a, 1).iter().map(|(s, _, _)| *s).collect();
     let e = regiment_entity(&a, 1);
     let facing = a.ecs().get::<Anchor>(e).unwrap().facing;
     a.ecs_mut().get_mut::<Anchor>(e).unwrap().facing =
         Angle::new(facing.radians() + S::from_f32_data(0.05));
     a.step(&[]);
-    assert_eq!(members(&a, 1), before);
+    let slots_after: Vec<Option<u16>> = members(&a, 1).iter().map(|(s, _, _)| *s).collect();
+    assert_eq!(slots_after, slots_before);
+    assert_eq!(
+        a.view()
+            .formation_state(RegimentId(1))
+            .unwrap()
+            .laid_out_facing,
+        facing
+    );
 }
 
 #[test]
