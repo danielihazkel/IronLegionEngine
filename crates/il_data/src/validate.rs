@@ -4,13 +4,17 @@
 //! Every error found by the validator is mapped back to the span of the
 //! offending key or value in the source file; a missing required field points
 //! at the object that lacks it (`<root>` at the object's brace when it is the
-//! document itself). Errors never stop at the first one.
+//! document itself). Errors never stop at the first one. For merged objects
+//! (T1-022) the key span names the file that first defined the field and the
+//! value span the mod that last wrote it, giving the "after merge by" form.
 
 use std::path::Path;
 
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::json5::{PathSeg, Span, SpannedValue, ValueKind};
+use crate::merge::MergedItem;
 use crate::schema::{KindTag, describe, schema};
+use crate::source::Sources;
 
 /// Splits a JSON pointer (`/ranged/accuracy`, `/abilities/1`) into segments.
 fn pointer_segments(pointer: &str) -> Vec<String> {
@@ -71,70 +75,6 @@ fn field_path(segments: &[String], value: &SpannedValue) -> String {
     out
 }
 
-/// Validates one parsed object against `kind`'s schema, appending one
-/// diagnostic per problem (sorted by position). Returns `true` when valid.
-/// `file` is the display path used in the diagnostics.
-pub fn validate_value(
-    kind: KindTag,
-    value: &SpannedValue,
-    file: &Path,
-    diags: &mut Diagnostics,
-) -> bool {
-    let instance = value.to_json();
-    let mut found: Vec<Diagnostic> = Vec::new();
-    for err in schema(kind).validator.iter_errors(&instance) {
-        let segments = pointer_segments(err.instance_path().as_str());
-        let seg_refs: Vec<&str> = segments.iter().map(String::as_str).collect();
-        let (node, matched) = locate(value, &segments);
-        let base_field = field_path(&segments[..matched], value);
-        for d in describe(kind, &seg_refs, &err) {
-            let (span, field): (Span, String) = match (&d.key, d.index) {
-                // Unknown field: point at the key itself.
-                (Some(key), _) => (
-                    node.key_span(key).unwrap_or(node.span),
-                    if base_field == "<root>" {
-                        key.clone()
-                    } else {
-                        format!("{base_field}.{key}")
-                    },
-                ),
-                // Bad list element: point at the element.
-                (None, Some(i)) => (
-                    node.as_array()
-                        .and_then(|a| a.get(i))
-                        .map_or(node.span, |v| v.span),
-                    format!("{base_field}[{i}]"),
-                ),
-                (None, None) => {
-                    // Prefer the key of a leaf field so the column lands on
-                    // the name, as the SDK examples show; objects and arrays
-                    // point at their own opening bracket.
-                    let span = if matched == segments.len() && matched > 0 {
-                        parent_key_span(value, &segments).unwrap_or(node.span)
-                    } else {
-                        node.span
-                    };
-                    (span, base_field.clone())
-                }
-            };
-            let mut diag = Diagnostic::file_level(file, d.message)
-                .at(span.line, span.col)
-                .field(field);
-            if let Some(e) = d.expected {
-                diag = diag.expected(e);
-            }
-            found.push(diag);
-        }
-    }
-    let ok = found.is_empty();
-    found.sort_by_key(|d| (d.line, d.col, d.field.clone()));
-    found.dedup();
-    for d in found {
-        diags.push(d);
-    }
-    ok
-}
-
 /// Span of the key that holds the node at `segments` (the last object key on
 /// the path), if the last segment is an object member.
 fn parent_key_span(value: &SpannedValue, segments: &[String]) -> Option<Span> {
@@ -152,6 +92,129 @@ fn parent_key_span(value: &SpannedValue, segments: &[String]) -> Option<Span> {
             .map(|v| v.span),
         _ => None,
     }
+}
+
+/// One schema problem located in the source tree.
+struct Found {
+    /// Where the diagnostic points: the field's key (first definition).
+    primary: Span,
+    /// Where the offending value was written (last writer).
+    writer: Span,
+    field: String,
+    message: String,
+    expected: Option<String>,
+}
+
+fn collect(kind: KindTag, value: &SpannedValue) -> Vec<Found> {
+    let instance = value.to_json();
+    let mut found: Vec<Found> = Vec::new();
+    for err in schema(kind).validator.iter_errors(&instance) {
+        let segments = pointer_segments(err.instance_path().as_str());
+        let seg_refs: Vec<&str> = segments.iter().map(String::as_str).collect();
+        let (node, matched) = locate(value, &segments);
+        let base_field = field_path(&segments[..matched], value);
+        for d in describe(kind, &seg_refs, &err) {
+            let (primary, writer, field) = match (&d.key, d.index) {
+                // Unknown field: point at the key itself.
+                (Some(key), _) => {
+                    let span = node.key_span(key).unwrap_or(node.span);
+                    let field = if base_field == "<root>" {
+                        key.clone()
+                    } else {
+                        format!("{base_field}.{key}")
+                    };
+                    (span, span, field)
+                }
+                // Bad list element: point at the element.
+                (None, Some(i)) => {
+                    let span = node
+                        .as_array()
+                        .and_then(|a| a.get(i))
+                        .map_or(node.span, |v| v.span);
+                    (span, span, format!("{base_field}[{i}]"))
+                }
+                (None, None) => {
+                    // The key of a leaf field, so the column lands on the
+                    // name as the SDK examples show; objects and arrays point
+                    // at their own opening bracket.
+                    let primary = if matched == segments.len() && matched > 0 {
+                        parent_key_span(value, &segments).unwrap_or(node.span)
+                    } else {
+                        node.span
+                    };
+                    (primary, node.span, base_field.clone())
+                }
+            };
+            found.push(Found {
+                primary,
+                writer,
+                field,
+                message: d.message,
+                expected: d.expected,
+            });
+        }
+    }
+    found.sort_by(|a, b| {
+        (a.primary.line, a.primary.col, &a.field).cmp(&(b.primary.line, b.primary.col, &b.field))
+    });
+    found.dedup_by(|a, b| a.primary == b.primary && a.field == b.field && a.message == b.message);
+    found
+}
+
+fn to_diagnostic(f: Found, file: &Path, message: String) -> Diagnostic {
+    let mut diag = Diagnostic::file_level(file, message)
+        .at(f.primary.line, f.primary.col)
+        .field(f.field);
+    if let Some(e) = f.expected {
+        diag = diag.expected(e);
+    }
+    diag
+}
+
+/// Validates one parsed object against `kind`'s schema, appending one
+/// diagnostic per problem (sorted by position). Returns `true` when valid.
+/// `file` is the display path used in the diagnostics.
+pub fn validate_value(
+    kind: KindTag,
+    value: &SpannedValue,
+    file: &Path,
+    diags: &mut Diagnostics,
+) -> bool {
+    let found = collect(kind, value);
+    let ok = found.is_empty();
+    for f in found {
+        let message = f.message.clone();
+        diags.push(to_diagnostic(f, file, message));
+    }
+    ok
+}
+
+/// Validates a merged item. Diagnostics name the file that defined the field;
+/// when another mod wrote the offending value they add
+/// `after merge by "<mod>" (<file>:<line>:<col>)` (Modding SDK §3.6).
+pub fn validate_merged(
+    kind: KindTag,
+    item: &MergedItem,
+    sources: &Sources,
+    diags: &mut Diagnostics,
+) -> bool {
+    let found = collect(kind, &item.value);
+    let ok = found.is_empty();
+    for f in found {
+        let primary_file = sources.get(f.primary.file);
+        let writer_file = sources.get(f.writer.file);
+        let message = if writer_file.mod_index != primary_file.mod_index {
+            format!(
+                "after merge by {:?} ({}:{}:{}): {}",
+                writer_file.mod_id, writer_file.rel, f.writer.line, f.writer.col, f.message
+            )
+        } else {
+            f.message.clone()
+        };
+        let file = sources.display(f.primary.file);
+        diags.push(to_diagnostic(f, &file, message));
+    }
+    ok
 }
 
 #[cfg(test)]
@@ -242,8 +305,9 @@ mod tests {
             "{got:?}"
         );
         assert!(
-            got.iter()
-                .any(|g| g.starts_with(&format!("{FILE}:7:30 formations[1]:"))),
+            got.iter().any(|g| g.starts_with(&format!(
+                "{FILE}:7:30 formations[1]: wrong type: found an integer"
+            ))),
             "{got:?}"
         );
     }

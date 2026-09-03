@@ -1,0 +1,9 @@
+// A minimal stand-in for the flagship game: only what the Modding SDK 4.1
+// worked example derives from.
+{
+  id: "rome",
+  name_key: "rome.mod.name",
+  version: "0.1.0",
+  engine_version: "*",
+  namespaces: ["rome", "greece", "persia"],
+}

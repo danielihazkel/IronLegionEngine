@@ -1549,6 +1549,7 @@ dependencies = [
  "il_data",
  "il_sim_battle",
  "json5",
+ "serde_json",
  "toml",
 ]
 

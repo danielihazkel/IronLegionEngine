@@ -1,0 +1,59 @@
+// rome:velites with the Simulation Spec 15.2 values (the base of the SDK 4.1
+// worked example). `sounds.move` exists only to show that a merge keeps the
+// sibling keys of a nested object.
+{
+  id: "rome:velites",
+  name_key: "rome.units.velites.name",
+  category: "skirmisher",
+
+  soldier_radius: 0.4,
+  mass: 70,
+  hp: 80,
+
+  speed_walk: 1.8,
+  speed_run: 4.5,
+  speed_march: 1.8,
+
+  attack: 25,
+  defence: 20,
+  armour: 2,
+  damage: 25,
+  attack_interval_ticks: 32,
+  reach: 0.5,
+  charge_bonus: 0.1,
+  anti_cavalry_bonus: 0,
+  second_rank_attack: false,
+  shield: false,
+  frontal_arc_deg: 120,
+
+  ranged: {
+    range: 40,
+    min_range: 5,
+    accuracy: 0.5,
+    projectile_speed: 20,
+    reload_ticks: 80,
+    ammo: 8,
+    damage: 30,
+    armour_penetration: 0.3,
+    arc: "direct",
+  },
+
+  morale_base: 50,
+  fatigue_rate_mult: 1.0,
+  los_radius: 250,
+
+  abilities: [],
+  formations: ["rome:loose", "rome:line", "rome:column"],
+
+  sprite_set: "sprites/units/velites",
+  sounds: {
+    select: "sounds/voice/velites_select.ogg",
+    move: "sounds/voice/velites_move.ogg",
+  },
+
+  cost: 250,
+  upkeep: 40,
+  recruit_turns: 1,
+  tier: 1,
+  experience_tiers: [],
+}

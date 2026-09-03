@@ -166,7 +166,7 @@ Input: the set of enabled manifests. Output: a total order, or a list of errors.
 
 ### 3.3 Application order
 
-Content is applied mod by mod in load order. Within one mod, files are read in sorted path order and objects within a file in array order. Within a mod, defining the same Content ID twice is an error (`mymod/content/units/a.json5:12:3 id: duplicate "mymod:thracian_peltast" (first defined in units/b.json5:4:3)`). Across mods, the later mod's object is an **Override** of the earlier one.
+Content is applied mod by mod in load order. Within one mod, files are read in sorted path order and objects within a file in array order. Within a mod, defining the same Content ID twice is an error (`mymod/content/units/a.json5:12:3 id: duplicate "mymod:thracian_peltast" (first defined in content/units/b.json5:4:3)`). Across mods, the later mod's object is an **Override** of the earlier one.
 
 ### 3.4 Override directives
 
@@ -267,7 +267,7 @@ mymod/content/units/peltast.json5:14:5 ranged.accuracy: value 1.4 out of range (
 mymod/content/units/peltast.json5:3:3 id: unknown reference in abilities[1] "mymod:war_cri" (expected an existing ability ContentId; nearest: "mymod:war_cry")
 mymod/content/formations/deep.json5:9:3 role_zones[0].ranks_to: 12 exceeds max_ranks 8 (expected <= max_ranks)
 mymod/content/factions/thrace.json5:1:1 <root>: missing required field "colour_primary" (expected #rrggbb string)
-rome/content/units/hastati.json5:2:3 armour: after merge by "mymod" (units/tweak.json5:5:3): value -2 out of range (expected >= 0)
+rome/content/units/hastati.json5:2:3 armour: after merge by "mymod" (content/units/tweak.json5:5:3): value -2 out of range (expected 0..=100)
 ```
 
 The last form appears when a merge produces an invalid result; both the original location and the overriding mod's location are named.
@@ -364,6 +364,29 @@ Worked example: a Thracian peltast derived from the flagship Velites by merge.
   cost: 380,
   upkeep: 45,
   tier: 1,
+}
+```
+
+Merged result (what the engine validates and loads; `tests/mods/sdk_example/` holds this exact fixture and `tests/tests/sdk_example.rs` checks it):
+
+```json5
+{
+  id: "mymod:thracian_peltast",
+  name_key: "mymod.unit.thracian_peltast.name",
+  category: "skirmisher",
+  soldier_radius: 0.4, mass: 70, hp: 80,                // inherited from rome:velites
+  speed_walk: 1.8, speed_run: 5.2, speed_march: 1.8,    // speed_run overridden
+  attack: 25, defence: 20, armour: 0, damage: 25,       // armour overridden
+  attack_interval_ticks: 32, reach: 0.5, charge_bonus: 0.1, anti_cavalry_bonus: 0,
+  second_rank_attack: false, shield: false, frontal_arc_deg: 120,
+  ranged: { range: 40, min_range: 5, accuracy: 0.5, projectile_speed: 20, reload_ticks: 80,
+            ammo: 8, damage: 14, armour_penetration: 0.3, arc: "direct" },   // nested merge: only damage changed
+  morale_base: 50, fatigue_rate_mult: 1.0, los_radius: 250,
+  abilities: ["mymod:rhomphaia_frenzy"],                // $append onto the inherited empty list
+  formations: ["rome:loose", "rome:line"],              // $replace dropped rome:column
+  sprite_set: "sprites/units/thracian_peltast",
+  sounds: { select: "sounds/voice/thracian_select.ogg", move: "sounds/voice/velites_move.ogg" },  // sibling key kept
+  cost: 380, upkeep: 45, recruit_turns: 1, tier: 1, experience_tiers: [],
 }
 ```
 

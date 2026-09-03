@@ -1,0 +1,31 @@
+// Verbatim from Modding SDK 4.1 (the worked example); the golden test
+// tests/tests/sdk_example.rs checks the merged result.
+{
+  // New definition in our namespace...
+  id: "mymod:thracian_peltast",
+  // ...but we do not want to retype 30 fields, so we inherit from rome:velites.
+  // "$from" copies the referenced item as the base, then merges the rest.
+  $from: "rome:velites",
+
+  name_key: "mymod.unit.thracian_peltast.name",
+  category: "skirmisher",
+
+  // Thracians: faster, harder-hitting javelins, weaker armour.
+  speed_run: 5.2,
+  armour: 0,
+  ranged: {
+    accuracy: 0.5,
+    damage: 14,
+    ammo: 8,
+  },
+
+  abilities: { $append: ["mymod:rhomphaia_frenzy"] },
+  formations: { $replace: ["rome:loose", "rome:line"] },
+
+  sprite_set: "sprites/units/thracian_peltast",
+  sounds: { select: "sounds/voice/thracian_select.ogg" },
+
+  cost: 380,
+  upkeep: 45,
+  tier: 1,
+}

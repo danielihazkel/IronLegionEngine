@@ -210,7 +210,7 @@ flowchart LR
   Embed `docs/schemas/*.json` with `include_str!`; validate each parsed file; collect every error as a `Diagnostic` in the `file:line:col field: message (expected ...)` format; never stop at the first error.
   **Done when** a file with three errors reports three diagnostics with correct lines.
 
-- [ ] **T1-022 Override, merge, list operations, `$from`, `$delete`** · L · Refs Modding SDK §3.3, §3.4, TDD §3.3 step 3
+- [x] **T1-022 Override, merge, list operations, `$from`, `$delete`** · L · Refs Modding SDK §3.3, §3.4, TDD §3.3 step 3
   Implement the accumulating `Value` map per content kind and the directive semantics exactly as the Modding SDK defines them: default deep merge, `$override: "replace"`, `$delete`, `$append`, `$remove`, `$replace` on lists, `$from` resolved before validation with depth ≤ 8 and cycle detection.
   **Done when** the Modding SDK §4 worked example (`mymod:thracian_peltast` from `rome:velites`) loads from a second mod folder and the result equals the expected merged object in a golden test.
 

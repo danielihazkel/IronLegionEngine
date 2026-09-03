@@ -1,17 +1,12 @@
-//! Single-root loader: JSON5 files from one mod into registries (TDD §3.3
-//! steps 3 and 4, reduced). Discovery, load order and manifests are in their
-//! own modules (T1-020); schema validation, overrides and the multi-mod
-//! pipeline replace this file's body in T1-021..T1-023.
+//! File helpers and the `Registries` entry points (TDD §3.3). The pipeline
+//! itself lives in [`crate::pipeline`].
 
 use std::path::{Path, PathBuf};
 
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::json5::{FileId, SpannedValue, ValueKind, parse_json5};
-use crate::manifest::read_manifest;
-use crate::registry::{ContentKind, Registry};
-use crate::source::Sources;
+use crate::registry::Registry;
 use crate::unit_type::UnitType;
-use crate::validate::validate_value;
 
 /// Every `*.json5` under `dir`, recursively, sorted by path so load order
 /// does not depend on the filesystem.
@@ -64,102 +59,31 @@ pub fn parse_content_file(
     }
 }
 
-/// Loads every file of kind `T` under `<mod_root>/<content_root>/T::DIR` into
-/// a registry, validating each object against the kind's schema and
-/// collecting all diagnostics. A missing kind folder is an empty registry.
-pub fn load_kind<T: ContentKind>(
-    mod_root: &Path,
-    content_root: &str,
-    mod_id: &str,
-    mod_index: usize,
-    sources: &mut Sources,
-) -> Result<Registry<T>, Diagnostics> {
-    let dir = mod_root.join(content_root).join(T::DIR);
-    let mut registry = Registry::new();
-    let mut diags = Diagnostics::new();
-    if !dir.is_dir() {
-        return Ok(registry);
-    }
-    let mut files = Vec::new();
-    if let Err(e) = json5_files(&dir, &mut files) {
-        diags.push(Diagnostic::file_level(&dir, format!("cannot list: {e}")));
-        return Err(diags);
-    }
-    for abs in &files {
-        let rel = abs.strip_prefix(mod_root).unwrap_or(abs);
-        let file_id = sources.add(mod_index, mod_id, rel, abs);
-        let display = sources.display(file_id);
-        let path = display.as_path();
-        let values = match parse_content_file(abs, path, file_id) {
-            Ok(v) => v,
-            Err(d) => {
-                diags.push(d);
-                continue;
-            }
-        };
-        for (i, value) in values.into_iter().enumerate() {
-            if !validate_value(T::TAG, &value, path, &mut diags) {
-                continue;
-            }
-            let item: T = match serde_json::from_value(value.to_json()) {
-                Ok(item) => item,
-                Err(e) => {
-                    // The schema passed, so this is a mismatch between the
-                    // schema and the typed struct: report it plainly.
-                    diags.push(
-                        Diagnostic::file_level(
-                            path,
-                            format!(
-                                "internal: schema accepted an object the loader cannot read: {e}"
-                            ),
-                        )
-                        .at(value.span.line, value.span.col)
-                        .field(format!("[{i}]")),
-                    );
-                    continue;
-                }
-            };
-            if let Err(dup) = registry.insert(item) {
-                let span = value.key_span("id").unwrap_or(value.span);
-                diags.push(
-                    Diagnostic::file_level(path, dup.to_string())
-                        .at(span.line, span.col)
-                        .field(format!("[{i}].id")),
-                );
-            }
-        }
-    }
-    diags.into_result(registry)
-}
-
-/// Every registry (TDD §3.2 `Registries`, Phase 0 subset).
+/// Every registry (TDD §3.2 `Registries`, Phase 1 subset so far).
 #[derive(Debug, Default)]
 pub struct Registries {
     pub units: Registry<UnitType>,
 }
 
 impl Registries {
-    /// Loads one mod root (the flagship game at `game/`).
+    /// Loads a single mod root (the flagship game at `game/`); the folder
+    /// must hold a `mod.json5`.
     pub fn load_root(mod_root: &Path) -> Result<Registries, Diagnostics> {
-        let manifest = read_manifest(mod_root, true)?;
-        let mut sources = Sources::new();
-        let units = load_kind::<UnitType>(
-            mod_root,
-            &manifest.manifest.content_root,
-            &manifest.manifest.id,
-            0,
-            &mut sources,
-        )?;
-        Ok(Registries { units })
+        crate::manifest::read_manifest(mod_root, true)?;
+        crate::pipeline::load_roots(&[mod_root.to_path_buf()])
+    }
+
+    /// Discovers, orders and loads the mods under `roots`; the first root is
+    /// the game (Modding SDK §3.1).
+    pub fn load_roots(roots: &[PathBuf]) -> Result<Registries, Diagnostics> {
+        crate::pipeline::load_roots(roots)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content_id::ContentId;
 
-    /// A fresh scratch mod folder under the target directory.
     fn scratch(name: &str) -> PathBuf {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../target/il_data_test")
@@ -174,45 +98,6 @@ mod tests {
         root
     }
 
-    /// A complete unit that passes the schema.
-    fn unit(id: &str, category: &str) -> String {
-        format!(
-            r#"{{ id: "{id}", name_key: "t.units.x.name", category: "{category}",
-        hp: 100, speed_walk: 1.6, speed_run: 4.0, attack: 1, defence: 1, damage: 1,
-        formations: ["t:line"], sprite_set: "sprites/units/x", cost: 1, upkeep: 1 }}"#
-        )
-    }
-
-    #[test]
-    fn loads_objects_and_arrays_in_path_order() {
-        let root = scratch("ok");
-        std::fs::write(
-            root.join("content/units/b.json5"),
-            unit("t:good", "infantry"),
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("content/units/a.json5"),
-            format!(
-                "[\n{},\n{},\n]",
-                unit("t:a1", "cavalry"),
-                unit("t:a2", "ranged")
-            ),
-        )
-        .unwrap();
-        let regs = Registries::load_root(&root).unwrap();
-        let ids: Vec<&str> = regs.units.ids().map(|i| i.as_str()).collect();
-        assert_eq!(ids, vec!["t:a1", "t:a2", "t:good"]);
-        let h = regs
-            .units
-            .lookup(&ContentId::new("t:good").unwrap())
-            .unwrap();
-        assert_eq!(
-            regs.units.get(h).speed_walk,
-            <il_core::S as il_core::Scalar>::from_f32_data(1.6)
-        );
-    }
-
     #[test]
     fn malformed_file_reports_line_and_column() {
         let root = scratch("malformed");
@@ -224,49 +109,11 @@ mod tests {
         let err = Registries::load_root(&root).unwrap_err();
         assert_eq!(err.len(), 1, "{err}");
         let d = &err.0[0];
-        assert!(d.file.ends_with("bad.json5"));
-        assert_eq!(d.line, 4, "{d}");
-        assert_eq!(d.col, 11, "{d}");
-    }
-
-    #[test]
-    fn collects_every_diagnostic_before_failing() {
-        let root = scratch("many");
-        std::fs::write(root.join("content/units/a.json5"), "{ id: 5 }").unwrap();
-        std::fs::write(
-            root.join("content/units/b.json5"),
-            unit("t:good", "infantry"),
-        )
-        .unwrap();
-        std::fs::write(
-            root.join("content/units/c.json5"),
-            unit("t:good", "infantry"),
-        )
-        .unwrap();
-        std::fs::write(root.join("content/units/d.json5"), "not json5 at all").unwrap();
-        let err = Registries::load_root(&root).unwrap_err();
-        let mut files: Vec<String> = err
-            .0
-            .iter()
-            .map(|d| d.file.file_name().unwrap().to_string_lossy().into_owned())
-            .collect();
-        files.dedup();
-        assert_eq!(files, vec!["a.json5", "c.json5", "d.json5"], "{err}");
-        assert!(
-            err.0[0].file.starts_with("t/content/units"),
-            "display path is mod-relative: {}",
-            err.0[0].file.display()
-        );
-        let dup = err
-            .0
-            .iter()
-            .find(|d| d.message.contains("duplicate"))
-            .expect("duplicate reported");
         assert_eq!(
-            (dup.line, dup.col),
-            (1, 3),
-            "duplicate points at the id key"
+            d.file.to_string_lossy().replace('\\', "/"),
+            "t/content/units/bad.json5"
         );
+        assert_eq!((d.line, d.col), (4, 11), "{d}");
     }
 
     #[test]
@@ -274,6 +121,16 @@ mod tests {
         let root = scratch("nomanifest");
         std::fs::remove_file(root.join("mod.json5")).unwrap();
         let err = Registries::load_root(&root).unwrap_err();
-        assert!(err.0[0].message.contains("cannot read"));
+        assert!(err.0[0].message.contains("cannot read"), "{err}");
+    }
+
+    #[test]
+    fn game_content_loads() {
+        let game = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
+        let regs = Registries::load_root(&game).unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            regs.units
+                .contains(&crate::ContentId::new("rome:hastati").unwrap())
+        );
     }
 }
