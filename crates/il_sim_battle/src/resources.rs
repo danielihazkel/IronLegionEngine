@@ -15,6 +15,7 @@ use crate::command::{Command, RejectReason};
 use crate::events::BattleEvent;
 use crate::interface::BattleSetup;
 use crate::map::LoadedMap;
+use crate::spatial::SpatialGrid;
 
 /// The tick being simulated is `tick + 1`; `tick` counts completed ticks.
 /// Incremented at the start of `step` so the hash at Stage 17 covers the
@@ -115,6 +116,16 @@ pub struct Regs(pub Arc<Registries>);
 /// at `new` and `restore`; immutable for the whole battle.
 #[derive(Resource, Clone)]
 pub struct MapRes(pub Arc<LoadedMap>);
+
+/// Soldier positions at `movement.spatial_cell`, rebuilt at Stage 6
+/// (TDD §5). Stage 4 reads the previous tick's build; Stage 7 this tick's.
+#[derive(Resource, Clone)]
+pub struct SpatialGridRes(pub SpatialGrid<SoldierId>);
+
+/// Regiment anchors at `movement.anchor_cell`, for AI and visibility
+/// queries (TDD §5).
+#[derive(Resource, Clone)]
+pub struct AnchorGridRes(pub SpatialGrid<RegimentId>);
 
 // Rules are `il_data::Rules`, read through `Regs.0.rules` (T1-023), so a
 // registry swap (hot reload) carries new tunables too.

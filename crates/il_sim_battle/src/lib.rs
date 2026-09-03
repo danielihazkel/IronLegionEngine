@@ -12,6 +12,7 @@ pub mod map;
 pub mod resources;
 pub mod schedule;
 pub mod snapshot;
+pub mod spatial;
 pub mod spawn;
 pub mod view;
 pub mod world;
@@ -24,9 +25,10 @@ pub use interface::{
     ReinforcementGroup, SOLDIER_CAP, SideResult, SideSetup, VictoryRules, Weather,
 };
 pub use map::{FLAT_MAP_ID, LoadedMap, MapError, polygon_contains};
-pub use resources::{BattlePhase, MapRes};
+pub use resources::{AnchorGridRes, BattlePhase, MapRes, SpatialGridRes};
 pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
+pub use spatial::{Entry as GridEntry, SpatialGrid};
 pub use spawn::SetupError;
 pub use view::{BattleView, RegimentRow, SoldierRow};
 pub use world::{BattleWorld, StepOutput};

@@ -105,7 +105,7 @@ Phase 0 pins (T0-003) are the versions in the table; later phases pin their own 
 | `rayon` | 1 | not used directly; bevy_ecs task pool only | — |
 | `xxhash-rust` (`xxh3`) | 0.8 | state hash | il_core |
 | `tracing`, `tracing-subscriber` | 0.1 / 0.3 | spans | all |
-| `criterion` | 0.5 | benchmarks | benches |
+| `criterion` | 0.8.2 | benchmarks (`benches/benches/*.rs`, `harness = false`; first bench in T1-031) | benches |
 | `kira` | 0.9 | audio (OQ-8: chosen for game-oriented mixing) | il_audio |
 | `notify` | 6 | hot reload file watcher (dev) | il_data |
 | `thiserror`, `anyhow` | 2 / 1 | errors (anyhow only in binaries and their libs) | all |
@@ -412,13 +412,20 @@ Stage 17 `flush_events_and_hash`: copy `Pos→PrevPos`, `Facing→PrevFacing`; h
 ## 5. Spatial grid (`il_sim_battle::spatial`)
 
 ```rust
-pub struct SpatialGrid { cell: S, cols: u32, rows: u32, heads: Vec<u32> /* per cell, first index */, next: Vec<u32> /* per entry */, entries: Vec<(SoldierId, Entity, V2)> }
-impl SpatialGrid {
-    pub fn rebuild(&mut self, iter: impl Iterator<Item=(SoldierId, Entity, V2)>);   // entries sorted by id before insertion → deterministic bucket order
-    pub fn query_circle(&self, c: V2, r: S, out: &mut Vec<(SoldierId, Entity, V2)>);  // results in ascending id (sorted after collection)
-    pub fn for_each_pair(&self, f: impl FnMut(usize, usize));   // i<j within same and neighbouring cells
-    pub fn cell_of(&self, p: V2) -> (u32, u32);
+// As built (T1-031): generic over the stable id so the same type indexes soldiers and regiment anchors.
+pub struct Entry<Id> { pub id: Id, pub entity: Entity, pub pos: V2 }
+pub struct SpatialGrid<Id> { cell: S, cols: u32, rows: u32, heads: Vec<u32> /* per cell, first index */, next: Vec<u32> /* per entry */, entries: Vec<Entry<Id>> /* ascending id */ }
+impl<Id: Copy + Ord> SpatialGrid<Id> {
+    pub fn new(width: S, height: S, cell: S) -> Self;                 // cols/rows = ceil(extent / cell); a non-positive cell means one cell
+    pub fn ensure(&mut self, width: S, height: S, cell: S) -> bool;   // re-dimensions when the map or the rules changed (hot reload)
+    pub fn rebuild(&mut self, iter: impl IntoIterator<Item = Entry<Id>>);   // sorted by id, inserted back to front so every cell chain ascends → deterministic bucket order
+    pub fn cell_entries(&self, cx: u32, cy: u32) -> impl Iterator<Item = usize>;   // indices into entries(), ascending id
+    pub fn query_circle(&self, c: V2, r: S, out: &mut Vec<Entry<Id>>);         // ascending id (sorted after collection); query_circle_indices for the index form
+    pub fn for_each_pair(&self, f: impl FnMut(usize, usize));       // i<j within same and neighbouring cells, each pair once (self, E, NE, N, NW), rows ascending
+    pub fn for_each_pair_in_row(&self, cy: u32, f: impl FnMut(usize, usize));   // the pairs of one row, so rows can run in parallel into per-row buffers
+    pub fn cell_of(&self, p: V2) -> (u32, u32);                      // clamped to the grid
 }
+pub fn rebuild_spatial_grids(/* Stage 6 system */);                 // SpatialGridRes (soldiers, movement.spatial_cell) and AnchorGridRes (anchors, movement.anchor_cell); also run by rebuild_derived
 ```
 
 - Cell size `spatial.cell` = 4 m (about 10 soldier diameters); at 2 km × 2 km that is 250k cells, 1 MB of heads. Rebuilt every tick (Stage 6) rather than incrementally: 32k inserts ≈ 0.3 ms; a full rebuild is simpler to keep deterministic (ADR-013).

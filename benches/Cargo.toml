@@ -4,9 +4,19 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Workspace benchmarks (criterion arrives in T1-080)."
+description = "Workspace benchmarks: criterion micro-benches of the hot sim paths (T1-031, T1-080)."
 
 [dependencies]
+il_core.workspace = true
+il_sim_battle.workspace = true
+bevy_ecs.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "spatial"
+harness = false
 
 [lints]
 workspace = true

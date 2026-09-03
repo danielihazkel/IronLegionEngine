@@ -15,10 +15,11 @@ use crate::hash::compute_hash;
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, LoadedMap, MapError};
 use crate::resources::{
-    BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, Phase, Regs, Rejected, Rng,
-    SetupRes, Sides, StepEvents, ThreadCount,
+    AnchorGridRes, BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, Phase, Regs,
+    Rejected, Rng, SetupRes, Sides, SpatialGridRes, StepEvents, ThreadCount,
 };
 use crate::schedule::{NoopObserver, Stage, StageObserver, build_schedules};
+use crate::spatial::SpatialGrid;
 use crate::view::{BattleView, ViewQueries};
 
 /// Result of one `step`.
@@ -91,6 +92,10 @@ impl BattleWorld {
             S::from_i32(FLAT_MAP_SIZE),
             S::from_i32(FLAT_MAP_SIZE),
         ))));
+        // Dimensioned by the Stage 6 system once the map and rules are known.
+        let flat = S::from_i32(FLAT_MAP_SIZE);
+        world.insert_resource(SpatialGridRes(SpatialGrid::new(flat, flat, S::ZERO)));
+        world.insert_resource(AnchorGridRes(SpatialGrid::new(flat, flat, S::ZERO)));
         let view_queries = ViewQueries::new(&mut world);
         let mut w = Self {
             world,

@@ -25,6 +25,7 @@ anyhow = "1"
 tracing = "0.1"
 clap = { version = "4", features = ["derive"] }
 toml = "0.8"
+criterion = "0.8.2"           # benches only (T1-031, T1-080)
 # Phase 1 pins (T1-050, TDD §1.2): the newest mutually compatible trio on 2026-09-03.
 wgpu = "30.0.1"
 winit = "0.30.13"

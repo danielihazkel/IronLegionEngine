@@ -267,6 +267,7 @@ impl BattleWorld {
         }
         // Reinforcement groups are validated but spawn only in T2-070.
         w.set_setup(setup.clone());
+        w.rebuild_derived();
         w.refresh_hash();
         Ok(w)
     }

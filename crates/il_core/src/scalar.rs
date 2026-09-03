@@ -137,7 +137,13 @@ impl Scalar for f32 {
     }
     #[inline]
     fn floor_i32(self) -> i32 {
-        f32::floor(self) as i32
+        // Truncate, then step down for negative fractions. Same result as
+        // `f32::floor(self) as i32` for every finite input (saturating like
+        // the cast beyond the i32 range) without the libm `floorf` call the
+        // baseline x86-64 target makes, which dominated grid rebuilds.
+        let t = self as i32;
+        // Branch-free so bucketing loops vectorise; saturating at i32::MIN.
+        t.saturating_sub(i32::from((t as f32) > self))
     }
     #[inline]
     fn mul_add_rounded(self, a: Self, b: Self) -> Self {
@@ -329,6 +335,16 @@ mod tests {
         assert_eq!(f32::HALF + f32::HALF, f32::ONE);
         assert_eq!(2.7f32.floor_i32(), 2);
         assert_eq!((-2.3f32).floor_i32(), -3);
+        assert_eq!((-2.0f32).floor_i32(), -2);
+        assert_eq!((-0.5f32).floor_i32(), -1);
+        assert_eq!(0.0f32.floor_i32(), 0);
+        assert_eq!((-0.0f32).floor_i32(), 0);
+        assert_eq!(3e9f32.floor_i32(), i32::MAX);
+        assert_eq!((-3e9f32).floor_i32(), i32::MIN);
+        for k in -2000..2000 {
+            let v = k as f32 * 0.37;
+            assert_eq!(v.floor_i32(), f32::floor(v) as i32, "{v}");
+        }
         assert_eq!(Scalar::clamp(5.0f32, 0.0, 1.0), 1.0);
         assert_eq!(Scalar::clamp(-5.0f32, 0.0, 1.0), 0.0);
         assert_eq!(Scalar::min(1.0f32, 2.0), 1.0);

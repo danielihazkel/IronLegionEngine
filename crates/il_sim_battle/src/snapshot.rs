@@ -342,14 +342,20 @@ impl BattleWorld {
     }
 
     /// Reconstructs everything that is derived from hashed state and
-    /// therefore not stored in a snapshot (SIM-DET-005). The map itself is
-    /// installed by `restore` before this runs. Phase 1 adds, in this order:
-    /// - the spatial grid from positions (T1-031, T1-048),
+    /// therefore not stored in a snapshot (SIM-DET-005); also run by `new`
+    /// after spawning. The map itself is installed by `restore` before this
+    /// runs. Phase 1 adds, in this order:
+    /// - the spatial and anchor grids from positions (T1-031),
     /// - the nav grid from the map plus gate states (T1-032),
     /// - flow fields per side (T2-042),
     /// - `Path` components, re-requested rather than stored (T1-048),
     /// - `Rank` from slots (T1-041).
-    pub(crate) fn rebuild_derived(&mut self) {}
+    pub(crate) fn rebuild_derived(&mut self) {
+        use bevy_ecs::system::RunSystemOnce;
+        self.world
+            .run_system_once(crate::spatial::rebuild_spatial_grids)
+            .expect("grid rebuild has no failing params");
+    }
 }
 
 /// Placeholder setup for worlds built with `BattleWorld::empty`.

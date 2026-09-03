@@ -18,7 +18,10 @@ use crate::components::{
     Regiment, SlotRef, Soldier, SoldierState,
 };
 use crate::map::LoadedMap;
-use crate::resources::{BattlePhase, Ids, MapRes, Regs, SideState, Sides};
+use crate::resources::{
+    AnchorGridRes, BattlePhase, Ids, MapRes, Regs, SideState, Sides, SpatialGridRes,
+};
+use crate::spatial::SpatialGrid;
 
 type SoldierData = (
     &'static Soldier,
@@ -168,6 +171,16 @@ impl<'w> BattleView<'w> {
     /// The battle terrain.
     pub fn map(&self) -> &'w LoadedMap {
         &self.world.resource::<MapRes>().0
+    }
+
+    /// Soldier grid as rebuilt at Stage 6 of the last completed tick.
+    pub fn spatial_grid(&self) -> &'w SpatialGrid<SoldierId> {
+        &self.world.resource::<SpatialGridRes>().0
+    }
+
+    /// Regiment anchor grid as rebuilt at Stage 6 of the last completed tick.
+    pub fn anchor_grid(&self) -> &'w SpatialGrid<RegimentId> {
+        &self.world.resource::<AnchorGridRes>().0
     }
 
     /// Sides by index; `sides()[regiment.side]` gives the owning player.
