@@ -94,7 +94,8 @@ Phase 0 pins (T0-003) are the versions in the table; later phases pin their own 
 | `winit` | 0.30.13 | window and input events | il_app, il_ui (event types) |
 | `egui`, `egui-wgpu`, `egui-winit` | 0.36.1 | UI (`egui-wgpu` paint pass lives in il_render) | il_ui, il_render |
 | `serde`, `serde_derive` | 1 | serialisation | all |
-| `json5` | 1.3 | JSON5 parse to `serde_json::Value` then typed (OQ-7 resolved in Phase 0: errors carry line and column) | il_data, il_cli |
+| `json5` | 1.3 | scenario and frame-table parsing only; content goes through `il_data::json5`, a span-carrying parser written in T1-020 because per-field positions are needed for diagnostics and merge provenance (OQ-7 amended) | il_cli, il_render, il_app |
+| `semver` | 1 | manifest versions and ranges | il_data |
 | `serde_json` | 1 | save headers, schema validation input | il_data, il_save |
 | `jsonschema` | 0.18 | content validation | il_data |
 | `postcard` | 1.1 | snapshot encoding (OQ-2 resolved in Phase 0) | il_save, il_sim_* |
@@ -265,7 +266,7 @@ impl HotReload { pub fn poll(&mut self, regs: &mut Registries) -> Vec<ReloadEven
 
 1. `discover`: read every `mod.json5` under the configured roots (`game/`, `mods/`, user mods dir).
 2. `resolve_load_order`: Kahn topological sort over `dependencies`, `load_after`, `load_before`; ties by mod id ascending; cycle → error listing the cycle.
-3. For each mod in order, for each `ContentKind::DIR`, parse every `*.json5` into `serde_json::Value`; resolve `$from` (copy the referenced item of the same kind as the base, depth ≤ 8, cycles are errors); validate against `SCHEMA` (draft 2020-12, schemas embedded in the binary from `docs/schemas/` at build time); then apply `$override`, `$delete`, and list directives against the accumulating `Value` map keyed by ContentId (Modding SDK §3).
+3. For each mod in order, for each `ContentKind::DIR`, parse every `*.json5` with `il_data::json5::parse_json5` into a `SpannedValue` (every key and value keeps `file:line:col`; `to_json()` gives the plain `serde_json::Value`); resolve `$from` (copy the referenced item of the same kind as the base, depth ≤ 8, cycles are errors); validate against `SCHEMA` (draft 2020-12, schemas embedded in the binary from `docs/schemas/` at build time); then apply `$override`, `$delete`, and list directives against the accumulating `Value` map keyed by ContentId (Modding SDK §3).
 4. Deserialise merged values into typed structs; call `resolve` to turn ContentIds into handles (two-pass: all ids registered first, then references resolved, so order between files does not matter).
 5. Compute `content_registry_hash`.
 6. Rules files: exactly one merged object per rules kind; missing fields fall back to engine defaults *only* for Could-tier fields; Must-tier fields missing are diagnostics.

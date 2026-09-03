@@ -92,10 +92,15 @@ impl ContentKind for UnitType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::json5::{FileId, parse_json5};
+
+    fn from_json5<T: serde::de::DeserializeOwned>(src: &str) -> Result<T, serde_json::Error> {
+        serde_json::from_value(parse_json5(src, FileId(0)).unwrap().to_json())
+    }
 
     #[test]
     fn defaults_and_unknown_fields() {
-        let u: UnitType = json5::from_str(
+        let u: UnitType = from_json5(
             r#"{ id: "rome:x", name_key: "u.x", category: "cavalry", hp: 100,
                 speed_walk: 1.5, speed_run: 4, attack: 30, weird_field: [1, 2] }"#,
         )
@@ -112,10 +117,9 @@ mod tests {
 
     #[test]
     fn missing_required_field_fails() {
-        let err = json5::from_str::<UnitType>(
-            r#"{ id: "rome:x", name_key: "u.x", category: "infantry" }"#,
-        )
-        .unwrap_err();
+        let err =
+            from_json5::<UnitType>(r#"{ id: "rome:x", name_key: "u.x", category: "infantry" }"#)
+                .unwrap_err();
         assert!(err.to_string().contains("hp"), "{err}");
     }
 }

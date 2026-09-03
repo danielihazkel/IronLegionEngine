@@ -101,7 +101,7 @@ Rules:
 | `id` | string, `^[a-z0-9_]+$` | yes | — | The mod's namespace. Every Content ID this mod defines is `<id>:<item_id>`. Never changes across versions. |
 | `name_key` | string | yes | — | Localisation key of the display name, resolved through this mod's own `locale/`. |
 | `version` | semver string | yes | — | `MAJOR.MINOR.PATCH`. Recorded in saves (§8). |
-| `engine_version` | semver range | yes | — | Engine versions this mod is written for, e.g. `">=0.4.0 <0.6.0"`. Loading outside the range warns; a range the engine cannot parse refuses. |
+| `engine_version` | semver range | yes | — | Engine versions this mod is written for, e.g. `">=0.4.0 <0.6.0"`. Loading outside the range warns; a range the engine cannot parse refuses. Range grammar (also for `dependencies[].version`): comparators separated by spaces, `*`, or one comparator; no space between an operator and its version (`>= 1.0.0` is an error). |
 | `dependencies` | `[{id, version}]` | no | `[]` | Mods that must be present and loaded before this one. `version` is a semver range. |
 | `load_after` | `[id]` | no | `[]` | Soft ordering: if these mods are present, load after them. Missing entries are ignored. |
 | `load_before` | `[id]` | no | `[]` | Soft ordering: if these mods are present, load before them. |

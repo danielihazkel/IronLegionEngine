@@ -10,7 +10,7 @@ description = "Iron Legion data: JSON5 loading, registries, handles, diagnostics
 il_core.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-json5.workspace = true
+semver.workspace = true
 thiserror.workspace = true
 
 [lints]

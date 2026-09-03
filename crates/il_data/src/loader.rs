@@ -1,51 +1,19 @@
-//! Phase 0 loader: JSON5 files from a single mod root into registries
-//! (TDD §3.3 steps 3 and 4, reduced). No manifests beyond `content_root`, no
-//! load order, no overrides, no schema validation yet (T1-020 to T1-023).
+//! Single-root loader: JSON5 files from one mod into registries (TDD §3.3
+//! steps 3 and 4, reduced). Discovery, load order and manifests are in their
+//! own modules (T1-020); schema validation, overrides and the multi-mod
+//! pipeline replace this file's body in T1-021..T1-023.
 
 use std::path::{Path, PathBuf};
 
-use serde::Deserialize;
-
 use crate::diagnostic::{Diagnostic, Diagnostics};
+use crate::json5::{FileId, SpannedValue, ValueKind, parse_json5};
+use crate::manifest::read_manifest;
 use crate::registry::{ContentKind, Registry};
 use crate::unit_type::UnitType;
 
-/// The manifest fields Phase 0 reads (`mod.json5`, Modding SDK §2.2).
-#[derive(Clone, Debug, Deserialize)]
-pub struct ManifestLite {
-    pub id: String,
-    #[serde(default = "default_content_root")]
-    pub content_root: String,
-}
-
-fn default_content_root() -> String {
-    "content".to_string()
-}
-
-/// Reads and parses `mod_root/mod.json5`.
-pub fn read_manifest(mod_root: &Path) -> Result<ManifestLite, Diagnostics> {
-    let path = mod_root.join("mod.json5");
-    let text = std::fs::read_to_string(&path).map_err(|e| {
-        Diagnostics(vec![Diagnostic::file_level(
-            &path,
-            format!("cannot read: {e}"),
-        )])
-    })?;
-    json5::from_str::<ManifestLite>(&text)
-        .map_err(|e| Diagnostics(vec![json5_diagnostic(&path, &e)]))
-}
-
-/// Converts a json5 error into a diagnostic with a 1-based position.
-fn json5_diagnostic(path: &Path, e: &json5::Error) -> Diagnostic {
-    let (line, col) = e
-        .position()
-        .map_or((1, 1), |p| (p.line as u32 + 1, p.column as u32 + 1));
-    Diagnostic::file_level(path, e.to_string()).at(line, col)
-}
-
 /// Every `*.json5` under `dir`, recursively, sorted by path so load order
 /// does not depend on the filesystem.
-fn json5_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
+pub fn json5_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
     for entry in std::fs::read_dir(dir)? {
         let path = entry?.path();
         if path.is_dir() {
@@ -59,33 +27,32 @@ fn json5_files(dir: &Path, out: &mut Vec<PathBuf>) -> std::io::Result<()> {
 }
 
 /// Parses one content file into its objects: a file holds one object or an
-/// array of objects (Modding SDK §2.1).
-pub fn parse_content_file(path: &Path) -> Result<Vec<serde_json::Value>, Diagnostic> {
+/// array of objects (Modding SDK §2.1). Positions are kept.
+pub fn parse_content_file(path: &Path, file: FileId) -> Result<Vec<SpannedValue>, Diagnostic> {
     let text = std::fs::read_to_string(path)
         .map_err(|e| Diagnostic::file_level(path, format!("cannot read: {e}")))?;
-    let value: serde_json::Value =
-        json5::from_str(&text).map_err(|e| json5_diagnostic(path, &e))?;
-    match value {
-        serde_json::Value::Array(items) => Ok(items),
-        serde_json::Value::Object(_) => Ok(vec![value]),
-        other => Err(Diagnostic::file_level(
+    let value = parse_json5(&text, file)
+        .map_err(|e| Diagnostic::file_level(path, e.message).at(e.span.line, e.span.col))?;
+    match value.kind {
+        ValueKind::Array(items) => {
+            if let Some(bad) = items.iter().find(|v| v.as_object().is_none()) {
+                return Err(Diagnostic::file_level(
+                    path,
+                    format!("expected an object in the array, found {}", bad.type_name()),
+                )
+                .at(bad.span.line, bad.span.col));
+            }
+            Ok(items)
+        }
+        ValueKind::Object(_) => Ok(vec![value]),
+        _ => Err(Diagnostic::file_level(
             path,
             format!(
                 "expected an object or an array of objects, found {}",
-                kind_name(&other)
+                value.type_name()
             ),
-        )),
-    }
-}
-
-fn kind_name(v: &serde_json::Value) -> &'static str {
-    match v {
-        serde_json::Value::Null => "null",
-        serde_json::Value::Bool(_) => "a boolean",
-        serde_json::Value::Number(_) => "a number",
-        serde_json::Value::String(_) => "a string",
-        serde_json::Value::Array(_) => "an array",
-        serde_json::Value::Object(_) => "an object",
+        )
+        .at(value.span.line, value.span.col)),
     }
 }
 
@@ -103,8 +70,8 @@ pub fn load_kind<T: ContentKind>(content_dir: &Path) -> Result<Registry<T>, Diag
         diags.push(Diagnostic::file_level(&dir, format!("cannot list: {e}")));
         return Err(diags);
     }
-    for path in files {
-        let values = match parse_content_file(&path) {
+    for (file_index, path) in files.iter().enumerate() {
+        let values = match parse_content_file(path, FileId(file_index as u32)) {
             Ok(v) => v,
             Err(d) => {
                 diags.push(d);
@@ -112,19 +79,25 @@ pub fn load_kind<T: ContentKind>(content_dir: &Path) -> Result<Registry<T>, Diag
             }
         };
         for (i, value) in values.into_iter().enumerate() {
-            let item: T = match serde_json::from_value(value) {
+            let item: T = match serde_json::from_value(value.to_json()) {
                 Ok(item) => item,
                 Err(e) => {
-                    // Typed errors carry no position in Phase 0; the message
-                    // names the field. Schema validation adds positions (T1-021).
-                    diags
-                        .push(Diagnostic::file_level(&path, e.to_string()).field(format!("[{i}]")));
+                    // Typed errors name the field; schema validation adds
+                    // per-field positions (T1-021).
+                    diags.push(
+                        Diagnostic::file_level(path, e.to_string())
+                            .at(value.span.line, value.span.col)
+                            .field(format!("[{i}]")),
+                    );
                     continue;
                 }
             };
             if let Err(dup) = registry.insert(item) {
+                let span = value.key_span("id").unwrap_or(value.span);
                 diags.push(
-                    Diagnostic::file_level(&path, dup.to_string()).field(format!("[{i}].id")),
+                    Diagnostic::file_level(path, dup.to_string())
+                        .at(span.line, span.col)
+                        .field(format!("[{i}].id")),
                 );
             }
         }
@@ -139,10 +112,10 @@ pub struct Registries {
 }
 
 impl Registries {
-    /// Loads one mod root (Phase 0: only the flagship game at `game/`).
+    /// Loads one mod root (the flagship game at `game/`).
     pub fn load_root(mod_root: &Path) -> Result<Registries, Diagnostics> {
-        let manifest = read_manifest(mod_root)?;
-        let content_dir = mod_root.join(&manifest.content_root);
+        let manifest = read_manifest(mod_root, true)?;
+        let content_dir = mod_root.join(&manifest.manifest.content_root);
         let units = load_kind::<UnitType>(&content_dir)?;
         Ok(Registries { units })
     }
@@ -209,7 +182,7 @@ mod tests {
         let d = &err.0[0];
         assert!(d.file.ends_with("bad.json5"));
         assert_eq!(d.line, 4, "{d}");
-        assert!(d.col > 1, "{d}");
+        assert_eq!(d.col, 11, "{d}");
     }
 
     #[test]
@@ -227,6 +200,11 @@ mod tests {
             .collect();
         assert_eq!(files, vec!["a.json5", "c.json5", "d.json5"], "{err}");
         assert!(err.0[1].message.contains("duplicate"), "{err}");
+        assert_eq!(
+            (err.0[1].line, err.0[1].col),
+            (1, 3),
+            "duplicate points at the id key"
+        );
     }
 
     #[test]

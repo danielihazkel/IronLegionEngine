@@ -202,7 +202,7 @@ flowchart LR
 
 ### DATA — full content framework
 
-- [ ] **T1-020 Mod discovery, manifests, load order** · M · Refs TDD §3.3 steps 1–2, Modding SDK §2, §3, REQ-MOD-004, 005
+- [x] **T1-020 Mod discovery, manifests, load order** · M · Refs TDD §3.3 steps 1–2, Modding SDK §2, §3, REQ-MOD-004, 005
   `Manifest` struct matching `mod-manifest.schema.json`; `discover(roots)`; `resolve_load_order` with Kahn sort, dependency and `load_after`/`load_before` edges, id tie-break, cycle error naming the cycle; `namespaces` honoured only for `game/`.
   **Done when** tests cover diamond dependencies, a cycle, and a `load_before` that contradicts a dependency.
 

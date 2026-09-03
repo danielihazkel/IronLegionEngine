@@ -1402,7 +1402,7 @@ name = "il_data"
 version = "0.1.0"
 dependencies = [
  "il_core",
- "json5",
+ "semver",
  "serde",
  "serde_json",
  "thiserror 2.0.20",
