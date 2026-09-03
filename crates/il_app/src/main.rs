@@ -35,6 +35,10 @@ struct Args {
     /// exit (T1-051 acceptance test).
     #[arg(long)]
     bench_sprites: bool,
+    /// Walk every regiment around a circle so interpolation and facing can be
+    /// checked before movement exists (T1-052 acceptance check).
+    #[arg(long)]
+    demo_circle: bool,
 }
 
 fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
@@ -66,7 +70,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     let event_loop = EventLoop::new().context("creating the event loop")?;
-    let mut app = App::new(mode, args.content_root);
+    let mut app = App::new(mode, args.content_root, args.demo_circle);
     event_loop
         .run_app(&mut app)
         .context("running the event loop")?;

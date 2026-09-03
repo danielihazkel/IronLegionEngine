@@ -16,8 +16,15 @@ fn committed_sheets_match_the_generator() {
     assert_eq!(artifacts.len(), il_cli::genart::CATEGORIES.len() * 2);
     for (rel, bytes) in artifacts {
         let path = game_root().join(&rel);
-        let on_disk = std::fs::read(&path)
+        let mut on_disk = std::fs::read(&path)
             .unwrap_or_else(|e| panic!("{} missing ({e}); run `il_cli genart`", path.display()));
+        if rel.extension().is_some_and(|e| e == "json5") {
+            // Text files may be checked out with CRLF (core.autocrlf).
+            on_disk = String::from_utf8(on_disk)
+                .expect("frame tables are UTF-8")
+                .replace("\r\n", "\n")
+                .into_bytes();
+        }
         assert!(
             on_disk == bytes,
             "{} differs from the generator output; run `il_cli genart`",

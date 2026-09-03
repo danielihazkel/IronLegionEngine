@@ -12,6 +12,7 @@ il_data.workspace = true
 il_sim_battle.workspace = true
 il_render.workspace = true
 winit.workspace = true
+glam.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 json5.workspace = true

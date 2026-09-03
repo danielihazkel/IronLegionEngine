@@ -313,7 +313,7 @@ impl BattleWorld {
     pub fn restore(snapshot: &Snapshot, regs: Arc<Registries>) -> Result<Self, RestoreError>;  // rebuilds derived data (paths, flow fields, grid)
     pub fn hash(&self) -> StateHash;                               // same value as StepOutput.hash of the last step (or of the initial state)
     pub fn result(&self) -> Option<BattleResult>;                  // Some once phase == Ended
-    pub fn view(&self) -> BattleView<'_>;                          // read-only accessors for render/ui/ai (Phase 1); Phase 0 has ecs(), soldier_ids(), regiment_ids()
+    pub fn view(&self) -> BattleView<'_>;                          // read-only accessors for render/ui/ai (T1-052): tick, phase, regs, sides, soldiers()/soldiers_unordered()/soldier(id) -> SoldierRow, regiments()/regiment(id) -> RegimentRow; cached QueryStates refreshed by step/new/restore/recompute_hash
     pub fn set_threads(&mut self, n: usize);                       // n <= 1: SingleThreadedExecutor; else MultiThreadedExecutor on the process-global
                                                                    // ComputeTaskPool (sized by the first such call). Determinism test runs 1 and 8.
     pub fn ecs_mut(&mut self) -> &mut World;                       // tests and tools only; call recompute_hash() afterwards
@@ -602,7 +602,7 @@ Tests: economy arithmetic golden; interception creates exactly one battle with r
 
 ### 10.1 Design
 
-- **Projection.** World (x, y, h) → screen: isometric with fixed pitch. `screen = P × R(k × 90°) × (x, y)` plus `−h × pitch_scale` on screen y, where `k ∈ 0..4` is the snap rotation (OQ-1 resolved as 4 snaps for MVP; 8 as Could). Sprite facing index = `(facing8 − 2k) mod 8`, so 8 facing sets suffice for all snaps.
+- **Projection.** World (x, y, h) → screen: isometric with fixed pitch. `screen = P × R(k × 90°) × (x, y)` plus `−h × pitch_scale` on screen y, where `k ∈ 0..4` is the snap rotation (OQ-1 resolved as 4 snaps for MVP; 8 as Could). Sprite facing index = `(facing8 − 2k) mod 8`, so 8 facing sets suffice for all snaps. As built (T1-052): `Camera { center: Vec2 (world), zoom (px/m, 2..96), rotation: u8 (0..=3, quarter turns clockwise), pitch (0.5), elevation (0.8) }`; world → view applies `R(−k·90°)`; `world_to_screen`, `screen_to_world`, `pan_screen`, `zoom_at` (keeps the point under the cursor fixed), `rotate`, `visible_bounds` (culling AABB).
 - **Depth.** Painter's order by projected y (back to front), with instance sort per frame on the CPU (32k sort ≈ 1 ms) or by depth in a depth buffer using projected y as z; the latter is chosen (no CPU sort, alpha edges handled by alpha-to-coverage).
 - **Instancing.** One draw per (atlas, LOD tier). Instance layout 32 bytes (as built in T1-051; wgpu has no scalar `f16` vertex format): `pos: [f32; 2]` (projected screen pixels), `depth: f32`, `frame_facing: u32` (atlas column in bits 0..16, facing row in bits 16..24), `tint: [u8; 4]`, `scale: f32`, `flags: u32` (bit 0 selected, bit 1 hovered), `reserved: u32`. 32k instances = 1 MB per frame, written with `queue.write_buffer` into a ring of 3 buffers. The colour target is 4× MSAA with alpha-to-coverage, resolved to the surface. Sprite sheets are `SpriteSet` content files (`content/sprites/*.json5`: atlas path, frame size, facings as rows, columns as frames, ground origin, named animations) over a PNG under `assets/`; `il_cli genart` generates the placeholder sheets.
 - **Interpolation.** `p = lerp(prev, cur, alpha)`; facing snaps when the angle crosses a facing8 boundary (no angular lerp for sprites).
@@ -616,7 +616,8 @@ pub struct Renderer { device, queue, surface, sprite_pipe, terrain_pipe, line_pi
 pub struct Camera { pub center: V2f, pub zoom: f32, pub rotation: u8 /* 0..4 */, pub pitch_scale: f32 }
 pub struct RenderSnapshot { pub tick: Tick, pub alpha: f32, pub soldiers: Vec<SoldierInst>, pub projectiles: Vec<ProjInst>, pub regiments: Vec<RegimentBlock>, pub fog: FogMask, pub debug: DebugLines }
 impl Renderer { pub fn render(&mut self, snap: &RenderSnapshot, egui: egui::FullOutput) -> Result<(), wgpu::SurfaceError>; }
-pub fn build_snapshot(view: &BattleView, alpha: f32, lod: LodTier, flags: DebugFlags, faction: FactionId) -> RenderSnapshot;  // culls to camera frustum
+pub fn build_snapshot(view: &BattleView, input: &SnapshotInput { alpha, camera, screen, selected }, out: &mut RenderSnapshot);  // as built (T1-052): clears and refills `out` (no per-frame allocation), lerps positions, snaps facing8, culls to camera bounds; `lod`, `flags` and `faction` join the input as their features land (T1-054, Phase 2/3)
+pub fn scene_from_snapshot(snap: &RenderSnapshot, screen: Vec2, time: f32, categories: &[CategoryAtlas], out: &mut SpriteScene);  // projection, depth from projected ground y, facing remap, animation column, side tint
 ```
 
 Budget: 32k instances at 60 FPS: snapshot build ≈ 1.5 ms, GPU ≈ 2 ms on the target GPU.

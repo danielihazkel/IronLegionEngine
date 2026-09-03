@@ -12,6 +12,7 @@ pub mod resources;
 pub mod schedule;
 pub mod snapshot;
 pub mod spawn;
+pub mod view;
 pub mod world;
 
 pub use command::{AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode};
@@ -24,4 +25,5 @@ pub use resources::{BattlePhase, Rules};
 pub use schedule::Stage;
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spawn::SetupError;
+pub use view::{BattleView, RegimentRow, SoldierRow};
 pub use world::{BattleWorld, StepOutput};

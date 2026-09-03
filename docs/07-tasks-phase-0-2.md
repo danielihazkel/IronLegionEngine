@@ -294,7 +294,7 @@ flowchart LR
   Atlas loader (PNG plus a JSON5 frame table per `SpriteSet`), 32-byte instance layout, ring of 3 instance buffers, one draw per atlas, depth from projected y, alpha-to-coverage. Placeholder art: one 8-facing sheet per unit category is enough for Phase 1.
   **Done when** 32,768 instances render at over 60 FPS on the target GPU in a synthetic test.
 
-- [ ] **T1-052 Isometric camera, snap rotation, interpolation, `RenderSnapshot`** · M · Refs REQ-RNDR-001, 003, 005, TDD §10.1 projection, `build_snapshot`
+- [x] **T1-052 Isometric camera, snap rotation, interpolation, `RenderSnapshot`** · M · Refs REQ-RNDR-001, 003, 005, TDD §10.1 projection, `build_snapshot`
   Projection with fixed pitch and 4 snap rotations; facing index remap; `Camera` pan, zoom limits, edge scroll input hooks; `build_snapshot(view, alpha, ...)` with frustum culling; position lerp and facing snap.
   **Done when** a regiment walking a circle shows no visual stutter at 20 Hz sim / 60 FPS render and rotating the camera keeps sprite facings consistent.
 

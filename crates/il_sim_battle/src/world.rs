@@ -5,10 +5,11 @@ use std::sync::Arc;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{MultiThreadedExecutor, SingleThreadedExecutor};
 use bevy_tasks::{ComputeTaskPool, TaskPoolBuilder};
-use il_core::{RegimentId, SoldierId, StateHash, Tick};
+use il_core::{Angle, RegimentId, S, SoldierId, StateHash, Tick, V2};
 use il_data::Registries;
 
 use crate::command::{Command, RejectReason};
+use crate::components::{Anchor, Facing, Pos};
 use crate::events::BattleEvent;
 use crate::hash::compute_hash;
 use crate::interface::BattleSetup;
@@ -17,6 +18,7 @@ use crate::resources::{
     RulesRes, SetupRes, Sides, StepEvents, ThreadCount,
 };
 use crate::schedule::build_schedule;
+use crate::view::{BattleView, ViewQueries};
 
 /// Result of one `step`.
 #[derive(Clone, Debug)]
@@ -31,6 +33,7 @@ pub struct StepOutput {
 
 pub struct BattleWorld {
     pub(crate) world: World,
+    pub(crate) view_queries: ViewQueries,
     pub(crate) schedule: Schedule,
     pub(crate) tick: Tick,
     pub(crate) phase: BattlePhase,
@@ -67,8 +70,10 @@ impl BattleWorld {
         world.insert_resource(LastHash::default());
         world.insert_resource(ThreadCount(1));
         world.insert_resource(SetupRes(None));
+        let view_queries = ViewQueries::new(&mut world);
         let mut w = Self {
             world,
+            view_queries,
             schedule: build_schedule(),
             tick: Tick::ZERO,
             phase,
@@ -112,8 +117,11 @@ impl BattleWorld {
         self.world.resource::<Ids>().regiment_entities.len()
     }
 
-    /// Recomputes `LastHash` from the current state (construction, restore).
+    /// Recomputes `LastHash` from the current state (construction, restore)
+    /// and refreshes the view queries, since every caller has just changed
+    /// the entity set or component values.
     pub(crate) fn refresh_hash(&mut self) {
+        self.view_queries.refresh(&self.world);
         let hash = compute_hash(&mut self.world);
         self.world.resource_mut::<LastHash>().0 = hash;
     }
@@ -126,6 +134,7 @@ impl BattleWorld {
         self.world.resource_mut::<CommandInbox>().0 = commands.to_vec();
 
         self.schedule.run(&mut self.world);
+        self.view_queries.refresh(&self.world);
 
         self.phase = self.world.resource::<Phase>().0;
         StepOutput {
@@ -169,9 +178,39 @@ impl BattleWorld {
         self.world.resource::<ThreadCount>().0
     }
 
-    /// Read-only access for tests, tools and (Phase 1) the renderer.
+    /// Read-only view for render, UI and AI (TDD §4.2). Cheap to build; the
+    /// query states behind it are cached and refreshed by `step`.
+    pub fn view(&self) -> BattleView<'_> {
+        BattleView::new(&self.world, &self.view_queries, self.tick, self.phase)
+    }
+
+    /// Read-only ECS access for tests and tools; presentation code uses
+    /// [`view`](Self::view).
     pub fn ecs(&self) -> &World {
         &self.world
+    }
+
+    /// Tools only (like [`ecs_mut`](Self::ecs_mut)): moves every soldier and
+    /// regiment anchor by `delta` and sets every facing. Drives
+    /// `il_app --demo-circle` until movement exists (T1-043); removed then.
+    pub fn debug_translate_all(&mut self, delta: V2, facing: Option<Angle<S>>) {
+        for (mut pos, mut f) in self
+            .world
+            .query::<(&mut Pos, &mut Facing)>()
+            .iter_mut(&mut self.world)
+        {
+            pos.p += delta;
+            if let Some(theta) = facing {
+                f.theta = theta;
+            }
+        }
+        for mut anchor in self.world.query::<&mut Anchor>().iter_mut(&mut self.world) {
+            anchor.pos += delta;
+            if let Some(theta) = facing {
+                anchor.facing = theta;
+            }
+        }
+        self.refresh_hash();
     }
 
     /// Mutable access for tests and tools only. Gameplay never mutates the
