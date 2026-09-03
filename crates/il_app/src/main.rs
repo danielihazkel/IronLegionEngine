@@ -61,6 +61,7 @@ pub type HotReloadHandle = Option<il_data::hot_reload::HotReload>;
 #[cfg(not(feature = "dev"))]
 pub type HotReloadHandle = ();
 
+#[cfg_attr(not(feature = "dev"), allow(clippy::let_unit_value))]
 fn load_registries(
     root: &Path,
     mods: &[PathBuf],
@@ -69,20 +70,23 @@ fn load_registries(
     roots.extend(mods.iter().cloned());
     let set = il_data::discover_set(&roots).map_err(|d| anyhow!("content errors:\n{d}"))?;
     let regs = Arc::new(il_data::load(&set).map_err(|d| anyhow!("content errors:\n{d}"))?);
-    #[cfg(feature = "dev")]
-    let hot_reload = match il_data::hot_reload::HotReload::new(set, regs.clone()) {
+    let hot_reload = hot_reload_handle(set, &regs);
+    Ok((regs, hot_reload))
+}
+
+#[cfg(feature = "dev")]
+fn hot_reload_handle(set: il_data::ModSet, regs: &Arc<Registries>) -> HotReloadHandle {
+    match il_data::hot_reload::HotReload::new(set, regs.clone()) {
         Ok(h) => Some(h),
         Err(e) => {
             eprintln!("hot reload disabled: {e}");
             None
         }
-    };
-    #[cfg(not(feature = "dev"))]
-    let hot_reload = {
-        let _ = set;
-    };
-    Ok((regs, hot_reload))
+    }
 }
+
+#[cfg(not(feature = "dev"))]
+fn hot_reload_handle(_set: il_data::ModSet, _regs: &Arc<Registries>) -> HotReloadHandle {}
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();

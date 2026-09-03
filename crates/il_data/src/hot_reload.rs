@@ -149,11 +149,10 @@ impl HotReload {
     }
 }
 
+type IdList = Vec<(KindTag, ContentId)>;
+
 /// Ids that appeared or were marked removed between two layouts.
-fn structural_diff(
-    prev: &Registries,
-    next: &Registries,
-) -> (Vec<(KindTag, ContentId)>, Vec<(KindTag, ContentId)>) {
+fn structural_diff(prev: &Registries, next: &Registries) -> (IdList, IdList) {
     let mut added = Vec::new();
     let mut removed = Vec::new();
     macro_rules! diff {
