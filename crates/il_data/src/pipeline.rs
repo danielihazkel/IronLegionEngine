@@ -763,8 +763,10 @@ mod tests {
     fn rules_require_every_field_and_the_file() {
         let game = game_copy("rules_missing_field");
         let path = game.join("content/rules/formation.json5");
+        // Checkouts may carry CRLF (CI on Windows): normalise before editing.
         let text = std::fs::read_to_string(&path)
             .unwrap()
+            .replace("\r\n", "\n")
             .replace("  swap_passes: 2,\n", "");
         std::fs::write(&path, text).unwrap();
         let err = load_roots(&[game]).unwrap_err();
@@ -819,7 +821,9 @@ mod tests {
         // Same content: unit moved to another file, a key reordered, comments,
         // whitespace, and integer-valued floats spelled differently.
         let b = game_copy("hash_b");
-        let text = std::fs::read_to_string(b.join("content/units/hastati.json5")).unwrap();
+        let text = std::fs::read_to_string(b.join("content/units/hastati.json5"))
+            .unwrap()
+            .replace("\r\n", "\n");
         std::fs::remove_file(b.join("content/units/hastati.json5")).unwrap();
         let reordered = text
             .replace("  hp: 100,\n", "")
