@@ -18,6 +18,8 @@ png.workspace = true
 serde.workspace = true
 json5.workspace = true   # frame tables; moves to il_data's parser with T1-023
 thiserror.workspace = true
+egui.workspace = true
+egui-wgpu.workspace = true
 
 # Not `workspace = true`: the renderer is float-heavy render-side math, and it
 # is the one crate allowed to opt out of `unsafe_code = "forbid"` if a GPU API

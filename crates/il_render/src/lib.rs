@@ -7,6 +7,7 @@
 
 pub mod atlas;
 pub mod camera;
+mod egui_pass;
 mod renderer;
 pub mod scene;
 pub mod snapshot;
@@ -14,6 +15,7 @@ pub mod sprite;
 
 pub use atlas::{Anim, Atlas, AtlasError, AtlasId, SpriteSheet};
 pub use camera::Camera;
+pub use egui_pass::EguiPaint;
 pub use renderer::{ClearColour, RenderError, Renderer};
 pub use scene::{CategoryAtlas, scene_from_snapshot, side_tint};
 pub use snapshot::{

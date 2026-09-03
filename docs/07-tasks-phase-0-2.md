@@ -308,7 +308,7 @@ flowchart LR
 
 ### UI — egui, input, gestures
 
-- [ ] **T1-060 egui integration and profiler overlay** · M · Refs REQ-TECH-004, REQ-TOOL-003, SAD §9.3
+- [x] **T1-060 egui integration and profiler overlay** · M · Refs REQ-TECH-004, REQ-TOOL-003, SAD §9.3
   `egui-wgpu` and `egui-winit`; `tracing` spans per stage collected into a ring buffer; overlay showing per-stage tick time, frame time, entity counts.
   **Done when** the overlay shows the 18 stages with live timings.
 

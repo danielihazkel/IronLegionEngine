@@ -5,6 +5,7 @@
 
 mod app;
 mod bench;
+mod profiler;
 mod session;
 
 use std::path::{Path, PathBuf};

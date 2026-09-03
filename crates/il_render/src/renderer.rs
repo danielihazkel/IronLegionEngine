@@ -6,6 +6,7 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::atlas::{Atlas, AtlasError, AtlasId, Rgba8Image, SpriteSheet};
+use crate::egui_pass::{EguiPaint, EguiPass};
 use crate::sprite::{SpritePipeline, SpriteScene};
 
 /// Depth attachment format shared by every pipeline.
@@ -95,6 +96,7 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     targets: Targets,
     sprites: SpritePipeline,
+    egui: EguiPass,
     atlases: Vec<Atlas>,
 }
 
@@ -164,6 +166,7 @@ impl Renderer {
         surface.configure(&device, &config);
         let targets = Targets::new(&device, format, config.width, config.height);
         let sprites = SpritePipeline::new(&device, format, SAMPLES);
+        let egui = EguiPass::new(&device, format);
 
         Ok(Self {
             surface,
@@ -172,6 +175,7 @@ impl Renderer {
             config,
             targets,
             sprites,
+            egui,
             atlases: Vec::new(),
         })
     }
@@ -236,21 +240,33 @@ impl Renderer {
         self.atlases.get(id.0 as usize)
     }
 
-    /// Clears to `colour`, draws the sprite scene and presents. An outdated or
-    /// suboptimal surface is reconfigured and the frame skipped; a timeout or
-    /// an occluded window skips the frame; a lost surface is an error.
-    pub fn render(&mut self, colour: ClearColour, scene: &SpriteScene) -> Result<(), RenderError> {
+    /// Clears to `colour`, draws the sprite scene, paints `ui` over it and
+    /// presents. An outdated or suboptimal surface is reconfigured and the
+    /// frame skipped; a timeout or an occluded window skips the frame; a lost
+    /// surface is an error.
+    pub fn render(
+        &mut self,
+        colour: ClearColour,
+        scene: &SpriteScene,
+        mut ui: Option<&mut EguiPaint<'_>>,
+    ) -> Result<(), RenderError> {
         let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(frame) => frame,
+            wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
                 self.surface.configure(&self.device, &self.config);
-                return Ok(());
+                None
             }
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                return Ok(());
-            }
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => None,
             wgpu::CurrentSurfaceTexture::Lost => return Err(RenderError::SurfaceLost),
             wgpu::CurrentSurfaceTexture::Validation => return Err(RenderError::SurfaceConfig),
+        };
+        let Some(frame) = frame else {
+            // Skipped frame: egui's texture updates must still be applied.
+            if let Some(paint) = ui.as_deref_mut() {
+                self.egui
+                    .apply_textures(&self.device, &self.queue, paint.textures_delta);
+            }
+            return Ok(());
         };
         if self.targets.width != self.config.width || self.targets.height != self.config.height {
             self.targets = Targets::new(
@@ -313,7 +329,19 @@ impl Renderer {
                 pass.draw(0..6, batch.range.clone());
             }
         }
-        self.queue.submit(Some(encoder.finish()));
+        let uploads = match ui {
+            Some(paint) => self.egui.paint(
+                &self.device,
+                &self.queue,
+                &mut encoder,
+                &view,
+                [self.config.width, self.config.height],
+                paint,
+            ),
+            None => Vec::new(),
+        };
+        self.queue
+            .submit(uploads.into_iter().chain(std::iter::once(encoder.finish())));
         self.queue.present(frame);
         Ok(())
     }

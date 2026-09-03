@@ -386,7 +386,7 @@ Projectiles: `Projectile { id, shooter_regiment, side, launch_tick, land_tick, s
 
 ### 4.5 Schedule
 
-One `Schedule` with 18 `SystemSet`s chained in order (`chain()`), one set per stage. Within a set, systems are added with explicit `.after()` where order matters; otherwise bevy_ecs may parallelise. Systems that must be single-threaded for determinism are marked `.run_if(always)` and take `&mut World` exclusively (the apply steps).
+One `Schedule` per stage, run in `Stage::ALL` order by `step` (T1-060; stages were already totally ordered, so nothing is lost and each stage can be timed through `StageObserver`), with one `SystemSet` per stage inside it. Within a set, systems are added with explicit `.after()` where order matters; otherwise bevy_ecs may parallelise. Systems that must be single-threaded for determinism are marked `.run_if(always)` and take `&mut World` exclusively (the apply steps).
 
 Stage 0 `apply_commands`: sort incoming by `(player, seq)`, validate per SIM-CMD-003/004, mutate `Order`, `FormationState`, `Fire`, `Sides`; push `CommandRejected` events.
 Stage 16 `battle_flow`: SIM-FLOW-011..017.
@@ -615,7 +615,7 @@ Tests: economy arithmetic golden; interception creates exactly one battle with r
 pub struct Renderer { device, queue, surface, sprite_pipe, terrain_pipe, line_pipe, atlases: Vec<Atlas>, instance_ring: [Buffer; 3], camera: Camera }
 pub struct Camera { pub center: V2f, pub zoom: f32, pub rotation: u8 /* 0..4 */, pub pitch_scale: f32 }
 pub struct RenderSnapshot { pub tick: Tick, pub alpha: f32, pub soldiers: Vec<SoldierInst>, pub projectiles: Vec<ProjInst>, pub regiments: Vec<RegimentBlock>, pub fog: FogMask, pub debug: DebugLines }
-impl Renderer { pub fn render(&mut self, snap: &RenderSnapshot, egui: egui::FullOutput) -> Result<(), wgpu::SurfaceError>; }
+impl Renderer { pub fn render(&mut self, colour: ClearColour, scene: &SpriteScene, ui: Option<&EguiPaint>) -> Result<(), RenderError>; }  // as built: the sprite pass (MSAA, resolved to the surface) then the egui-wgpu paint pass over it; `EguiPaint` borrows il_ui's tessellated `UiOutput`
 pub fn build_snapshot(view: &BattleView, input: &SnapshotInput { alpha, camera, screen, selected }, out: &mut RenderSnapshot);  // as built (T1-052): clears and refills `out` (no per-frame allocation), lerps positions, snaps facing8, culls to camera bounds; `lod`, `flags` and `faction` join the input as their features land (T1-054, Phase 2/3)
 pub fn scene_from_snapshot(snap: &RenderSnapshot, screen: Vec2, time: f32, categories: &[CategoryAtlas], out: &mut SpriteScene);  // projection, depth from projected ground y, facing remap, animation column, side tint
 ```

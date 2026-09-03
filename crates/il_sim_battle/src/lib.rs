@@ -22,7 +22,7 @@ pub use interface::{
     ReinforcementGroup, SOLDIER_CAP, SideResult, SideSetup, VictoryRules, Weather,
 };
 pub use resources::{BattlePhase, Rules};
-pub use schedule::Stage;
+pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spawn::SetupError;
 pub use view::{BattleView, RegimentRow, SoldierRow};

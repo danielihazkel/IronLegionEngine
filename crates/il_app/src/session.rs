@@ -6,7 +6,7 @@
 //! and peers see it (SIM-DET-008).
 
 use il_core::{PlayerId, TICK_SECONDS, Tick};
-use il_sim_battle::{BattleWorld, Command, CommandKind, StepOutput};
+use il_sim_battle::{BattleWorld, Command, CommandKind, NoopObserver, StageObserver, StepOutput};
 
 /// Wall seconds per simulation tick, as the accumulator's type.
 pub const TICK: f64 = TICK_SECONDS as f64;
@@ -84,7 +84,13 @@ impl BattleSession {
 
     /// Advances wall time by `dt` seconds and steps the sim zero or more
     /// times. Returns one `StepOutput` per tick stepped.
+    #[allow(dead_code, reason = "headless convenience; the app always profiles")]
     pub fn advance(&mut self, dt: f64) -> Vec<StepOutput> {
+        self.advance_with(dt, &mut NoopObserver)
+    }
+
+    /// [`advance`](Self::advance) with a stage observer (the profiler).
+    pub fn advance_with(&mut self, dt: f64, observer: &mut dyn StageObserver) -> Vec<StepOutput> {
         let mult = if self.paused {
             0.0
         } else {
@@ -97,19 +103,19 @@ impl BattleSession {
         }
         let mut outputs = Vec::new();
         while self.accumulator >= TICK {
-            outputs.push(self.step_once());
+            outputs.push(self.step_once(observer));
             self.accumulator -= TICK;
         }
         outputs
     }
 
-    fn step_once(&mut self) -> StepOutput {
+    fn step_once(&mut self, observer: &mut dyn StageObserver) -> StepOutput {
         let next = self.world.tick().next();
         let (now, later): (Vec<Command>, Vec<Command>) =
             self.pending.drain(..).partition(|c| c.tick <= next);
         self.pending = later;
         self.command_log.extend(now.iter().cloned());
-        self.world.step(&now)
+        self.world.step_observed(&now, observer)
     }
 
     /// Interpolation factor for rendering: how far into the next tick wall

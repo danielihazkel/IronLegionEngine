@@ -10,6 +10,9 @@ description = "egui panels, input mapping to Commands, selection model"
 il_core.workspace = true
 il_data.workspace = true
 il_sim_battle.workspace = true
+egui.workspace = true
+egui-winit.workspace = true
+glam.workspace = true
 
 # Not `workspace = true`: screen-space gesture math is float math on the app
 # side of the sim boundary (TDD §11). Unsafe stays forbidden.

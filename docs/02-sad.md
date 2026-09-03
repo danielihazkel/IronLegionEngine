@@ -317,7 +317,7 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 
 ### 9.3 Logging, tracing, profiling
 
-- `tracing` spans per stage and per system. The in-game profiler overlay reads span timings (REQ-TOOL-003).
+- Per-stage timings come from `BattleWorld::step_observed(commands, &mut dyn StageObserver)`: the sim calls `begin(stage)`/`end(stage)` around each of its 18 per-stage schedules and never reads a clock; the app's observer uses `Instant` and feeds the in-game profiler overlay (REQ-TOOL-003, T1-060). `tracing` spans per system are optional (`trace` feature) for external profilers.
 - Log levels: sim emits `debug` only in dev builds; Events are the sanctioned way to observe the sim.
 - Benchmarks (`criterion`) per system at 2k, 10k, 20k soldiers (REQ-TOOL-002).
 

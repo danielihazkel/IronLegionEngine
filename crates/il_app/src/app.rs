@@ -9,9 +9,10 @@ use std::time::Instant;
 use glam::Vec2;
 use il_core::{Angle, RegimentId, S, Scalar, V2};
 use il_render::{
-    AtlasId, Camera, CategoryAtlas, ClearColour, RenderSnapshot, Renderer, SnapshotInput,
-    SpriteScene, SpriteSheet, build_snapshot, scene_from_snapshot,
+    AtlasId, Camera, CategoryAtlas, ClearColour, EguiPaint, RenderSnapshot, Renderer,
+    SnapshotInput, SpriteScene, SpriteSheet, build_snapshot, scene_from_snapshot,
 };
+use il_ui::{UiContext, profiler_overlay};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
@@ -19,6 +20,7 @@ use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::bench::SpriteBench;
+use crate::profiler::Profiler;
 use crate::session::BattleSession;
 
 /// Frames between title refreshes (the title shows the tick and sim cost).
@@ -30,6 +32,8 @@ const EDGE_BAND_PX: f32 = 10.0;
 const EDGE_PAN_PX_PER_S: f32 = 600.0;
 /// Zoom factor per mouse-wheel line.
 const WHEEL_ZOOM_STEP: f32 = 1.15;
+/// Developer tooling compiled in (`dev` feature): profiler overlay, F1 toggle.
+const DEV: bool = cfg!(feature = "dev");
 
 /// Unit categories with a placeholder sheet, in `UnitCategory` order.
 pub const CATEGORIES: [&str; 6] = [
@@ -61,6 +65,9 @@ pub struct App {
     demo_circle: bool,
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
+    ui: Option<UiContext>,
+    profiler: Profiler,
+    show_profiler: bool,
     /// One atlas per entry of `CATEGORIES`.
     atlases: Vec<AtlasId>,
     camera: Option<Camera>,
@@ -87,6 +94,9 @@ impl App {
             demo_circle,
             window: None,
             renderer: None,
+            ui: None,
+            profiler: Profiler::default(),
+            show_profiler: DEV,
             atlases: Vec::new(),
             camera: None,
             snapshot: RenderSnapshot::default(),
@@ -212,9 +222,10 @@ impl App {
         match &mut self.mode {
             Mode::Battle(session) => {
                 let before = Instant::now();
-                let stepped = session.advance(dt).len() as u32;
+                let stepped = session.advance_with(dt, &mut self.profiler).len() as u32;
                 self.step_seconds += before.elapsed().as_secs_f64();
                 self.ticks_since_title += stepped;
+                self.profiler.frame(dt, stepped);
                 if self.demo_circle {
                     for _ in 0..stepped {
                         Self::demo_circle_step(session);
@@ -263,12 +274,33 @@ impl App {
             }
         }
 
+        let mut ui_out = match (self.ui.as_mut(), self.window.as_ref(), &self.mode) {
+            (Some(ui), Some(window), Mode::Battle(session)) => {
+                let mut stats = self.profiler.stats();
+                stats.soldiers = self.snapshot.counts.soldiers;
+                stats.regiments = self.snapshot.counts.regiments;
+                stats.visible_soldiers = self.snapshot.counts.visible_soldiers;
+                stats.accumulator_alpha = session.alpha();
+                let show = self.show_profiler;
+                Some(ui.run(window, |ctx| {
+                    if show {
+                        profiler_overlay(ctx, &stats);
+                    }
+                }))
+            }
+            _ => None,
+        };
+        let mut paint = ui_out.as_mut().map(|o| EguiPaint {
+            textures_delta: &mut o.textures_delta,
+            primitives: &o.primitives,
+            pixels_per_point: o.pixels_per_point,
+        });
         let scene = match (&self.mode, &self.bench) {
             (Mode::BenchSprites, Some(bench)) => &bench.scene,
             _ => &self.scene,
         };
         if let Some(renderer) = self.renderer.as_mut()
-            && let Err(e) = renderer.render(ClearColour::FIELD, scene)
+            && let Err(e) = renderer.render(ClearColour::FIELD, scene, paint.as_mut())
         {
             eprintln!("fatal render error: {e}");
             std::process::exit(1);
@@ -292,6 +324,9 @@ impl App {
                 KeyCode::KeyD | KeyCode::ArrowRight => self.pan_keys.right = pressed,
                 KeyCode::KeyQ if pressed && !event.repeat => self.camera_mut().rotate(-1),
                 KeyCode::KeyE if pressed && !event.repeat => self.camera_mut().rotate(1),
+                KeyCode::F1 if pressed && !event.repeat && DEV => {
+                    self.show_profiler = !self.show_profiler;
+                }
                 _ => {}
             }
         }
@@ -385,6 +420,7 @@ impl ApplicationHandler for App {
             event_loop.exit();
             return;
         }
+        self.ui = Some(UiContext::new(&window));
         if matches!(self.mode, Mode::BenchSprites) {
             let renderer = self.renderer.as_mut().expect("renderer exists");
             renderer.set_vsync(false);
@@ -396,6 +432,18 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        if let (Some(ui), Some(window)) = (self.ui.as_mut(), self.window.as_ref()) {
+            let consumed = ui.on_window_event(window, &event);
+            let always = matches!(
+                event,
+                WindowEvent::CloseRequested
+                    | WindowEvent::Resized(_)
+                    | WindowEvent::RedrawRequested
+            );
+            if consumed && !always {
+                return;
+            }
+        }
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
             WindowEvent::Resized(size) => {

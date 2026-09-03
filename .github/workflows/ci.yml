@@ -37,6 +37,9 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
+      - name: Build the app without developer tooling
+        run: cargo build -p il_app --no-default-features
+
       - name: Determinism proof (exit checklist)
         shell: pwsh
         run: |

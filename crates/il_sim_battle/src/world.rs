@@ -17,7 +17,7 @@ use crate::resources::{
     BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, Phase, Regs, Rejected, Rng, Rules,
     RulesRes, SetupRes, Sides, StepEvents, ThreadCount,
 };
-use crate::schedule::build_schedule;
+use crate::schedule::{NoopObserver, Stage, StageObserver, build_schedules};
 use crate::view::{BattleView, ViewQueries};
 
 /// Result of one `step`.
@@ -34,7 +34,8 @@ pub struct StepOutput {
 pub struct BattleWorld {
     pub(crate) world: World,
     pub(crate) view_queries: ViewQueries,
-    pub(crate) schedule: Schedule,
+    /// One schedule per stage, in `Stage::ALL` order.
+    pub(crate) schedules: Vec<Schedule>,
     pub(crate) tick: Tick,
     pub(crate) phase: BattlePhase,
 }
@@ -74,7 +75,7 @@ impl BattleWorld {
         let mut w = Self {
             world,
             view_queries,
-            schedule: build_schedule(),
+            schedules: build_schedules(),
             tick: Tick::ZERO,
             phase,
         };
@@ -129,11 +130,25 @@ impl BattleWorld {
     /// Runs exactly one tick. Commands must be stamped with `tick() + 1`
     /// (the tick this call simulates) or they are rejected as stale.
     pub fn step(&mut self, commands: &[Command]) -> StepOutput {
+        self.step_observed(commands, &mut NoopObserver)
+    }
+
+    /// [`step`](Self::step) with a callback around every stage, for the
+    /// profiler and the benches. The observer never influences the sim.
+    pub fn step_observed(
+        &mut self,
+        commands: &[Command],
+        observer: &mut dyn StageObserver,
+    ) -> StepOutput {
         self.tick = self.tick.next();
         self.world.resource_mut::<Clock>().tick = self.tick;
         self.world.resource_mut::<CommandInbox>().0 = commands.to_vec();
 
-        self.schedule.run(&mut self.world);
+        for (schedule, stage) in self.schedules.iter_mut().zip(Stage::ALL) {
+            observer.begin(stage);
+            schedule.run(&mut self.world);
+            observer.end(stage);
+        }
         self.view_queries.refresh(&self.world);
 
         self.phase = self.world.resource::<Phase>().0;
@@ -165,11 +180,15 @@ impl BattleWorld {
     /// process. The determinism test runs 1 and N (REQ-SIM-008).
     pub fn set_threads(&mut self, n: usize) {
         if n <= 1 {
-            self.schedule.set_executor(SingleThreadedExecutor::new());
+            for s in &mut self.schedules {
+                s.set_executor(SingleThreadedExecutor::new());
+            }
             self.world.resource_mut::<ThreadCount>().0 = 1;
         } else {
             ComputeTaskPool::get_or_init(|| TaskPoolBuilder::new().num_threads(n).build());
-            self.schedule.set_executor(MultiThreadedExecutor::new());
+            for s in &mut self.schedules {
+                s.set_executor(MultiThreadedExecutor::new());
+            }
             self.world.resource_mut::<ThreadCount>().0 = n;
         }
     }
@@ -280,6 +299,30 @@ mod tests {
         }
         let mut c = BattleWorld::empty(43, Arc::new(Registries::default()), BattlePhase::Battle);
         assert_ne!(c.step(&[]).hash, StateHash(GOLDEN[1]));
+    }
+
+    #[test]
+    fn step_observed_visits_every_stage_in_order_and_matches_step() {
+        struct Recorder(Vec<(bool, Stage)>);
+        impl StageObserver for Recorder {
+            fn begin(&mut self, stage: Stage) {
+                self.0.push((true, stage));
+            }
+            fn end(&mut self, stage: Stage) {
+                self.0.push((false, stage));
+            }
+        }
+        let mut a = empty_world();
+        let mut b = empty_world();
+        let mut rec = Recorder(Vec::new());
+        let ha = a.step_observed(&[], &mut rec).hash;
+        let hb = b.step(&[]).hash;
+        assert_eq!(ha, hb);
+        let expected: Vec<(bool, Stage)> = Stage::ALL
+            .iter()
+            .flat_map(|s| [(true, *s), (false, *s)])
+            .collect();
+        assert_eq!(rec.0, expected);
     }
 
     #[test]
