@@ -256,9 +256,9 @@ flowchart LR
   Keep-slot pass, greedy nearest via spatial grid, swap passes; resize on count change closing ranks from the rear; `needs_reform` flag and Stage 2 `formation_layout` system, parallel over regiments. Replace the Phase 0 grid placement in spawning with a real Line layout.
   **Done when** `assign_slots` at n = 500 is under 0.5 ms in a benchmark and no two soldiers share a slot.
 
-- [ ] **T1-042 Regiment path following and speeds** · M · Refs SIM-MOVE-010..013, SIM-MOVE-020 (regiment part), SIM-MOVE-030, TDD §6.2
-  `Order`, `Path` components; anchor movement toward waypoints, wheel at `wheel_rate`, cohesion slowdown, arrival facing; `SpeedMode`; slope factor; corridor Column morph per SIM-MOVE-004.
-  **Done when** a regiment ordered across a test map arrives within `waypoint_radius`, faces the ordered direction, and a regiment ordered through a 6 m bridge morphs to Column and back.
+- [x] **T1-042 Regiment path following and speeds** · M · Refs SIM-MOVE-010..013, SIM-MOVE-020 (regiment part), SIM-MOVE-030, TDD §6.2
+  `Order`, `Path` components; anchor movement toward waypoints, wheel at `wheel_rate`, cohesion slowdown, arrival facing; `SpeedMode` (the order's mode); slope factor; corridor Column morph per SIM-MOVE-004 against each waypoint's stored corridor width.
+  **Done when** a regiment ordered across a test map arrives within `waypoint_radius`, faces the ordered direction, and a regiment ordered through the 8 m bridge (the narrowest corridor a 4 m nav grid holds) morphs to Column and back.
 
 - [ ] **T1-043 Soldier steering** · L · Refs SIM-MOVE-020..025, SIM-CORE-010..011, TDD §6.2 `soldier_steer`
   Soldier FSM (`Idle`, `MoveToSlot` only in Phase 1); seek with arrive damping, separation from the previous tick's grid, obstacle avoidance by sampled rotations, `clamp_length`, facing tracking; Stage 4 `par_iter`; Stage 5 integrate with map clamp.

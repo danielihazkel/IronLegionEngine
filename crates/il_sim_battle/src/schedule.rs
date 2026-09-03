@@ -14,6 +14,7 @@ use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 use crate::command::apply_commands;
 use crate::formation::{formation_apply, formation_layout};
 use crate::hash::flush_events_and_hash;
+use crate::movement::regiment_follow_path;
 use crate::nav::serve_path_requests;
 use crate::spatial::rebuild_spatial_grids;
 
@@ -153,7 +154,11 @@ fn stage_schedule(stage: Stage) -> Schedule {
         Stage::Formation => {
             s.add_systems((formation_layout, formation_apply).chain().in_set(stage))
         }
-        Stage::RegimentMovement => s.add_systems(serve_path_requests.in_set(stage)),
+        Stage::RegimentMovement => s.add_systems(
+            (serve_path_requests, regiment_follow_path)
+                .chain()
+                .in_set(stage),
+        ),
         Stage::SoldierSteering => s.add_systems(stage_soldier_steering.in_set(stage)),
         Stage::Integrate => s.add_systems(stage_integrate.in_set(stage)),
         Stage::SpatialGrid => s.add_systems(rebuild_spatial_grids.in_set(stage)),

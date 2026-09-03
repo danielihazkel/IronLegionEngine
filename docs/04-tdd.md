@@ -459,7 +459,7 @@ pub struct PathRequests { queue: BTreeSet<RegimentId> }   // served ascending, `
 | System | Stage | Parallel | Rule IDs |
 |---|---|---|---|
 | `serve_path_requests` | 3 | no | SIM-MOVE-002/005 |
-| `regiment_follow_path` (anchor move, wheel, cohesion, corridor column morph) | 3 | per regiment (independent) | SIM-MOVE-010..013, SIM-MOVE-004 |
+| `regiment_follow_path` (anchor move, wheel, cohesion, corridor column morph) | 3, after `serve_path_requests` | per regiment (independent; parallel when a task pool exists) | SIM-MOVE-010..013, SIM-MOVE-004; as built (T1-042): waypoints within `waypoint_radius` are skipped in one tick, the anchor wheels toward the waypoint by `wheel_rate × dt` then advances `min(v_reg × dt, distance)` clamped to the map; `v_reg = mode_speed(unit, order.speed) × template.speed_mult × zone.move_mult(anchor) × slope_mult(anchor, dir)`, `× morph_speed_mult` while `tick < morph_until`, `× straggler_slowdown` while the straggler fraction (soldiers farther than `straggler_radius × sf` from their slot) exceeds `straggler_fraction`; on arrival the order becomes Idle, the ordered facing is taken, a prior template restored and a reform requested |
 | `soldier_steer` (seek/flow, separation via grid, avoidance) → writes `Vel` | 4 | par_iter over soldiers (reads previous tick grid) | SIM-MOVE-020..025, SIM-FLOW-002 |
 | `integrate` | 5 | par_iter | `p += v × dt`; SIM-MOVE-042 clamp |
 | `collision_resolve` | 7 | pair buffers per cell row → id-order apply, ×`collision_iterations` | SIM-MOVE-040..043 |
