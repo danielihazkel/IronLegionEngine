@@ -809,7 +809,7 @@ Satisfies REQ-LOC-001..004.
 ```
 
 - Placeholders are `{name}` and are substituted from the `params` table. Plural rules and gender are out of scope; write neutral strings.
-- Fallback chain for a key in locale `L`: last-loaded mod's `L` → earlier mods' `L` → same chain for `en` → the key itself, rendered literally and logged once as a warning.
+- Fallback chain for a key in locale `L`: last-loaded mod's `L` → earlier mods' `L` → same chain for `en` → the key itself, rendered literally and logged once as a warning. `il_app --show-keys` renders every key instead of its string, to find literal UI text (REQ-LOC-001).
 - Mods may override any key, including engine `il.*` keys, by providing it in their `locale/` (REQ-LOC-002).
 - A mod adds a language by shipping `locale/<lang>.json5`; the language appears in settings once at least one enabled mod provides it. MVP fonts cover Latin, Cyrillic, and Greek (REQ-LOC-004).
 

@@ -218,7 +218,7 @@ flowchart LR
   Typed structs for `UnitType` (all fields), `FormationTemplate`, `GroupFormationTemplate`, `Faction`, `ZoneType`, `MapDef` (metadata only; geometry in T1-030), `SpriteSet`, and the `Rules` sub-structs `MovementRules`, `FormationRules` (others added in Phase 2 with their systems). Two-pass `resolve` so file order does not matter. `content_registry_hash` and `mod_list_hash`. Missing Must-tier rule fields are diagnostics.
   **Done when** loading `game/` yields every registry populated and the hash is stable across file order and whitespace changes.
 
-- [ ] **T1-024 Localisation table** · S · Refs REQ-LOC-001, TDD §3.2 `Locale`, Modding SDK §7
+- [x] **T1-024 Localisation table** · S · Refs REQ-LOC-001, TDD §3.2 `Locale`, Modding SDK §7
   Load `locale/<lang>.json5`, flatten nested keys, fallback chain to `en`, `Locale::get` and `fmt` with `{name}` placeholders. A `--show-keys` debug flag returns the key instead of the string.
   **Done when** a missing key returns the key itself and logs once.
 

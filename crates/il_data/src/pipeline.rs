@@ -14,6 +14,7 @@ use crate::formation::{FormationTemplate, GroupFormationTemplate};
 use crate::json5::{PathSeg, Span, SpannedValue};
 use crate::load_order::ModSet;
 use crate::loader::{json5_files, parse_content_file};
+use crate::locale::load_locales;
 use crate::map_def::MapDef;
 use crate::merge::{ApplyCtx, KindAccumulator, MergedItem, merge_singleton};
 use crate::registries::{ModInfo, Registries};
@@ -306,6 +307,7 @@ pub fn load(set: &ModSet) -> Result<Registries, Diagnostics> {
     let movement = merge_singleton_file(set, "rules", "movement", &mut sources, &mut diags);
     let formation_rules = merge_singleton_file(set, "rules", "formation", &mut sources, &mut diags);
     let input = merge_singleton_file(set, "input", "bindings", &mut sources, &mut diags);
+    let locale = load_locales(set, &mut sources, &mut diags);
 
     // Pass 1: validate, register every valid id.
     let mut lookup = Lookup::new();
@@ -417,6 +419,7 @@ pub fn load(set: &ModSet) -> Result<Registries, Diagnostics> {
         ),
         rules,
         input,
+        locale,
         mods: set
             .mods
             .iter()
@@ -529,6 +532,8 @@ mod tests {
         assert_eq!(regs.rules.movement.nav_cell, S::from_f32_data(4.0));
         assert_eq!(regs.rules.formation.swap_passes, 2);
         assert!(!regs.input.keys_for("camera_pan_up").is_empty());
+        assert_eq!(regs.locale.get("rome.units.hastati.name"), "Hastati");
+        assert_eq!(regs.locale.get("rome.zones.ford.name"), "Ford");
         let h = regs
             .units
             .lookup(&ContentId::new("rome:hastati").unwrap())
@@ -721,6 +726,48 @@ mod tests {
         .unwrap();
         let changed = load_roots(&[c]).unwrap();
         assert_ne!(changed.content_registry_hash, base.content_registry_hash);
+    }
+
+    #[test]
+    fn later_mods_override_locale_keys_and_bad_leaves_are_diagnostics() {
+        let game = game_copy("locale");
+        std::fs::create_dir_all(game.join("locale")).unwrap();
+        std::fs::write(game.join("locale/en.json5"), r#"{ rome: { units: { hastati: { name: "Hastati" } } }, il: { app: { title: "Iron Legion" } } }"#).unwrap();
+        let mods = game.parent().unwrap().join("mods");
+        write_mod(
+            &mods.join("mymod"),
+            MYMOD,
+            &[
+                (
+                    "locale/en.json5",
+                    r#"{ rome: { units: { hastati: { name: "Spearmen" } } }, mymod: { mod: { name: "My Mod" } } }"#,
+                ),
+                (
+                    "locale/de.json5",
+                    r#"{ mymod: { mod: { name: "Mein Mod" } } }"#,
+                ),
+            ],
+        );
+        let regs = load_roots(&[game.clone(), mods.clone()]).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(regs.locale.get("rome.units.hastati.name"), "Spearmen");
+        assert_eq!(regs.locale.get("il.app.title"), "Iron Legion");
+        assert_eq!(regs.locale.get("mymod.mod.name"), "My Mod");
+        assert_eq!(
+            regs.locale.languages().collect::<Vec<_>>(),
+            vec!["de", "en"]
+        );
+
+        std::fs::write(
+            mods.join("mymod/locale/en.json5"),
+            "{ mymod: { mod: { name: 7 } } }",
+        )
+        .unwrap();
+        let err = load_roots(&[game, mods]).unwrap_err();
+        assert!(
+            err.0.iter().any(|d| d.field == "mymod.mod.name"
+                && d.file.to_string_lossy().replace('\\', "/") == "mymod/locale/en.json5"),
+            "{err}"
+        );
     }
 
     #[test]

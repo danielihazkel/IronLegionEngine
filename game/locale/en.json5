@@ -1,0 +1,52 @@
+// English strings for the flagship game (Modding SDK 7). Keys are
+// <mod>.<kind>.<item>.<field>; nested objects flatten with dots. Engine keys
+// (il.*) are the UI's own labels; a mod may override any of them.
+{
+  rome: {
+    mod: { name: "Iron Legion: Rome" },
+    units: {
+      hastati: { name: "Hastati" },
+    },
+    formations: {
+      line: { name: "Line" },
+      column: { name: "Column" },
+      loose: { name: "Loose" },
+    },
+    group_formations: {
+      battle_line: { name: "Battle line" },
+      double_line: { name: "Double line" },
+      echelon_left: { name: "Echelon left" },
+      echelon_right: { name: "Echelon right" },
+      refused_left: { name: "Refused left" },
+      refused_right: { name: "Refused right" },
+    },
+    factions: {
+      rome: { name: "Rome" },
+    },
+    zones: {
+      open: { name: "Open ground" },
+      road: { name: "Road" },
+      forest: { name: "Forest" },
+      marsh: { name: "Marsh" },
+      rock: { name: "Rock" },
+      ford: { name: "Ford" },
+      bridge: { name: "Bridge" },
+    },
+  },
+  il: {
+    app: { title: "Iron Legion" },
+    profiler: {
+      title: "Profiler",
+      frame: "frame {ms} ms ({fps} FPS)",
+      stage: "stage",
+      last: "last ms",
+      mean: "mean ms",
+      max: "max ms",
+    },
+    battle: {
+      paused: "Paused",
+      speed: "Speed x{mult}",
+      soldiers: "{drawn}/{total} soldiers drawn",
+    },
+  },
+}

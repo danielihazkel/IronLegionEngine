@@ -254,8 +254,8 @@ pub fn load(set: &ModSet) -> Result<Registries, Diagnostics>;  // collects ALL d
 pub struct Diagnostic { pub file: PathBuf, pub line: u32, pub col: u32, pub field: String, pub message: String, pub expected: Option<String> }
 pub struct Diagnostics(pub Vec<Diagnostic>);
 
-pub struct Locale { tables: HashMap<String, HashMap<String, String>>, current: String, fallback: String }
-impl Locale { pub fn get(&self, key: &str) -> &str; pub fn fmt(&self, key: &str, args: &[(&str, &dyn Display)]) -> String; }
+pub struct Locale { tables: BTreeMap<String /*lang*/, BTreeMap<String, String>>, current: String, show_keys: AtomicBool, missing: Mutex<BTreeSet<String>> }   // as built (T1-024): fallback is always "en"; misses are recorded once and logged with tracing::warn
+impl Locale { pub fn get<'a>(&'a self, key: &'a str) -> &'a str;  /* current → en → the key itself */ pub fn fmt(&self, key: &str, args: &[(&str, &dyn Display)]) -> String; pub fn set_language(&mut self, lang: &str) -> bool; pub fn set_show_keys(&self, on: bool); pub fn missing_keys(&self) -> Vec<String>; }
 
 #[cfg(feature="dev")]
 pub struct HotReload { watcher: notify::RecommendedWatcher, rx: Receiver<PathBuf> }

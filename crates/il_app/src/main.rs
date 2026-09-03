@@ -40,6 +40,9 @@ struct Args {
     /// checked before movement exists (T1-052 acceptance check).
     #[arg(long)]
     demo_circle: bool,
+    /// Show localisation keys instead of strings (REQ-LOC-001 check).
+    #[arg(long)]
+    show_keys: bool,
 }
 
 fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
@@ -57,6 +60,7 @@ fn load_registries(root: &Path) -> anyhow::Result<Arc<Registries>> {
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let regs = load_registries(&args.content_root)?;
+    regs.locale.set_show_keys(args.show_keys);
     let mode = if args.bench_sprites {
         Mode::BenchSprites
     } else {

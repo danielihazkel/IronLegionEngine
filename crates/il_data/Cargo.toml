@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 semver.workspace = true
 jsonschema.workspace = true
+tracing.workspace = true
 thiserror.workspace = true
 
 [lints]

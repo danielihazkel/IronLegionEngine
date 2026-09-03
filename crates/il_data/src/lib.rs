@@ -16,6 +16,7 @@ pub mod handle;
 pub mod json5;
 pub mod load_order;
 pub mod loader;
+pub mod locale;
 pub mod manifest;
 pub mod map_def;
 pub mod merge;
@@ -39,6 +40,7 @@ pub use faction::{DiplomacyPersonality, Faction};
 pub use formation::{FormationTemplate, GroupFormationTemplate, GroupKind, Layout, RoleZone};
 pub use handle::Handle;
 pub use load_order::{Edge, EdgeKind, LoadOrderError, LoadedMod, ModSet, resolve_load_order};
+pub use locale::{FALLBACK_LANGUAGE, Locale};
 pub use manifest::{Dependency, Manifest, ManifestWithPath, read_manifest};
 pub use map_def::{
     DeploymentZone, HeightmapRef, MapDef, MapEdge, MapSize, ReinforcementEdge, River, ZonePolygon,

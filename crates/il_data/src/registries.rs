@@ -5,6 +5,7 @@ use il_core::StateHasher;
 
 use crate::faction::Faction;
 use crate::formation::{FormationTemplate, GroupFormationTemplate};
+use crate::locale::Locale;
 use crate::map_def::MapDef;
 use crate::registry::{ContentKind, Registry};
 use crate::rules::{InputBindings, Rules};
@@ -30,6 +31,8 @@ pub struct Registries {
     pub sprite_sets: Registry<SpriteSet>,
     pub rules: Rules,
     pub input: InputBindings,
+    /// Every mod's `locale/*.json5`, merged in load order.
+    pub locale: Locale,
     /// Mods in load order.
     pub mods: Vec<ModInfo>,
     /// xxh3 over `(id, version)` in load order.
@@ -54,6 +57,7 @@ impl Default for Registries {
             sprite_sets: Registry::new(),
             rules: Rules::zeroed(),
             input: InputBindings::default(),
+            locale: Locale::default(),
             mods: Vec::new(),
             mod_list_hash: 0,
             content_registry_hash: 0,
