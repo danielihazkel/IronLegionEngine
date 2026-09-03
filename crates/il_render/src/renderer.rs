@@ -1,13 +1,17 @@
-//! Device, surface, frame targets and the per-frame sprite pass (T1-050,
-//! T1-051).
+//! Device, surface, frame targets and the per-frame pass: terrain, sprites,
+//! lines, then egui (T1-050, T1-051, T1-053).
 
 use std::path::Path;
 
+use glam::Vec2;
 use thiserror::Error;
 
 use crate::atlas::{Atlas, AtlasError, AtlasId, Rgba8Image, atlas_path};
+use crate::camera::Camera;
 use crate::egui_pass::{EguiPaint, EguiPass};
+use crate::lines::{LinePipeline, LineScene};
 use crate::sprite::{SpritePipeline, SpriteScene};
+use crate::terrain::{TerrainGlobals, TerrainGpu, TerrainMesh, TerrainPipeline};
 use il_data::SpriteSet;
 
 /// Depth attachment format shared by every pipeline.
@@ -43,7 +47,7 @@ pub struct ClearColour {
 }
 
 impl ClearColour {
-    /// The battlefield ground tone used until terrain rendering lands (T1-053).
+    /// The ground tone outside the map (the terrain mesh covers the map).
     pub const FIELD: ClearColour = ClearColour {
         r: 0.16,
         g: 0.20,
@@ -89,6 +93,16 @@ impl Targets {
     }
 }
 
+/// What one frame draws, in pass order: terrain (if loaded and a camera is
+/// given), sprites, lines; egui is painted afterwards.
+pub struct FrameScene<'a> {
+    pub clear: ClearColour,
+    /// Camera for the terrain pass; `None` skips the terrain (sprite bench).
+    pub camera: Option<Camera>,
+    pub sprites: &'a SpriteScene,
+    pub lines: &'a LineScene,
+}
+
 /// Owns the wgpu device, queue, window surface, pipelines and atlases.
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
@@ -96,7 +110,10 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     targets: Targets,
+    terrain_pipe: TerrainPipeline,
+    terrain: Option<TerrainGpu>,
     sprites: SpritePipeline,
+    lines: LinePipeline,
     egui: EguiPass,
     atlases: Vec<Atlas>,
 }
@@ -166,7 +183,9 @@ impl Renderer {
         };
         surface.configure(&device, &config);
         let targets = Targets::new(&device, format, config.width, config.height);
+        let terrain_pipe = TerrainPipeline::new(&device, format, SAMPLES);
         let sprites = SpritePipeline::new(&device, format, SAMPLES);
+        let lines = LinePipeline::new(&device, format, SAMPLES);
         let egui = EguiPass::new(&device, format);
 
         Ok(Self {
@@ -175,7 +194,10 @@ impl Renderer {
             queue,
             config,
             targets,
+            terrain_pipe,
+            terrain: None,
             sprites,
+            lines,
             egui,
             atlases: Vec::new(),
         })
@@ -241,16 +263,30 @@ impl Renderer {
         self.atlases.get(id.0 as usize)
     }
 
-    /// Clears to `colour`, draws the sprite scene, paints `ui` over it and
-    /// presents. An outdated or suboptimal surface is reconfigured and the
-    /// frame skipped; a timeout or an occluded window skips the frame; a lost
-    /// surface is an error.
+    /// Uploads the terrain of the current battle, replacing any previous one.
+    pub fn set_terrain(&mut self, mesh: &TerrainMesh) {
+        self.terrain = Some(self.terrain_pipe.upload(&self.device, &self.queue, mesh));
+    }
+
+    pub fn clear_terrain(&mut self) {
+        self.terrain = None;
+    }
+
+    pub fn has_terrain(&self) -> bool {
+        self.terrain.is_some()
+    }
+
+    /// Clears to `frame.clear`, draws the terrain, the sprite scene and the
+    /// lines, paints `ui` over them and presents. An outdated or suboptimal
+    /// surface is reconfigured and the frame skipped; a timeout or an
+    /// occluded window skips the frame; a lost surface is an error.
     pub fn render(
         &mut self,
-        colour: ClearColour,
-        scene: &SpriteScene,
+        frame_scene: &FrameScene<'_>,
         mut ui: Option<&mut EguiPaint<'_>>,
     ) -> Result<(), RenderError> {
+        let colour = frame_scene.clear;
+        let scene = frame_scene.sprites;
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => Some(frame),
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
@@ -281,6 +317,19 @@ impl Renderer {
         let instances = self
             .sprites
             .upload(&self.device, &self.queue, screen, scene);
+        let line_vertices = self
+            .lines
+            .upload(&self.device, &self.queue, screen, frame_scene.lines);
+        let terrain = match (&self.terrain, frame_scene.camera) {
+            (Some(t), Some(camera)) => {
+                let globals =
+                    TerrainGlobals::new(&camera, Vec2::from(screen), t.zone_cell, t.zone_dims);
+                self.queue
+                    .write_buffer(&t.globals, 0, bytemuck::bytes_of(&globals));
+                Some(t)
+            }
+            _ => None,
+        };
 
         let view = frame
             .texture
@@ -292,7 +341,7 @@ impl Renderer {
             });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("sprites"),
+                label: Some("terrain, sprites, lines"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &self.targets.msaa,
                     depth_slice: None,
@@ -319,6 +368,13 @@ impl Renderer {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            if let Some(t) = terrain {
+                pass.set_pipeline(&self.terrain_pipe.pipeline);
+                pass.set_bind_group(0, &t.bind_group, &[]);
+                pass.set_vertex_buffer(0, t.vertices.slice(..));
+                pass.set_index_buffer(t.indices.slice(..), wgpu::IndexFormat::Uint32);
+                pass.draw_indexed(0..t.index_count, 0, 0..1);
+            }
             pass.set_pipeline(&self.sprites.pipeline);
             pass.set_bind_group(0, &self.sprites.globals_bind_group, &[]);
             pass.set_vertex_buffer(0, instances.slice(..));
@@ -328,6 +384,12 @@ impl Renderer {
                 };
                 pass.set_bind_group(1, &atlas.bind_group, &[]);
                 pass.draw(0..6, batch.range.clone());
+            }
+            if !frame_scene.lines.vertices.is_empty() {
+                pass.set_pipeline(&self.lines.pipeline);
+                pass.set_bind_group(0, &self.lines.globals_bind_group, &[]);
+                pass.set_vertex_buffer(0, line_vertices.slice(..));
+                pass.draw(0..frame_scene.lines.vertices.len() as u32, 0..1);
             }
         }
         let uploads = match ui {

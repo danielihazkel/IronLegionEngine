@@ -108,6 +108,7 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
 
     let (min, max) = input.camera.visible_bounds(input.screen, CULL_PAD_METRES);
     let units = &view.regs().units;
+    let map = view.map();
     let alpha = input.alpha.clamp(0.0, 1.0);
     let mut total = 0u32;
     for s in view.soldiers_unordered() {
@@ -125,7 +126,7 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
             .unwrap_or((u8::MAX, false));
         out.soldiers.push(SoldierInst {
             pos: p.to_array(),
-            height: 0.0, // heightmap sampling arrives with the map (T1-030/T1-053)
+            height: crate::terrain::ground_height(map, p),
             facing8: s.facing.to_facing8(),
             sprite_set: units.get(s.unit).sprite_set().index() as u16,
             side,

@@ -298,8 +298,8 @@ flowchart LR
   Projection with fixed pitch and 4 snap rotations; facing index remap; `Camera` pan, zoom limits, edge scroll input hooks; `build_snapshot(view, alpha, ...)` with frustum culling; position lerp and facing snap.
   **Done when** a regiment walking a circle shows no visual stutter at 20 Hz sim / 60 FPS render and rotating the camera keeps sprite facings consistent.
 
-- [ ] **T1-053 Terrain rendering** · M · Refs REQ-RNDR-006, TDD §10.1 terrain
-  Heightmap mesh, zone texture array, slope shading, river and road strips, deployment zone outlines.
+- [x] **T1-053 Terrain rendering** · M · Refs REQ-RNDR-006, TDD §10.1 terrain
+  Heightmap mesh, zone-index raster with a palette from the zone colours (rivers and roads come from the raster; open water where no crossing covers a river cell), slope shading and 2 m contour lines, deployment zone outlines through a new line pipeline; sprites sit on the terrain height; the starting camera frames the regiments.
   **Done when** the test map is recognisable and elevation reads correctly under the isometric projection.
 
 - [ ] **T1-054 Debug overlays** · S · Refs REQ-RNDR-008, TDD §10.1 debug

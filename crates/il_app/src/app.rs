@@ -10,8 +10,9 @@ use glam::Vec2;
 use il_core::{Angle, RegimentId, S, Scalar, V2};
 use il_data::Registries;
 use il_render::{
-    AtlasId, Camera, ClearColour, EguiPaint, RenderSnapshot, Renderer, SetAtlas, SnapshotInput,
-    SpriteScene, build_snapshot, scene_from_snapshot,
+    AtlasId, Camera, ClearColour, EguiPaint, FrameScene, LineScene, RenderSnapshot, Renderer,
+    SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_snapshot, deployment_outlines,
+    scene_from_snapshot,
 };
 use il_ui::{UiContext, profiler_overlay};
 use winit::application::ApplicationHandler;
@@ -34,6 +35,8 @@ const EDGE_BAND_PX: f32 = 10.0;
 const EDGE_PAN_PX_PER_S: f32 = 600.0;
 /// Zoom factor per mouse-wheel line.
 const WHEEL_ZOOM_STEP: f32 = 1.15;
+/// Metres added around the regiments when the starting camera frames them.
+const CAMERA_FIT_MARGIN_M: f32 = 60.0;
 /// Developer tooling compiled in (`dev` feature): profiler overlay, F1 toggle.
 const DEV: bool = cfg!(feature = "dev");
 
@@ -68,6 +71,7 @@ pub struct App {
     camera: Option<Camera>,
     snapshot: RenderSnapshot,
     scene: SpriteScene,
+    lines: LineScene,
     selected: BTreeSet<RegimentId>,
     bench: Option<SpriteBench>,
     pan_keys: PanKeys,
@@ -104,6 +108,7 @@ impl App {
             camera: None,
             snapshot: RenderSnapshot::default(),
             scene: SpriteScene::default(),
+            lines: LineScene::default(),
             selected: BTreeSet::new(),
             bench: None,
             pan_keys: PanKeys::default(),
@@ -128,31 +133,55 @@ impl App {
         Ok(())
     }
 
+    /// Builds and uploads the battle's terrain mesh (T1-053).
+    fn load_terrain(&mut self) {
+        let Mode::Battle(session) = &self.mode else {
+            return;
+        };
+        let mesh = TerrainMesh::build(session.world.map(), &self.regs);
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.set_terrain(&mesh);
+        }
+    }
+
     fn screen(&self) -> Vec2 {
         let (w, h) = self.renderer.as_ref().map_or((1, 1), Renderer::size);
         Vec2::new(w as f32, h as f32)
     }
 
-    /// Camera centred on the mean regiment anchor the first time it is needed.
+    /// Camera framing every regiment anchor the first time it is needed:
+    /// centred on their bounding box, zoomed out (never past the default)
+    /// until the box fits the window with a margin.
     fn camera_mut(&mut self) -> &mut Camera {
         if self.camera.is_none() {
-            let center = match &self.mode {
+            let screen = self.screen();
+            let mut camera = match &self.mode {
                 Mode::Battle(session) => {
                     let view = session.world.view();
-                    let mut sum = Vec2::ZERO;
-                    let mut n = 0.0;
+                    let mut min = Vec2::splat(f32::INFINITY);
+                    let mut max = Vec2::splat(f32::NEG_INFINITY);
                     for r in view.regiments() {
-                        sum += Vec2::new(
+                        let a = Vec2::new(
                             r.anchor_pos.x.to_f32_render(),
                             r.anchor_pos.y.to_f32_render(),
                         );
-                        n += 1.0;
+                        min = min.min(a);
+                        max = max.max(a);
                     }
-                    if n > 0.0 { sum / n } else { Vec2::ZERO }
+                    if min.x.is_finite() {
+                        let mut cam = Camera::new((min + max) * 0.5);
+                        let extent = max - min + Vec2::splat(CAMERA_FIT_MARGIN_M);
+                        let fit = (screen.x / extent.x).min(screen.y / (extent.y * cam.pitch));
+                        cam.zoom = fit.clamp(Camera::MIN_ZOOM, Camera::DEFAULT_ZOOM);
+                        cam
+                    } else {
+                        Camera::new(Vec2::ZERO)
+                    }
                 }
-                Mode::BenchSprites => Vec2::ZERO,
+                Mode::BenchSprites => Camera::new(Vec2::ZERO),
             };
-            self.camera = Some(Camera::new(center));
+            camera.zoom = camera.zoom.clamp(Camera::MIN_ZOOM, Camera::MAX_ZOOM);
+            self.camera = Some(camera);
         }
         self.camera.as_mut().expect("camera set above")
     }
@@ -276,6 +305,8 @@ impl App {
                 selected: &self.selected,
             };
             build_snapshot(&session.world.view(), &input, &mut self.snapshot);
+            self.lines.clear();
+            deployment_outlines(session.world.map(), &camera, screen, &mut self.lines);
             if let Some(renderer) = self.renderer.as_ref() {
                 let sets: Vec<SetAtlas<'_>> = self
                     .atlases
@@ -310,12 +341,18 @@ impl App {
             primitives: &o.primitives,
             pixels_per_point: o.pixels_per_point,
         });
-        let scene = match (&self.mode, &self.bench) {
-            (Mode::BenchSprites, Some(bench)) => &bench.scene,
-            _ => &self.scene,
+        let (sprites, camera) = match (&self.mode, &self.bench) {
+            (Mode::BenchSprites, Some(bench)) => (&bench.scene, None),
+            _ => (&self.scene, self.camera),
+        };
+        let frame_scene = FrameScene {
+            clear: ClearColour::FIELD,
+            camera,
+            sprites,
+            lines: &self.lines,
         };
         if let Some(renderer) = self.renderer.as_mut()
-            && let Err(e) = renderer.render(ClearColour::FIELD, scene, paint.as_mut())
+            && let Err(e) = renderer.render(&frame_scene, paint.as_mut())
         {
             eprintln!("fatal render error: {e}");
             std::process::exit(1);
@@ -435,6 +472,7 @@ impl ApplicationHandler for App {
             event_loop.exit();
             return;
         }
+        self.load_terrain();
         self.ui = Some(UiContext::new(&window));
         if matches!(self.mode, Mode::BenchSprites) {
             let renderer = self.renderer.as_mut().expect("renderer exists");
