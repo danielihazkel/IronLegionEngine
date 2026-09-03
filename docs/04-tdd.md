@@ -486,13 +486,14 @@ pub fn layout_for(layout: Layout) -> &'static dyn LayoutFn;   // SIM-FORM-003..0
 // As built (T1-040): layout_slots(t, n, ranks, radius, out) dispatches on t.layout; effective_ranks(t, n, requested) clamps to [min_ranks, max_ranks] and to n;
 // files_for(n, ranks) = ceil(n / ranks); spacing(t, radius) = (spacing_file, spacing_rank) × 2 radius; ranks_used / files_used read a table back.
 // Column widens beyond default_files_column only if it would exceed 255 ranks; Wedge ignores `ranks`; Square uses `ranks` as the depth of each side.
-pub fn assign_slots(soldiers: &[(SoldierId, V2, UnitCategory)], slots: &[Slot], anchor: &Anchor, grid: &SpatialGrid, rules: &FormationRules, prev: &[Option<u16>], out: &mut Vec<Option<u16>>);  // SIM-FORM-022
+pub fn assign_slots(soldiers: &[AssignSoldier { id, pos, category }], slots: &[Slot], anchor: &Anchor, rules: &FormationRules, prev: &[Option<u16>], out: &mut Vec<Option<u16>>, scratch: &mut AssignScratch);  // SIM-FORM-022; as built (T1-041) the grid it searches is a private one over the *slots* (rings of keep_slot_radius doubling up to assign_search_radius, brute force beyond), rebuilt per call into `scratch`; the soldier grid is not needed
+pub fn slot_world(anchor: &Anchor, slot: &Slot) -> V2;   // a + R(θ_a) · o (SIM-FORM-001)
 pub fn integrity(soldiers: &[V2], assigned: &[Option<u16>], slots_world: &[V2], radius: S) -> S;  // SIM-FORM-030
 pub struct GroupFormationTemplate { pub id: ContentId, pub kind: GroupKind, pub gap: S, pub skirmishers_forward: bool, pub cavalry_flanks: bool, pub lines: u8 }
 pub fn arrange_group(t: &GroupFormationTemplate, regiments: &[RegimentInfo], anchor: V2, facing: Angle<S>, width: S, rules: &FormationRules) -> Vec<(RegimentId, V2, Angle<S>, u8 /*ranks*/)>;  // SIM-FORM-040..042
 ```
 
-Systems: `formation_layout` (Stage 2, per regiment with `needs_reform` flag; parallel over regiments, each writing only its own `FormationState`), `formation_integrity` (Stage 2, every `integrity_period_ticks`).
+Systems: `formation_layout` (Stage 2, per regiment whose `needs_reform` is set, whose soldier count differs from its slot count, or whose anchor facing moved more than `reform_angle` since the last layout; parallel over regiments when a task pool exists and serial otherwise, each writing only its own `FormationState`), then `formation_apply` (Stage 2, exclusive: writes `SlotRef` and `Rank` to the soldiers in regiment id order), `formation_integrity` (Stage 2, every `integrity_period_ticks`). Resize (SIM-FORM-021) falls out of the assignment: a soldier whose slot vanished takes the nearest free one, so the rearmost soldiers close the front-rank gaps. `rebuild_formation_derived` recomputes slots and `Rank` on restore.
 
 Assignment cost: greedy with grid candidates is O(n × k); swap passes O(n × files). Budget 2 ms for all reforming regiments; benchmark `assign_slots` at n = 500 must be < 0.5 ms (SIM-FORM-023).
 

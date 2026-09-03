@@ -8,9 +8,10 @@ use il_core::{Angle, S, Scalar, Tick, V2};
 use il_data::{ContentId, Handle, Registries, UnitType};
 
 use crate::components::{
-    Anchor, Body, Facing, FatigueC, Fsm, Health, Morale, MoraleState, Order, Path, Pos, PrevFacing,
-    PrevPos, Regiment, SlotRef, Soldier, SoldierState, Vel,
+    Anchor, Body, Facing, FatigueC, FormationState, Fsm, Health, Morale, MoraleState, Order, Path,
+    Pos, PrevFacing, PrevPos, Rank, Regiment, SlotRef, Soldier, SoldierState, Vel,
 };
+use crate::formation::{effective_ranks, layout_slots, slot_world};
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
 use crate::map::MapError;
 use crate::resources::{BattlePhase, Ids, Regs, SideState, Sides};
@@ -28,6 +29,12 @@ pub enum SetupError {
     UnknownGeneralUnitType { side: usize, unit_type: ContentId },
     #[error("side {side}: regiment {regiment} has zero soldiers")]
     EmptyRegiment { side: usize, regiment: u32 },
+    #[error("side {side}: regiment {regiment} names unknown formation {formation}")]
+    UnknownFormation {
+        side: usize,
+        regiment: u32,
+        formation: ContentId,
+    },
     #[error("side {side}: more than 255 sides are not supported")]
     TooManySides { side: usize },
     #[error("unknown map {0}")]
@@ -108,6 +115,15 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
                     regiment: r.id,
                 });
             }
+            if let Some(f) = &r.formation
+                && !regs.formations.contains(f)
+            {
+                return Err(SetupError::UnknownFormation {
+                    side,
+                    regiment: r.id,
+                    formation: f.clone(),
+                });
+            }
             if let Some([x, y]) = r.position
                 && !(x >= 0.0
                     && y >= 0.0
@@ -126,28 +142,6 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
     Ok(())
 }
 
-/// Smallest `f` with `f * f >= n`.
-fn ceil_sqrt(n: u32) -> u32 {
-    let mut f = 1u32;
-    while f * f < n {
-        f += 1;
-    }
-    f
-}
-
-/// Placement of soldier `i` in a plain grid of `files` columns: lateral
-/// offset from the centre line and depth behind the front rank, in units of
-/// `spacing`. Real formations replace this in T1-040 / T1-041.
-fn grid_offsets(i: u32, files: u32, spacing: S) -> (S, S) {
-    let col = i % files;
-    let row = i / files;
-    // (2 * col - (files - 1)) / 2 keeps the front rank centred on the anchor
-    // using only integer-derived scalars.
-    let lateral = S::from_i32((2 * col) as i32 - (files - 1) as i32) * spacing * S::HALF;
-    let depth = S::from_i32(row as i32) * spacing;
-    (lateral, depth)
-}
-
 pub(crate) fn spawn_regiment(
     world: &mut World,
     side: u8,
@@ -155,21 +149,38 @@ pub(crate) fn spawn_regiment(
     unit: Handle<UnitType>,
     ammo: u16,
 ) {
-    let (radius, mass, hp, morale_base, category) = {
+    let (radius, mass, hp, morale_base, category, template, slots, ranks) = {
         let regs = world.resource::<Regs>();
         let u = regs.0.units.get(unit);
-        (u.soldier_radius, u.mass, u.hp, u.morale_base, u.category)
+        let template = setup
+            .formation
+            .as_ref()
+            .and_then(|id| regs.0.formations.lookup(id))
+            .unwrap_or_else(|| u.default_formation());
+        let t = regs.0.formations.get(template);
+        let ranks = effective_ranks(t, setup.count, None);
+        let mut slots = Vec::with_capacity(usize::from(setup.count));
+        layout_slots(t, setup.count, ranks, u.soldier_radius, &mut slots);
+        (
+            u.soldier_radius,
+            u.mass,
+            u.hp,
+            u.morale_base,
+            u.category,
+            template,
+            slots,
+            ranks,
+        )
     };
 
     let anchor_pos = setup
         .position
         .map_or(V2::ZERO, |[x, y]| V2::from_f32_data(x, y));
     let facing = Angle::<S>::from_degrees_data(setup.facing_deg.unwrap_or(0.0));
-    let forward = facing.direction();
-    // `perp` is 90° counter-clockwise; the right-hand side is the other way.
-    let right = -forward.perp();
-    let spacing = radius * S::from_i32(3);
-    let files = ceil_sqrt(u32::from(setup.count));
+    let anchor = Anchor {
+        pos: anchor_pos,
+        facing,
+    };
     let fatigue = S::from_f32_data(setup.fatigue);
 
     let rid = world.resource_mut::<Ids>().regiments.alloc();
@@ -183,16 +194,14 @@ pub(crate) fn spawn_regiment(
                 soldiers: Vec::with_capacity(usize::from(setup.count)),
                 ammo,
             },
-            Anchor {
-                pos: anchor_pos,
-                facing,
-            },
+            anchor,
             Morale {
                 m: morale_base,
                 state: MoraleState::Steady,
             },
             Order::default(),
             Path::default(),
+            FormationState::new(template, ranks, slots.clone(), facing),
         ))
         .id();
     world
@@ -201,9 +210,9 @@ pub(crate) fn spawn_regiment(
         .push((rid, regiment_entity));
 
     let mut soldier_ids = Vec::with_capacity(usize::from(setup.count));
-    for i in 0..u32::from(setup.count) {
-        let (lateral, depth) = grid_offsets(i, files, spacing);
-        let p = anchor_pos + right * lateral - forward * depth;
+    for (i, slot) in slots.iter().enumerate() {
+        // SIM-FORM-001: soldiers start on their slots.
+        let p = slot_world(&anchor, slot);
         let sid = world.resource_mut::<Ids>().soldiers.alloc();
         let entity = world
             .spawn((
@@ -221,7 +230,13 @@ pub(crate) fn spawn_regiment(
                 Body { r: radius, m: mass },
                 Health { hp },
                 FatigueC { f: fatigue },
-                SlotRef::default(),
+                SlotRef {
+                    slot: Some(i as u16),
+                },
+                Rank {
+                    rank: slot.rank,
+                    file: slot.file,
+                },
                 Fsm {
                     state: SoldierState::Idle,
                     since: Tick::ZERO,
@@ -271,28 +286,5 @@ impl BattleWorld {
         w.rebuild_derived();
         w.refresh_hash();
         Ok(w)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn grid_is_centred_and_fills_rows() {
-        assert_eq!(ceil_sqrt(1), 1);
-        assert_eq!(ceil_sqrt(2), 2);
-        assert_eq!(ceil_sqrt(4), 2);
-        assert_eq!(ceil_sqrt(5), 3);
-        assert_eq!(ceil_sqrt(500), 23);
-        // Three files: lateral offsets -s, 0, +s; second row one spacing back.
-        let s = S::from_i32(2);
-        assert_eq!(grid_offsets(0, 3, s), (-s, S::ZERO));
-        assert_eq!(grid_offsets(1, 3, s), (S::ZERO, S::ZERO));
-        assert_eq!(grid_offsets(2, 3, s), (s, S::ZERO));
-        assert_eq!(grid_offsets(3, 3, s), (-s, s));
-        // Two files: offsets ±s/2.
-        assert_eq!(grid_offsets(0, 2, s), (-S::ONE, S::ZERO));
-        assert_eq!(grid_offsets(1, 2, s), (S::ONE, S::ZERO));
     }
 }

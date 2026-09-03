@@ -8,6 +8,7 @@ description = "Workspace benchmarks: criterion micro-benches of the hot sim path
 
 [dependencies]
 il_core.workspace = true
+il_data.workspace = true
 il_sim_battle.workspace = true
 bevy_ecs.workspace = true
 
@@ -16,6 +17,10 @@ criterion.workspace = true
 
 [[bench]]
 name = "spatial"
+harness = false
+
+[[bench]]
+name = "formation"
 harness = false
 
 [lints]

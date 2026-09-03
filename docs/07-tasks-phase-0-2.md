@@ -252,7 +252,7 @@ flowchart LR
   `Slot`, `LayoutFn`, `layout_for`, Line, Column, Square, Wedge, Phalanx, Loose, Custom exactly as the rules state (square per the Phase 1 geometry in SIM-FORM-005); role zones for mixed regiments (data only in Phase 1; mixed spawning is Phase 3). Golden tables live in `tests/golden/layouts.json` (bit-exact; regenerate with `IL_UPDATE_GOLDEN=1 cargo test -p il_tests --test layout_golden`).
   **Done when** golden slot tables for each layout at n ∈ {1, 7, 60, 160, 500} match, front rank centred, no duplicates.
 
-- [ ] **T1-041 Slot assignment and resize** · M · Refs SIM-FORM-020..023, TDD §7 `assign_slots`
+- [x] **T1-041 Slot assignment and resize** · M · Refs SIM-FORM-020..023, TDD §7 `assign_slots`
   Keep-slot pass, greedy nearest via spatial grid, swap passes; resize on count change closing ranks from the rear; `needs_reform` flag and Stage 2 `formation_layout` system, parallel over regiments. Replace the Phase 0 grid placement in spawning with a real Line layout.
   **Done when** `assign_slots` at n = 500 is under 0.5 ms in a benchmark and no two soldiers share a slot.
 

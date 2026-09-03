@@ -21,7 +21,10 @@ pub mod world;
 
 pub use command::{AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode};
 pub use events::BattleEvent;
-pub use formation::{Slot, effective_ranks, layout_for, layout_slots};
+pub use formation::{
+    AssignScratch, AssignSoldier, Slot, assign_slots, effective_ranks, layout_for, layout_slots,
+    slot_world,
+};
 pub use il_data::Rules;
 pub use interface::{
     BattleResult, BattleSetup, GeneralFate, GeneralSetup, RegimentResult, RegimentSetup,

@@ -1576,6 +1576,7 @@ dependencies = [
  "bevy_ecs",
  "criterion",
  "il_core",
+ "il_data",
  "il_sim_battle",
 ]
 

@@ -4,13 +4,14 @@
 
 use bevy_ecs::prelude::*;
 use il_core::{
-    Angle, Hashable, RegimentId, S, SoldierId, StateHasher, Tick, V2, impl_hashable_fieldless_enum,
-    impl_hashable_struct,
+    Angle, Hashable, RegimentId, S, Scalar, SoldierId, StateHasher, Tick, V2,
+    impl_hashable_fieldless_enum, impl_hashable_struct,
 };
-use il_data::{Handle, UnitCategory, UnitType};
+use il_data::{FormationTemplate, Handle, UnitCategory, UnitType};
 use serde::{Deserialize, Serialize};
 
 use crate::command::SpeedMode;
+use crate::formation::Slot;
 
 // ---------------------------------------------------------------- soldiers
 
@@ -95,6 +96,14 @@ pub struct Fsm {
     pub since: Tick,
 }
 
+/// Rank and file of the soldier's slot (derived from `SlotRef`, not hashed;
+/// `file` is `u16` per the Phase 1 plan).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rank {
+    pub rank: u8,
+    pub file: u16,
+}
+
 // --------------------------------------------------------------- regiments
 
 #[derive(Component, Clone, Debug)]
@@ -115,6 +124,59 @@ pub struct Regiment {
 pub struct Anchor {
     pub pos: V2,
     pub facing: Angle<S>,
+}
+
+/// The regiment's formation (SIM-CORE-005, TDD §7). `slots` and
+/// `assignment` are derived (recomputed by `formation_layout` and on
+/// restore); the rest is state.
+#[derive(Component, Clone, Debug, PartialEq)]
+pub struct FormationState {
+    pub template: Handle<FormationTemplate>,
+    pub ranks: u8,
+    /// Width in files of the widest rank of the current layout.
+    pub files: u16,
+    /// Local slot offsets of the current layout (derived).
+    pub slots: Vec<Slot>,
+    /// Slot per entry of `Regiment.soldiers` (derived scratch).
+    pub assignment: Vec<Option<u16>>,
+    /// SIM-FORM-030, recomputed every `integrity_period_ticks` (T1-045).
+    pub integrity: S,
+    /// End of the current morph (SIM-FORM-032); `Tick::ZERO` when none.
+    pub morph_until: Tick,
+    /// Set by anything SIM-FORM-020 lists; consumed at Stage 2.
+    pub needs_reform: bool,
+    /// Template to return to after an automatic corridor morph (SIM-MOVE-004).
+    pub prior_template: Option<Handle<FormationTemplate>>,
+    /// Anchor facing at the last layout, for the `reform_angle` trigger.
+    pub laid_out_facing: Angle<S>,
+    /// Transient inside Stage 2: a fresh assignment awaits `formation_apply`.
+    pub dirty: bool,
+}
+
+impl FormationState {
+    /// A freshly laid-out state whose `assignment` maps soldier `k` to slot `k`.
+    pub fn new(
+        template: Handle<FormationTemplate>,
+        ranks: u8,
+        slots: Vec<Slot>,
+        facing: Angle<S>,
+    ) -> Self {
+        let files = crate::formation::files_used(&slots);
+        let assignment = (0..slots.len()).map(|k| Some(k as u16)).collect();
+        Self {
+            template,
+            ranks,
+            files,
+            slots,
+            assignment,
+            integrity: S::ONE,
+            morph_until: Tick::ZERO,
+            needs_reform: false,
+            prior_template: None,
+            laid_out_facing: facing,
+            dirty: false,
+        }
+    }
 }
 
 /// SIM-MOR-002.

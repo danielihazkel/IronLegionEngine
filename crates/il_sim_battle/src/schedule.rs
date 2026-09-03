@@ -12,6 +12,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 
 use crate::command::apply_commands;
+use crate::formation::{formation_apply, formation_layout};
 use crate::hash::flush_events_and_hash;
 use crate::nav::serve_path_requests;
 use crate::spatial::rebuild_spatial_grids;
@@ -130,7 +131,6 @@ impl StageObserver for NoopObserver {
 // Placeholder systems, one per stage without real systems yet, so every
 // stage shows up in the profiler with its own timing.
 fn stage_ai() {}
-fn stage_formation() {}
 fn stage_soldier_steering() {}
 fn stage_integrate() {}
 fn stage_collision() {}
@@ -150,7 +150,9 @@ fn stage_schedule(stage: Stage) -> Schedule {
     match stage {
         Stage::ApplyCommands => s.add_systems(apply_commands.in_set(stage)),
         Stage::Ai => s.add_systems(stage_ai.in_set(stage)),
-        Stage::Formation => s.add_systems(stage_formation.in_set(stage)),
+        Stage::Formation => {
+            s.add_systems((formation_layout, formation_apply).chain().in_set(stage))
+        }
         Stage::RegimentMovement => s.add_systems(serve_path_requests.in_set(stage)),
         Stage::SoldierSteering => s.add_systems(stage_soldier_steering.in_set(stage)),
         Stage::Integrate => s.add_systems(stage_integrate.in_set(stage)),

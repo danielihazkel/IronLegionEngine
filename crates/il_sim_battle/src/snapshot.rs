@@ -14,8 +14,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::SpeedMode;
 use crate::components::{
-    Anchor, Body, Facing, FatigueC, Fsm, Health, Morale, MoraleState, Order, OrderKind, Path, Pos,
-    PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState, Vel, Waypoint,
+    Anchor, Body, Facing, FatigueC, FormationState, Fsm, Health, Morale, MoraleState, Order,
+    OrderKind, Path, Pos, PrevFacing, PrevPos, Rank, Regiment, SlotRef, Soldier, SoldierState, Vel,
+    Waypoint,
 };
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, MapError};
@@ -45,6 +46,13 @@ pub struct RegimentSnap {
     pub path: Vec<Waypoint>,
     pub path_next: u16,
     pub path_requested: bool,
+    pub formation: ContentId,
+    pub ranks: u8,
+    pub integrity: S,
+    pub morph_until: Tick,
+    pub needs_reform: bool,
+    pub prior_formation: Option<ContentId>,
+    pub laid_out_facing: Angle<S>,
     pub ammo: u16,
 }
 
@@ -100,6 +108,8 @@ pub enum RestoreError {
     UnknownUnitType(ContentId),
     #[error("snapshot refers to map {0}, which is not in the registries")]
     UnknownMap(ContentId),
+    #[error("snapshot refers to formation {0}, which is not in the registries")]
+    UnknownFormation(ContentId),
     #[error("{0}")]
     Map(MapError),
     #[error("soldier {soldier} belongs to unknown regiment {regiment}")]
@@ -156,6 +166,7 @@ impl BattleWorld {
                 let morale = world.get::<Morale>(*entity).expect("morale");
                 let order = world.get::<Order>(*entity).expect("order");
                 let path = world.get::<Path>(*entity).expect("path");
+                let formation = world.get::<FormationState>(*entity).expect("formation");
                 debug_assert_eq!(*id, r.id);
                 RegimentSnap {
                     id: r.id,
@@ -174,6 +185,15 @@ impl BattleWorld {
                     path: path.waypoints.clone(),
                     path_next: path.next,
                     path_requested: path.requested,
+                    formation: regs.formations.id_of(formation.template).clone(),
+                    ranks: formation.ranks,
+                    integrity: formation.integrity,
+                    morph_until: formation.morph_until,
+                    needs_reform: formation.needs_reform,
+                    prior_formation: formation
+                        .prior_template
+                        .map(|h| regs.formations.id_of(h).clone()),
+                    laid_out_facing: formation.laid_out_facing,
                     ammo: r.ammo,
                 }
             })
@@ -255,6 +275,18 @@ impl BattleWorld {
                 .units
                 .lookup(&r.unit_type)
                 .ok_or_else(|| RestoreError::UnknownUnitType(r.unit_type.clone()))?;
+            let template = regs
+                .formations
+                .lookup(&r.formation)
+                .ok_or_else(|| RestoreError::UnknownFormation(r.formation.clone()))?;
+            let prior_template = match &r.prior_formation {
+                Some(id) => Some(
+                    regs.formations
+                        .lookup(id)
+                        .ok_or_else(|| RestoreError::UnknownFormation(id.clone()))?,
+                ),
+                None => None,
+            };
             let entity = w
                 .world
                 .spawn((
@@ -285,6 +317,19 @@ impl BattleWorld {
                         waypoints: r.path.clone(),
                         next: r.path_next,
                         requested: r.path_requested,
+                    },
+                    FormationState {
+                        template,
+                        ranks: r.ranks,
+                        files: 0,
+                        slots: Vec::new(),
+                        assignment: Vec::new(),
+                        integrity: r.integrity,
+                        morph_until: r.morph_until,
+                        needs_reform: r.needs_reform,
+                        prior_template,
+                        laid_out_facing: r.laid_out_facing,
+                        dirty: false,
                     },
                 ))
                 .id();
@@ -339,6 +384,7 @@ impl BattleWorld {
                     Health { hp: s.hp },
                     FatigueC { f: s.fatigue },
                     SlotRef { slot: s.slot },
+                    Rank::default(),
                     Fsm {
                         state: s.fsm_state,
                         since: s.fsm_since,
@@ -378,7 +424,8 @@ impl BattleWorld {
     /// - the path request queue from `Path.requested` flags (T1-032; the
     ///   paths themselves are stored),
     /// - flow fields per side (T2-042),
-    /// - `Rank` from slots (T1-041).
+    /// - formation slots from template, count and ranks, and `Rank` from
+    ///   `SlotRef` (T1-041).
     pub(crate) fn rebuild_derived(&mut self) {
         use bevy_ecs::system::RunSystemOnce;
         self.world
@@ -401,6 +448,7 @@ impl BattleWorld {
         let mut queue = self.world.resource_mut::<crate::resources::PathRequests>();
         queue.0.clear();
         queue.0.extend(requested);
+        crate::formation::rebuild_formation_derived(&mut self.world);
     }
 }
 

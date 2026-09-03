@@ -14,8 +14,8 @@ use il_core::{Angle, RegimentId, S, SoldierId, Tick, V2};
 use il_data::{Handle, Registries, UnitCategory, UnitType};
 
 use crate::components::{
-    Anchor, Facing, Fsm, Health, Morale, MoraleState, Order, OrderKind, Pos, PrevFacing, PrevPos,
-    Regiment, SlotRef, Soldier, SoldierState,
+    Anchor, Facing, FormationState, Fsm, Health, Morale, MoraleState, Order, OrderKind, Path, Pos,
+    PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState,
 };
 use crate::map::LoadedMap;
 use crate::nav::NavGrid;
@@ -242,5 +242,18 @@ impl<'w> BattleView<'w> {
             .get_manual(self.world, entity)
             .ok()
             .map(regiment_row)
+    }
+
+    /// The regiment's formation state (slots are local offsets; see
+    /// `formation::slot_world`).
+    pub fn formation_state(&self, id: RegimentId) -> Option<&'w FormationState> {
+        let entity = self.world.resource::<Ids>().regiment_entity(id)?;
+        self.world.get::<FormationState>(entity)
+    }
+
+    /// The regiment's current path.
+    pub fn path(&self, id: RegimentId) -> Option<&'w Path> {
+        let entity = self.world.resource::<Ids>().regiment_entity(id)?;
+        self.world.get::<Path>(entity)
     }
 }
