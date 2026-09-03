@@ -222,7 +222,7 @@ flowchart LR
   Load `locale/<lang>.json5`, flatten nested keys, fallback chain to `en`, `Locale::get` and `fmt` with `{name}` placeholders. A `--show-keys` debug flag returns the key instead of the string.
   **Done when** a missing key returns the key itself and logs once.
 
-- [ ] **T1-025 Hot reload (dev feature)** · M · Refs REQ-MOD-008, TDD §3.2 `HotReload`, SAD §9.4
+- [x] **T1-025 Hot reload (dev feature)** · M · Refs REQ-MOD-008, TDD §3.2 `HotReload`, SAD §9.4
   `notify` watcher over mod roots; on change, re-run parse, `$from`, validate, merge for that file's kind, and replace the registry item in place by ContentId keeping its index; emit `ReloadEvent`s. Structural changes (new ids) are queued for the next battle load.
   **Done when** editing `speed_walk` in `hastati.json5` while a battle runs changes regiment speed on the next tick.
 

@@ -9,7 +9,7 @@ description = "Workspace integration tests: determinism, dependency rules, conte
 [dependencies]
 serde_json.workspace = true
 il_core.workspace = true
-il_data.workspace = true
+il_data = { workspace = true, features = ["hot-reload"] }
 il_sim_battle.workspace = true
 il_cli.workspace = true
 
