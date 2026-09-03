@@ -15,7 +15,7 @@ use anyhow::{Context, anyhow};
 use clap::Parser;
 use il_core::PlayerId;
 use il_data::Registries;
-use il_sim_battle::{BattleSetup, BattleWorld};
+use il_sim_battle::BattleWorld;
 use winit::event_loop::EventLoop;
 
 use crate::app::{App, Mode};
@@ -42,12 +42,6 @@ struct Args {
     /// Show localisation keys instead of strings (REQ-LOC-001 check).
     #[arg(long)]
     show_keys: bool,
-}
-
-fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("reading scenario {}", path.display()))?;
-    json5::from_str(&text).with_context(|| format!("parsing scenario {}", path.display()))
 }
 
 /// With the `dev` feature the app watches the mod folders and swaps
@@ -95,10 +89,15 @@ fn main() -> anyhow::Result<()> {
             .scenario
             .as_deref()
             .ok_or_else(|| anyhow!("a scenario file is required (or pass --bench-sprites)"))?;
-        let setup = load_setup(scenario)?;
-        let mut world = BattleWorld::new(&setup, regs.clone()).map_err(|e| anyhow!("{e}"))?;
+        let scenario = il_cli::load_scenario(scenario)?;
+        let mut world =
+            BattleWorld::new(&scenario.setup, regs.clone()).map_err(|e| anyhow!("{e}"))?;
         world.set_threads(args.threads);
-        Mode::Battle(Box::new(BattleSession::new(world, PlayerId(0))))
+        Mode::Battle(Box::new(BattleSession::new(
+            world,
+            PlayerId(0),
+            scenario.script(),
+        )))
     };
 
     let event_loop = EventLoop::new().context("creating the event loop")?;

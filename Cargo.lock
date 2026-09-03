@@ -1560,12 +1560,12 @@ dependencies = [
  "clap",
  "egui",
  "glam 0.33.6",
+ "il_cli",
  "il_core",
  "il_data",
  "il_render",
  "il_sim_battle",
  "il_ui",
- "json5",
  "winit",
 ]
 
@@ -1589,7 +1589,6 @@ dependencies = [
  "il_core",
  "il_data",
  "il_sim_battle",
- "json5",
  "png",
  "serde",
  "serde_json",
@@ -1668,7 +1667,6 @@ dependencies = [
  "il_core",
  "il_data",
  "il_sim_battle",
- "json5",
  "serde_json",
  "toml",
 ]

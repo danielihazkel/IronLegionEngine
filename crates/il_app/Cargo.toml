@@ -12,12 +12,12 @@ il_data.workspace = true
 il_sim_battle.workspace = true
 il_render.workspace = true
 il_ui.workspace = true
+il_cli.workspace = true
 egui.workspace = true
 winit.workspace = true
 glam.workspace = true
 clap.workspace = true
 anyhow.workspace = true
-json5.workspace = true
 
 [features]
 default = ["dev"]

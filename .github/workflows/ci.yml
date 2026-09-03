@@ -46,8 +46,10 @@ jobs:
       - name: Determinism proof (exit checklist)
         shell: pwsh
         run: |
-          cargo run --release -p il_cli -- run tests/scenarios/idle_1000.json5 --ticks 10000 --hash-every 1000 --hash-log a.hashlog
-          cargo run --release -p il_cli -- run tests/scenarios/idle_1000.json5 --ticks 10000 --hash-every 1000 --hash-log b.hashlog
-          if ((Get-Content a.hashlog | Measure-Object -Line).Lines -ne 10) { throw "expected ten hash lines" }
-          if ((Compare-Object (Get-Content a.hashlog) (Get-Content b.hashlog)).Count -ne 0) { throw "hash logs differ" }
-          Get-Content a.hashlog
+          foreach ($scenario in @("idle_1000", "move_reform_2000")) {
+            cargo run --release -p il_cli -- run tests/scenarios/$scenario.json5 --ticks 10000 --hash-every 1000 --hash-log a.hashlog
+            cargo run --release -p il_cli -- run tests/scenarios/$scenario.json5 --ticks 10000 --hash-every 1000 --threads 8 --hash-log b.hashlog
+            if ((Get-Content a.hashlog | Measure-Object -Line).Lines -ne 10) { throw "expected ten hash lines" }
+            if ((Compare-Object (Get-Content a.hashlog) (Get-Content b.hashlog)).Count -ne 0) { throw "hash logs differ for $scenario" }
+            Get-Content a.hashlog
+          }

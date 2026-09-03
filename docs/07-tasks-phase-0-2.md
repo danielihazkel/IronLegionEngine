@@ -332,11 +332,11 @@ flowchart LR
   `benches/` with criterion benches per stage at 2k, 10k, 20k soldiers using generated setups; a checked-in baseline JSON and a comparison script that fails at +20 %.
   **Done when** `cargo bench` produces per-stage numbers and the Phase 1 stages (2 to 7) sum to under 10 ms at 2k.
 
-- [ ] **T1-081 Scripted command-stream scenarios** · S · Refs REQ-TEST-002
+- [x] **T1-081 Scripted command-stream scenarios** · S · Refs REQ-TEST-002
   Scenario files may include a `commands` list; `il_cli run` feeds them; add `move_reform_2000.json5` (10 regiments, moves, formation changes, wheels) to the determinism set.
   **Done when** the determinism test covers it at 1 and 8 threads.
 
-- [ ] **T1-082 Mod override acceptance test** · S · Refs REQ-MOD-001, Phase 1 exit criterion
+- [x] **T1-082 Mod override acceptance test** · S · Refs REQ-MOD-001, Phase 1 exit criterion
   `tests/mods/speed_override/` with a manifest and a `units/hastati.json5` containing only `$override: "merge"` and `speed_walk`; a test loads `game/` plus this mod and asserts the registry value.
   **Done when** the test passes and the same mod folder changes speed in the running app.
 

@@ -94,7 +94,7 @@ Phase 0 pins (T0-003) are the versions in the table; later phases pin their own 
 | `winit` | 0.30.13 | window and input events | il_app, il_ui (event types) |
 | `egui`, `egui-wgpu`, `egui-winit` | 0.36.1 | UI (`egui-wgpu` paint pass lives in il_render) | il_ui, il_render |
 | `serde`, `serde_derive` | 1 | serialisation | all |
-| `json5` | 1.3 | scenario and frame-table parsing only; content goes through `il_data::json5`, a span-carrying parser written in T1-020 because per-field positions are needed for diagnostics and merge provenance (OQ-7 amended) | il_cli, il_render, il_app |
+| `json5` | 1.3 | test fixtures only since T1-081; scenarios and content go through `il_data::json5`, a span-carrying parser written in T1-020 because per-field positions are needed for diagnostics and merge provenance (OQ-7 amended) | il_sim_battle, il_render (dev-dependencies) |
 | `semver` | 1 | manifest versions and ranges | il_data |
 | `serde_json` | 1 | save headers, schema validation input | il_data, il_save |
 | `jsonschema` | 0.53 (`default-features = false`) | content validation, draft 2020-12 | il_data |
@@ -725,7 +725,7 @@ Tests: accumulator never runs more than the cap; pause records a `Pause` command
 | Replay verify | `il_cli replay --verify` on recorded replays in `tests/replays/` | nightly | REQ-SAVE-005 |
 | Cross-machine hash compare | manual runbook, `il_cli run --hash-log` on two machines and `il_cli desync-report` | before Phase 7 | REQ-TEST-006 |
 
-`il_cli` subcommands: `run <scenario.json5> --ticks N [--hash-every K] [--threads T] [--snapshot-at T]`, `bench`, `replay <file> --verify`, `validate <mods...>`, `desync-report <log_a> <log_b>`, `autoresolve <setup.json5>`, `genart [--mod-root]` (placeholder sprite sheets, T1-051), `genmap [--mod-root] [--id] [--seed]` (the deterministic Phase 1 test map and its heightmap, T1-030).
+`il_cli` subcommands: `run <scenario.json5> --ticks N [--hash-every K] [--threads T] [--snapshot-at T] [--restore-from F] [--mod DIR]...` (a scenario is a `BattleSetup` plus an optional `commands: [Command]` list fed by tick, T1-081; a restored run skips the commands up to the snapshot tick), `bench`, `replay <file> --verify`, `validate <mods...>`, `desync-report <log_a> <log_b>`, `autoresolve <setup.json5>`, `genart [--mod-root]` (placeholder sprite sheets, T1-051), `genmap [--mod-root] [--id] [--seed]` (the deterministic Phase 1 test map and its heightmap, T1-030).
 
 ## 18. Coding conventions and determinism checklist
 

@@ -306,7 +306,9 @@ mod tests {
     #[test]
     fn json5_is_a_valid_map_definition() {
         let text = map_json5("rome:test_field", "test_field", 7);
-        let v: serde_json::Value = json5::from_str(&text).unwrap();
+        let v: serde_json::Value = il_data::json5::parse_json5(&text, il_data::json5::FileId(0))
+            .unwrap()
+            .to_json();
         assert_eq!(v["id"], "rome:test_field");
         assert_eq!(v["zones"].as_array().unwrap().len(), ZONES.len());
         assert_eq!(v["deployment"].as_array().unwrap().len(), 2);

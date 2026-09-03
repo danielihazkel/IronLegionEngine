@@ -14,7 +14,8 @@ use std::sync::Arc;
 use anyhow::{Context, anyhow};
 use il_core::{StateHash, Tick};
 use il_data::Registries;
-use il_sim_battle::{BattleSetup, BattleWorld, Snapshot};
+use il_data::json5::{FileId, parse_json5};
+use il_sim_battle::{BattleSetup, BattleWorld, Scenario, Snapshot};
 
 /// Options of `il_cli run`.
 #[derive(Clone, Debug)]
@@ -55,11 +56,23 @@ impl RunOptions {
     }
 }
 
-/// Parses a scenario file into a `BattleSetup`.
-pub fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
+/// Parses a scenario file (a `BattleSetup` plus optional `commands`) with
+/// the engine's own JSON5 parser (T1-081).
+pub fn load_scenario(path: &Path) -> anyhow::Result<Scenario> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("reading scenario {}", path.display()))?;
-    json5::from_str(&text).with_context(|| format!("parsing scenario {}", path.display()))
+    parse_scenario(&text).with_context(|| format!("parsing scenario {}", path.display()))
+}
+
+/// [`load_scenario`] on text already in memory.
+pub fn parse_scenario(text: &str) -> anyhow::Result<Scenario> {
+    let value = parse_json5(text, FileId(0)).map_err(|e| anyhow!("{e}"))?;
+    serde_json::from_value(value.to_json()).map_err(|e| anyhow!("{e}"))
+}
+
+/// The setup half of a scenario file.
+pub fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
+    load_scenario(path).map(|s| s.setup)
 }
 
 /// Loads the registries from a mod root, turning diagnostics into an error
@@ -93,16 +106,21 @@ pub fn snapshot_path(scenario: &Path) -> PathBuf {
 /// log). The hash is 16 lower-case hex digits.
 pub fn run(opts: &RunOptions, out: &mut dyn Write) -> anyhow::Result<Vec<(Tick, StateHash)>> {
     let regs = load_registries_with_mods(&opts.content_root, &opts.mods)?;
-    let setup = load_setup(&opts.scenario)?;
+    let scenario = load_scenario(&opts.scenario)?;
+    let mut script = scenario.script();
 
     let mut world = match &opts.restore_from {
         Some(path) => {
             let bytes = std::fs::read(path)
                 .with_context(|| format!("reading snapshot {}", path.display()))?;
             let snap = Snapshot::from_bytes(&bytes)?;
-            BattleWorld::restore(&snap, regs)?
+            let world = BattleWorld::restore(&snap, regs)?;
+            // Commands up to the restored tick were consumed by the run
+            // that wrote the snapshot.
+            script.take_for(world.tick());
+            world
         }
-        None => BattleWorld::new(&setup, regs)?,
+        None => BattleWorld::new(&scenario.setup, regs)?,
     };
     world.set_threads(opts.threads);
 
@@ -116,7 +134,8 @@ pub fn run(opts: &RunOptions, out: &mut dyn Write) -> anyhow::Result<Vec<(Tick, 
 
     let mut hashes = Vec::new();
     while world.tick().0 < opts.ticks {
-        let step = world.step(&[]);
+        let commands = script.take_for(world.tick().next());
+        let step = world.step(&commands);
         let tick = world.tick();
         if opts.hash_every > 0 && tick.0 % opts.hash_every == 0 {
             hashes.push((tick, step.hash));

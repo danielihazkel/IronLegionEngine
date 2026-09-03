@@ -1,12 +1,13 @@
 //! T0-050: determinism over every scenario (REQ-TEST-002, TDD §17).
 //!
 //! For each file in `tests/scenarios/`: run 10,000 ticks with 1 thread and
-//! with 8 threads and compare the per-tick hash vectors; snapshot the
-//! 1-thread run at tick 5,000, restore into a fresh world, run to 10,000 and
-//! compare the tail. Failures name the first divergent tick.
+//! with 8 threads, feeding the scenario's scripted commands (T1-081), and
+//! compare the per-tick hash vectors; snapshot the 1-thread run at tick
+//! 5,000, restore into a fresh world, run to 10,000 and compare the tail.
+//! Failures name the first divergent tick.
 
 use il_core::StateHash;
-use il_sim_battle::{BattleWorld, Snapshot};
+use il_sim_battle::{BattleWorld, ScriptedCommands, Snapshot};
 use il_tests::{game_regs, load_scenario, scenario_files};
 
 const TICKS: u32 = 10_000;
@@ -21,11 +22,20 @@ fn first_divergence(a: &[StateHash], b: &[StateHash], offset: u32) -> Option<u32
         .or_else(|| (a.len() != b.len()).then_some(offset + a.len().min(b.len()) as u32 + 1))
 }
 
-/// Runs `world` up to `until` completed ticks, returning one hash per tick.
-fn run_to(world: &mut BattleWorld, until: u32) -> Vec<StateHash> {
+/// Runs `world` up to `until` completed ticks feeding `script`, returning
+/// one hash per tick.
+fn run_to(world: &mut BattleWorld, script: &mut ScriptedCommands, until: u32) -> Vec<StateHash> {
     let mut hashes = Vec::with_capacity((until - world.tick().0) as usize);
     while world.tick().0 < until {
-        hashes.push(world.step(&[]).hash);
+        let commands = script.take_for(world.tick().next());
+        let out = world.step(&commands);
+        assert!(
+            out.rejected.is_empty(),
+            "tick {}: rejected {:?}",
+            world.tick().0,
+            out.rejected
+        );
+        hashes.push(out.hash);
     }
     hashes
 }
@@ -35,29 +45,32 @@ fn every_scenario_is_deterministic_across_threads_and_restore() {
     let regs = game_regs();
     for path in scenario_files() {
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
-        let setup = load_scenario(&path);
+        let scenario = load_scenario(&path);
+        let setup = &scenario.setup;
 
         // Reference run: one thread, snapshot at the midpoint.
-        let mut reference = BattleWorld::new(&setup, regs.clone()).unwrap();
+        let mut reference = BattleWorld::new(setup, regs.clone()).unwrap();
         reference.set_threads(1);
-        let mut ref_hashes = run_to(&mut reference, SNAPSHOT_AT);
+        let mut script = scenario.script();
+        let mut ref_hashes = run_to(&mut reference, &mut script, SNAPSHOT_AT);
         let snapshot_bytes = reference.snapshot().to_bytes();
-        ref_hashes.extend(run_to(&mut reference, TICKS));
+        ref_hashes.extend(run_to(&mut reference, &mut script, TICKS));
         assert_eq!(ref_hashes.len(), TICKS as usize);
+        assert_eq!(script.remaining(), 0, "{name}: commands left unfed");
 
         // Same again on one thread: the run must reproduce itself.
-        let mut again = BattleWorld::new(&setup, regs.clone()).unwrap();
+        let mut again = BattleWorld::new(setup, regs.clone()).unwrap();
         again.set_threads(1);
-        let again_hashes = run_to(&mut again, TICKS);
+        let again_hashes = run_to(&mut again, &mut scenario.script(), TICKS);
         if let Some(t) = first_divergence(&ref_hashes, &again_hashes, 0) {
             panic!("{name}: two 1-thread runs diverge at tick {t}");
         }
 
         // Multi-threaded executor.
-        let mut threaded = BattleWorld::new(&setup, regs.clone()).unwrap();
+        let mut threaded = BattleWorld::new(setup, regs.clone()).unwrap();
         threaded.set_threads(THREADS);
         assert_eq!(threaded.threads(), THREADS);
-        let threaded_hashes = run_to(&mut threaded, TICKS);
+        let threaded_hashes = run_to(&mut threaded, &mut scenario.script(), TICKS);
         if let Some(t) = first_divergence(&ref_hashes, &threaded_hashes, 0) {
             panic!("{name}: 1-thread and {THREADS}-thread runs diverge at tick {t}");
         }
@@ -72,7 +85,9 @@ fn every_scenario_is_deterministic_across_threads_and_restore() {
             "{name}: hash(restore(snapshot)) differs at tick {SNAPSHOT_AT}"
         );
         restored.set_threads(THREADS);
-        let tail = run_to(&mut restored, TICKS);
+        let mut script = scenario.script();
+        script.take_for(restored.tick());
+        let tail = run_to(&mut restored, &mut script, TICKS);
         if let Some(t) = first_divergence(&ref_hashes[SNAPSHOT_AT as usize..], &tail, SNAPSHOT_AT) {
             panic!("{name}: restored run diverges from the uninterrupted run at tick {t}");
         }

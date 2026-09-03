@@ -11,12 +11,9 @@ il_data.workspace = true
 il_sim_battle.workspace = true
 clap.workspace = true
 anyhow.workspace = true
-json5.workspace = true
 serde.workspace = true
-png.workspace = true
-
-[dev-dependencies]
 serde_json.workspace = true
+png.workspace = true
 
 [lints]
 workspace = true

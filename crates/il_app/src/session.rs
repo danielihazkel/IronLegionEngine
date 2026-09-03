@@ -6,7 +6,9 @@
 //! and peers see it (SIM-DET-008).
 
 use il_core::{PlayerId, TICK_SECONDS, Tick};
-use il_sim_battle::{BattleWorld, Command, CommandKind, NoopObserver, StageObserver, StepOutput};
+use il_sim_battle::{
+    BattleWorld, Command, CommandKind, NoopObserver, ScriptedCommands, StageObserver, StepOutput,
+};
 
 /// Wall seconds per simulation tick, as the accumulator's type.
 pub const TICK: f64 = TICK_SECONDS as f64;
@@ -25,12 +27,14 @@ pub struct BattleSession {
     next_seq: u16,
     /// Commands queued this frame, stamped for the tick they will run in.
     pending: Vec<Command>,
+    /// The scenario's scripted stream, fed tick by tick (T1-081).
+    script: ScriptedCommands,
     /// Every command handed to the sim, in order: the replay-to-be (T2-101).
     command_log: Vec<Command>,
 }
 
 impl BattleSession {
-    pub fn new(world: BattleWorld, local_player: PlayerId) -> Self {
+    pub fn new(world: BattleWorld, local_player: PlayerId, script: ScriptedCommands) -> Self {
         Self {
             world,
             accumulator: 0.0,
@@ -40,6 +44,7 @@ impl BattleSession {
             input_delay: 0,
             next_seq: 0,
             pending: Vec::new(),
+            script,
             command_log: Vec::new(),
         }
     }
@@ -111,9 +116,10 @@ impl BattleSession {
 
     fn step_once(&mut self, observer: &mut dyn StageObserver) -> StepOutput {
         let next = self.world.tick().next();
-        let (now, later): (Vec<Command>, Vec<Command>) =
+        let (mut now, later): (Vec<Command>, Vec<Command>) =
             self.pending.drain(..).partition(|c| c.tick <= next);
         self.pending = later;
+        now.extend(self.script.take_for(next));
         self.command_log.extend(now.iter().cloned());
         self.world.step_observed(&now, observer)
     }
@@ -139,7 +145,7 @@ mod tests {
 
     fn session() -> BattleSession {
         let world = BattleWorld::empty(42, Arc::new(Registries::default()), BattlePhase::Battle);
-        BattleSession::new(world, PlayerId(0))
+        BattleSession::new(world, PlayerId(0), ScriptedCommands::default())
     }
 
     #[test]

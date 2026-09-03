@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use il_data::Registries;
-use il_sim_battle::BattleSetup;
+use il_sim_battle::Scenario;
 
 pub fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -39,8 +39,8 @@ pub fn scenario_files() -> Vec<PathBuf> {
     files
 }
 
-pub fn load_scenario(path: &Path) -> BattleSetup {
-    il_cli::load_setup(path).unwrap_or_else(|e| panic!("{e:#}"))
+pub fn load_scenario(path: &Path) -> Scenario {
+    il_cli::load_scenario(path).unwrap_or_else(|e| panic!("{e:#}"))
 }
 
 pub fn game_regs() -> Arc<Registries> {

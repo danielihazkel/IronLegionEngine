@@ -1,12 +1,15 @@
 //! The campaign ↔ battle contract: `BattleSetup` in, `BattleResult` out
 //! (TDD §4.2 `interface`, SAD §6.4, SIM-FLOW-019, REQ-SIM-060..063).
 //!
-//! Plain serialisable structs. A scenario file is a `BattleSetup` in JSON5;
-//! optional fields default so minimal files stay short.
+//! Plain serialisable structs. A scenario file is a [`Scenario`] in JSON5:
+//! a `BattleSetup` plus optional `commands`; optional fields default so
+//! minimal files stay short.
 
-use il_core::PlayerId;
+use il_core::{PlayerId, Tick};
 use il_data::ContentId;
 use serde::{Deserialize, Serialize};
+
+use crate::command::Command;
 
 /// SIM-CORE-006, REQ-PERF-004.
 pub const SOLDIER_CAP: u32 = 32_768;
@@ -124,6 +127,57 @@ impl BattleSetup {
             })
             .map(|r| u32::from(r.count))
             .sum()
+    }
+}
+
+/// A scenario file (T1-081, REQ-TEST-002): a `BattleSetup` plus an optional
+/// scripted command stream that `il_cli run` and `il_app` feed to the sim
+/// tick by tick. Commands may appear in any order; they are sorted by
+/// `(tick, player, seq)` when the script is built.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Scenario {
+    #[serde(flatten)]
+    pub setup: BattleSetup,
+    #[serde(default)]
+    pub commands: Vec<Command>,
+}
+
+impl Scenario {
+    /// The command stream as a tick-ordered script.
+    pub fn script(&self) -> ScriptedCommands {
+        ScriptedCommands::new(self.commands.clone())
+    }
+}
+
+/// A tick-ordered command stream handed to `step` one tick at a time.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScriptedCommands {
+    commands: Vec<Command>,
+    next: usize,
+}
+
+impl ScriptedCommands {
+    pub fn new(mut commands: Vec<Command>) -> Self {
+        commands.sort_by_key(|c| (c.tick, c.player, c.seq));
+        Self { commands, next: 0 }
+    }
+
+    /// Every command stamped `tick` or earlier that has not been taken yet
+    /// (stale ones are still handed over, so the sim rejects them visibly).
+    pub fn take_for(&mut self, tick: Tick) -> Vec<Command> {
+        let start = self.next;
+        while self.next < self.commands.len() && self.commands[self.next].tick <= tick {
+            self.next += 1;
+        }
+        self.commands[start..self.next].to_vec()
+    }
+
+    pub fn remaining(&self) -> usize {
+        self.commands.len() - self.next
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.commands.is_empty()
     }
 }
 

@@ -1,0 +1,57 @@
+// Phase 1 determinism scenario (T1-081): ten regiments, 2,000 soldiers, on
+// the test map with a scripted command stream over 10,000 ticks (500 s):
+// moves across the river (bridge and ford, column morphs), formation
+// changes, wheels and an about-face, a group battle line, a halt.
+//
+// Commands are `{ tick, player, seq, kind: { <Variant>: { ... } } }`;
+// points are `{ x, y }` in metres, facings in radians (0 = +x, π/2 = +y),
+// speed modes "Walk" | "Run" | "March".
+{
+  map_id: "rome:test_field",
+  seed: 7,
+  sides: [
+    {
+      faction: "rome:rome",
+      player: 0,
+      deployment_zone: 0,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1,  unit_type: "rome:hastati",   count: 250, position: [80, 120],  facing_deg: 90 },
+        { id: 2,  unit_type: "rome:hastati",   count: 250, position: [150, 120], facing_deg: 90 },
+        { id: 3,  unit_type: "rome:hastati",   count: 250, position: [220, 120], facing_deg: 90 },
+        { id: 4,  unit_type: "rome:hastati",   count: 250, position: [290, 120], facing_deg: 90 },
+        { id: 5,  unit_type: "rome:velites",   count: 150, position: [360, 120], facing_deg: 90 },
+        { id: 6,  unit_type: "rome:velites",   count: 150, position: [430, 120], facing_deg: 90 },
+        { id: 7,  unit_type: "greece:hoplite", count: 200, position: [500, 120], facing_deg: 90 },
+        { id: 8,  unit_type: "greece:hoplite", count: 200, position: [570, 120], facing_deg: 90 },
+        { id: 9,  unit_type: "persia:cavalry", count: 150, position: [640, 120], facing_deg: 90 },
+        { id: 10, unit_type: "persia:cavalry", count: 150, position: [710, 120], facing_deg: 90 },
+      ],
+    },
+  ],
+  commands: [
+    // 1 s: everyone south across the river at a run; the western regiments
+    // funnel over the bridge (x = 400), the eastern ones over the ford (x ≈ 650).
+    { tick: 20, player: 0, seq: 0, kind: { Move: { regiments: [0, 1, 2, 3], target: { x: 250, y: 470 }, facing: 4.712389, speed: "Run" } } },
+    { tick: 20, player: 0, seq: 1, kind: { Move: { regiments: [4, 5], target: { x: 420, y: 480 }, facing: 4.712389, speed: "Run" } } },
+    { tick: 20, player: 0, seq: 2, kind: { Move: { regiments: [6, 7], target: { x: 560, y: 470 }, facing: 4.712389, speed: "Run" } } },
+    { tick: 20, player: 0, seq: 3, kind: { Move: { regiments: [8, 9], target: { x: 720, y: 470 }, facing: 4.712389, speed: "Run" } } },
+    // 100 s: the hoplites into a phalanx, the cavalry into wedges.
+    { tick: 2000, player: 0, seq: 0, kind: { SetFormation: { regiments: [6, 7], template: "rome:phalanx", ranks: null } } },
+    { tick: 2000, player: 0, seq: 1, kind: { SetFormation: { regiments: [8, 9], template: "rome:wedge", ranks: null } } },
+    { tick: 2000, player: 0, seq: 2, kind: { SetSpeedMode: { regiments: [0, 1, 2, 3], mode: "Walk" } } },
+    // 175 s: wheels and an about-face.
+    { tick: 3500, player: 0, seq: 0, kind: { SetFacing: { regiments: [0, 1], facing: 3.926991 } } },
+    { tick: 3500, player: 0, seq: 1, kind: { SetFacing: { regiments: [2, 3], facing: 1.570796 } } },
+    // 250 s: a battle line 300 m wide facing north, just south of the river.
+    { tick: 5000, player: 0, seq: 0, kind: { GroupFormation: { regiments: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], template: "rome:battle_line", anchor: { x: 400, y: 420 }, facing: 1.570796, width: 300 } } },
+    // 350 s: half the line marches back north over the crossings in loose order.
+    { tick: 7000, player: 0, seq: 0, kind: { SetFormation: { regiments: [0, 1, 4, 5], template: "rome:loose", ranks: 3 } } },
+    { tick: 7000, player: 0, seq: 1, kind: { Move: { regiments: [0, 1, 4, 5], target: { x: 350, y: 180 }, facing: 1.570796, speed: "Run" } } },
+    { tick: 7000, player: 0, seq: 2, kind: { AttackMove: { regiments: [8, 9], target: { x: 700, y: 160 } } } },
+    // 425 s: halt whoever is still moving; a stale command for the record.
+    { tick: 8500, player: 0, seq: 0, kind: { Halt: { regiments: [0, 1, 4, 5, 8, 9] } } },
+    { tick: 8500, player: 0, seq: 1, kind: { SetFormation: { regiments: [2, 3], template: "rome:column", ranks: null } } },
+    { tick: 9000, player: 0, seq: 0, kind: { Move: { regiments: [2, 3], target: { x: 300, y: 300 }, facing: null, speed: "March" } } },
+  ],
+}
