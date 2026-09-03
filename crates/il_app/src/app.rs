@@ -1,5 +1,5 @@
 //! The winit application handler: window, renderer, input, frame loop
-//! (T1-050, T1-051, T1-052, T1-061).
+//! (T1-050, T1-051, T1-052, T1-061, T1-062).
 //!
 //! Every key and mouse gesture goes through `il_ui::InputState` and the
 //! `Bindings` loaded from `content/input/bindings.json5`; nothing here names
@@ -17,10 +17,12 @@ use il_render::{
     Renderer, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_debug_lines, build_snapshot,
     deployment_outlines, ground_height, scene_from_snapshot,
 };
-use il_sim_battle::BattleView;
+use il_sim_battle::{BattleView, SpeedMode};
 use il_ui::{
-    Action, Bindings, Gesture, InputState, Selection, UiContext, own_regiments, pick_regiment,
+    Action, Bindings, DragFormation, Gesture, InputState, OrderContext, Selection, UiContext,
+    UiIntent, commands_for, drag_formation, drag_formation_preview, own_regiments, pick_regiment,
     profiler_overlay, regiments_in_box, regiments_of_type_on_screen, selection_box,
+    selection_centroid,
 };
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -46,6 +48,12 @@ const CAMERA_FIT_MARGIN_M: f32 = 60.0;
 /// Speed multiplier range for the speed keys.
 const MIN_SPEED: f32 = 0.125;
 const MAX_SPEED: f32 = 8.0;
+/// Length of the drag preview's facing arrow as a fraction of the drag width.
+const PREVIEW_ARROW_FRACTION: f32 = 0.25;
+/// The preview arrow is never shorter than this many metres.
+const PREVIEW_ARROW_MIN_M: f32 = 6.0;
+/// Highest formation hotkey the app polls (`formation_1`..`formation_9`).
+const FORMATION_HOTKEYS: u8 = 9;
 /// Developer tooling compiled in (`dev` feature): profiler and debug overlays.
 const DEV: bool = cfg!(feature = "dev");
 
@@ -66,6 +74,8 @@ pub struct App {
     input: InputState,
     bindings: Bindings,
     selection: Selection,
+    /// The run toggle: new movement orders run instead of walk.
+    run: bool,
     profiler: Profiler,
     show_profiler: bool,
     /// Debug overlays (T1-054), `dev` builds only.
@@ -113,6 +123,7 @@ impl App {
             input: InputState::new(),
             bindings,
             selection: Selection::new(),
+            run: false,
             profiler: Profiler::default(),
             show_profiler: DEV,
             debug: DebugFlags::default(),
@@ -360,6 +371,98 @@ impl App {
         self.selection.retain(|id| own.contains(&id));
     }
 
+    /// Orders (REQ-INP-003): right click moves, right drag lays a line
+    /// (T1-062 gesture), halt, run toggle, formation hotkeys. Every intent
+    /// becomes Commands queued on the session (REQ-INP-006).
+    fn apply_order_input(&mut self) {
+        let screen = self.screen();
+        let Some(camera) = self.camera else {
+            return;
+        };
+        if self.selection.is_empty() {
+            return;
+        }
+        let Mode::Battle(session) = &mut self.mode else {
+            return;
+        };
+        let b = &self.bindings;
+        let input = &self.input;
+        let unproject = |p: Vec2| camera.screen_to_world(p, screen);
+        let mut intents: Vec<UiIntent> = Vec::new();
+        if let Some(Gesture::DragEnd { from, to, .. }) =
+            input.gesture(b, Action::OrderDragFormation)
+        {
+            let centroid = selection_centroid(&session.world.view(), &self.selection.regiments)
+                .unwrap_or(unproject(from));
+            let flip = input.held(b, Action::OrderFlipFacing);
+            if let Some(drag) = drag_formation(unproject(from), unproject(to), centroid, flip) {
+                intents.push(UiIntent::DragFormation(drag));
+            }
+        } else if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::OrderMove) {
+            intents.push(UiIntent::Move {
+                target: unproject(pos),
+            });
+        }
+        if input.pressed(b, Action::OrderHalt) {
+            intents.push(UiIntent::Halt);
+        }
+        if input.pressed(b, Action::ToggleRun) {
+            self.run = !self.run;
+            intents.push(UiIntent::SpeedMode(speed_mode(self.run)));
+        }
+        for n in 1..=FORMATION_HOTKEYS {
+            if input.pressed(b, Action::Formation(n)) {
+                intents.push(UiIntent::Formation(n));
+            }
+        }
+        if intents.is_empty() {
+            return;
+        }
+        let mut kinds = Vec::new();
+        {
+            let view = session.world.view();
+            let ctx = OrderContext {
+                view: &view,
+                regiments: &self.selection.regiments,
+                speed: speed_mode(self.run),
+            };
+            for intent in &intents {
+                kinds.extend(commands_for(intent, &ctx));
+            }
+        }
+        for kind in kinds {
+            session.queue(kind);
+        }
+    }
+
+    /// The drag-formation preview (line and facing arrow) while the right
+    /// button is down, in screen pixels.
+    fn drag_preview(&self) -> Option<(Vec2, Vec2, Vec2)> {
+        let Mode::Battle(session) = &self.mode else {
+            return None;
+        };
+        let camera = self.camera?;
+        let drag = self
+            .input
+            .drag(&self.bindings, Action::OrderDragFormation)?;
+        if self.selection.is_empty() {
+            return None;
+        }
+        let screen = self.screen();
+        let from = camera.screen_to_world(drag.from, screen);
+        let to = camera.screen_to_world(drag.to, screen);
+        let centroid =
+            selection_centroid(&session.world.view(), &self.selection.regiments).unwrap_or(from);
+        let flip = self.input.held(&self.bindings, Action::OrderFlipFacing);
+        let DragFormation {
+            anchor,
+            forward,
+            width,
+        } = drag_formation(from, to, centroid, flip)?;
+        let tip = anchor + forward * (width * PREVIEW_ARROW_FRACTION).max(PREVIEW_ARROW_MIN_M);
+        Some((drag.from, drag.to, camera.world_to_screen(tip, 0.0, screen)))
+    }
+
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
         let now = Instant::now();
         let dt = self
@@ -370,6 +473,7 @@ impl App {
         self.apply_camera_input(dt as f32);
         self.apply_toggles();
         self.apply_selection_input();
+        self.apply_order_input();
         let screen = self.screen();
         let time = self.started.elapsed().as_secs_f32();
 
@@ -455,6 +559,7 @@ impl App {
             .drag(&self.bindings, Action::BoxSelect)
             .or_else(|| self.input.drag(&self.bindings, Action::BoxSelectAdd))
             .map(|d| (d.from, d.to));
+        let drag_preview = self.drag_preview();
         let mut ui_out = match (self.ui.as_mut(), self.window.as_ref(), &self.mode) {
             (Some(ui), Some(window), Mode::Battle(session)) => {
                 let mut stats = self.profiler.stats();
@@ -469,6 +574,9 @@ impl App {
                     }
                     if let Some((from, to)) = box_drag {
                         selection_box(ctx, from, to);
+                    }
+                    if let Some((from, to, tip)) = drag_preview {
+                        drag_formation_preview(ctx, from, to, tip);
                     }
                 }))
             }
@@ -516,13 +624,14 @@ impl App {
                 };
                 let cam = self.camera.unwrap_or_else(|| Camera::new(Vec2::ZERO));
                 format!(
-                    "Iron Legion — tick {} — {}/{} soldiers drawn — sim {:.2} ms/tick — speed x{:.2} — {} selected — {} commands — zoom {:.1} px/m rot {}{}",
+                    "Iron Legion — tick {} — {}/{} soldiers drawn — sim {:.2} ms/tick — speed x{:.2} — {} selected{} — {} commands — zoom {:.1} px/m rot {}{}",
                     session.world.tick().0,
                     self.snapshot.counts.visible_soldiers,
                     self.snapshot.counts.soldiers,
                     per_tick_ms,
                     session.speed(),
                     self.selection.len(),
+                    if self.run { " (run)" } else { "" },
                     session.command_log().len(),
                     cam.zoom,
                     cam.rotation,
@@ -572,6 +681,10 @@ impl Picker<'_, '_> {
     fn in_box(&self, a: Vec2, b: Vec2) -> std::collections::BTreeSet<RegimentId> {
         regiments_in_box(self.view, &self.project(), self.player, a, b)
     }
+}
+
+fn speed_mode(run: bool) -> SpeedMode {
+    if run { SpeedMode::Run } else { SpeedMode::Walk }
 }
 
 /// ` — dbg: nav slots` for the enabled overlays, empty when none.

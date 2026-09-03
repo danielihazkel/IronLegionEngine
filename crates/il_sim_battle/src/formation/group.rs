@@ -163,6 +163,20 @@ fn place_line(
     }
 }
 
+/// SIM-FORM-042 for a single regiment (the drag-formation gesture on one
+/// regiment, TDD §11): the fewest ranks in `[min_ranks, max_ranks]` whose
+/// width fits `width × (1 + tolerance)`, deepening one rank at a time; the
+/// deepest allowed when nothing fits.
+pub fn ranks_for_width(t: &FormationTemplate, count: u16, radius: S, width: S, tolerance: S) -> u8 {
+    let deepest = effective_ranks(t, count, Some(u8::MAX));
+    let limit = width * (S::ONE + tolerance);
+    let mut ranks = effective_ranks(t, count, Some(1));
+    while ranks < deepest && formation_width(t, files_for(count, ranks), radius) > limit {
+        ranks += 1;
+    }
+    ranks
+}
+
 /// SIM-FORM-040..042: anchor, facing and ranks per regiment for `t`.
 pub fn arrange_group(
     t: &GroupFormationTemplate,

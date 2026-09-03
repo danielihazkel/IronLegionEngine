@@ -7,7 +7,9 @@ pub mod layout;
 pub mod systems;
 
 pub use assign::{AssignScratch, AssignSoldier, assign_slots, frame, local_to_world, slot_world};
-pub use group::{Placement, RegimentInfo, arrange_group, arranged_width, lateral_order};
+pub use group::{
+    Placement, RegimentInfo, arrange_group, arranged_width, lateral_order, ranks_for_width,
+};
 pub use layout::{
     LayoutFn, Slot, effective_ranks, files_for, files_used, layout_for, layout_slots, ranks_used,
     spacing,

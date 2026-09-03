@@ -316,7 +316,7 @@ flowchart LR
   `InputState` from winit events; `content/input/bindings.json5` loaded through `il_data`; `Selection` with click, shift-click, box select, double-click by type, control groups; camera bindings.
   **Done when** the bindings file can rebind box-select to a different modifier without code changes.
 
-- [ ] **T1-062 Orders and the drag-formation gesture** · M · Refs REQ-INP-003, REQ-INP-006, SIM-FORM-042, TDD §11
+- [x] **T1-062 Orders and the drag-formation gesture** · M · Refs REQ-INP-003, REQ-INP-006, SIM-FORM-042, TDD §11
   Right-click move; right-drag to facing and width producing `GroupFormation` or `Move` + `SetFormation`; formation template hotkeys; halt; run toggle; every intent becomes a `Command` stamped `tick + input_delay` with a per-player `seq`.
   **Done when** a gesture unit test maps drag vectors to facing and width and a manual test moves 10 regiments into a battle line facing the drag direction.
 
