@@ -37,7 +37,7 @@ jobs:
       - name: Test
         run: cargo test --workspace
 
-            - name: Build the app without developer tooling
+      - name: Build the app without developer tooling
         run: cargo build -p il_app --no-default-features
 
       - name: Validate the flagship content (REQ-TEST-005)
