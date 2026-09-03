@@ -8,7 +8,7 @@ use il_core::{Angle, S, Scalar, Tick, V2};
 use il_data::{ContentId, Handle, Registries, UnitType};
 
 use crate::components::{
-    Anchor, Body, Facing, FatigueC, Fsm, Health, Morale, MoraleState, Order, Pos, PrevFacing,
+    Anchor, Body, Facing, FatigueC, Fsm, Health, Morale, MoraleState, Order, Path, Pos, PrevFacing,
     PrevPos, Regiment, SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
@@ -192,6 +192,7 @@ pub(crate) fn spawn_regiment(
                 state: MoraleState::Steady,
             },
             Order::default(),
+            Path::default(),
         ))
         .id();
     world

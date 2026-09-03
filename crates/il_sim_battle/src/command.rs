@@ -14,9 +14,10 @@ use crate::components::{Order, OrderKind, Regiment};
 use crate::events::BattleEvent;
 use crate::resources::{Clock, CommandInbox, Events, Ids, Rejected, Sides};
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum SpeedMode {
+    #[default]
     Walk = 0,
     Run = 1,
     March = 2,

@@ -10,6 +10,8 @@ use il_core::{
 use il_data::{Handle, UnitCategory, UnitType};
 use serde::{Deserialize, Serialize};
 
+use crate::command::SpeedMode;
+
 // ---------------------------------------------------------------- soldiers
 
 #[derive(Component, Clone, Debug)]
@@ -148,10 +150,55 @@ pub enum OrderKind {
 }
 impl_hashable_fieldless_enum!(OrderKind);
 
-/// Current order; target, speed and `since` arrive with movement (T1-042).
+impl OrderKind {
+    /// Orders that take the regiment somewhere (need a path).
+    pub fn moves(self) -> bool {
+        matches!(self, OrderKind::Move | OrderKind::AttackMove)
+    }
+}
+
+/// The regiment's current order (SIM-CORE-005). `target` and `facing` are
+/// read by the movement systems; `since` is the tick it was issued.
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
 pub struct Order {
     pub kind: OrderKind,
+    pub target: V2,
+    /// Facing to take on arrival, if the order gave one (SIM-MOVE-013).
+    pub facing: Option<Angle<S>>,
+    pub speed: SpeedMode,
+    pub since: Tick,
+}
+
+/// One point of a regiment path with the passable corridor width through
+/// its nav cell (SIM-MOVE-004: a regiment wider than `corridor` morphs to
+/// Column for it).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Waypoint {
+    pub p: V2,
+    pub corridor: S,
+}
+
+/// The string-pulled route of a regiment (SIM-MOVE-002). `waypoints[0]` is
+/// the anchor position at request time; `next` indexes the waypoint the
+/// anchor moves toward; `requested` marks a pending `PathRequests` entry.
+/// Stored and snapshotted rather than re-requested, so a restored run
+/// follows the same route (SIM-DET-005).
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct Path {
+    pub waypoints: Vec<Waypoint>,
+    pub next: u16,
+    pub requested: bool,
+}
+
+impl Path {
+    /// Whether there is a waypoint left to reach.
+    pub fn is_active(&self) -> bool {
+        usize::from(self.next) < self.waypoints.len()
+    }
+
+    pub fn current(&self) -> Option<&Waypoint> {
+        self.waypoints.get(usize::from(self.next))
+    }
 }
 
 // ------------------------------------------------------------------ hashing
@@ -164,6 +211,8 @@ impl_hashable_struct!(FatigueC { f });
 impl_hashable_struct!(SlotRef { slot });
 impl_hashable_struct!(Anchor { pos, facing });
 impl_hashable_struct!(Morale { m, state });
+// Only the kind is hashed until T1-047 fixes the final regiment layout
+// (target, facing, speed, since and the path join then).
 impl_hashable_struct!(Order { kind });
 
 impl Hashable for Fsm {

@@ -244,7 +244,7 @@ flowchart LR
   `SpatialGrid` with linked-cell buckets, `rebuild` from id-sorted entries, `query_circle` returning ascending ids, `for_each_pair` half-neighbourhood, plus the 16 m anchor grid. Stage 6 rebuild system.
   **Done when** brute-force equivalence tests pass and rebuild of 32k entries is under 0.5 ms in a benchmark.
 
-- [ ] **T1-032 Nav grid and A\*** · M · Refs SIM-MOVE-001, SIM-MOVE-002, SIM-MOVE-005, TDD §6.1, REQ-PATH-002
+- [x] **T1-032 Nav grid and A\*** · M · Refs SIM-MOVE-001, SIM-MOVE-002, SIM-MOVE-005, TDD §6.1, REQ-PATH-002
   `NavGrid::from_map` with impassable cells (rock, river outside crossings, walls, closed gates) and integer costs; `AStar` with integer octile heuristic, epoch-based closed set, node-index tie-break; `string_pull`; `Pathfinder` trait; `PathRequests` served `paths_per_tick` per tick in ascending regiment id at Stage 3.
   **Done when** A\* equals Dijkstra cost on random grids; string-pulled paths never cross impassable cells; the same request gives the same path across threads.
 

@@ -1,5 +1,6 @@
 //! ECS resources of the battle world (TDD §4.4, Phase 0 subset).
 
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use bevy_ecs::prelude::*;
@@ -15,6 +16,7 @@ use crate::command::{Command, RejectReason};
 use crate::events::BattleEvent;
 use crate::interface::BattleSetup;
 use crate::map::LoadedMap;
+use crate::nav::{AStar, NavGrid};
 use crate::spatial::SpatialGrid;
 
 /// The tick being simulated is `tick + 1`; `tick` counts completed ticks.
@@ -126,6 +128,20 @@ pub struct SpatialGridRes(pub SpatialGrid<SoldierId>);
 /// queries (TDD §5).
 #[derive(Resource, Clone)]
 pub struct AnchorGridRes(pub SpatialGrid<RegimentId>);
+
+/// The nav grid derived from the map (TDD §6.1); rebuilt on restore and
+/// when gates change (Phase 5).
+#[derive(Resource, Clone)]
+pub struct NavGridRes(pub NavGrid);
+
+/// The path search (`AStar` in Phase 1, HPA* from Phase 3).
+#[derive(Resource, Default)]
+pub struct PathfinderRes(pub AStar);
+
+/// Regiments waiting for a path, served ascending, `paths_per_tick` per
+/// tick (SIM-MOVE-005). Derived: rebuilt from `Path.requested` on restore.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct PathRequests(pub BTreeSet<RegimentId>);
 
 // Rules are `il_data::Rules`, read through `Regs.0.rules` (T1-023), so a
 // registry swap (hot reload) carries new tunables too.

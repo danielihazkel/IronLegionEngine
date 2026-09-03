@@ -12,9 +12,10 @@ use il_core::{Angle, IdAllocator, RegimentId, S, SoldierId, Tick, V2};
 use il_data::{ContentId, Registries};
 use serde::{Deserialize, Serialize};
 
+use crate::command::SpeedMode;
 use crate::components::{
-    Anchor, Body, Facing, FatigueC, Fsm, Health, Morale, MoraleState, Order, OrderKind, Pos,
-    PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState, Vel,
+    Anchor, Body, Facing, FatigueC, Fsm, Health, Morale, MoraleState, Order, OrderKind, Path, Pos,
+    PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState, Vel, Waypoint,
 };
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, MapError};
@@ -36,6 +37,14 @@ pub struct RegimentSnap {
     pub morale: S,
     pub morale_state: MoraleState,
     pub order: OrderKind,
+    pub order_target: V2,
+    pub order_facing: Option<Angle<S>>,
+    pub order_speed: SpeedMode,
+    pub order_since: Tick,
+    /// The stored route (SIM-DET-005 as amended in T1-032).
+    pub path: Vec<Waypoint>,
+    pub path_next: u16,
+    pub path_requested: bool,
     pub ammo: u16,
 }
 
@@ -146,6 +155,7 @@ impl BattleWorld {
                 let anchor = world.get::<Anchor>(*entity).expect("anchor");
                 let morale = world.get::<Morale>(*entity).expect("morale");
                 let order = world.get::<Order>(*entity).expect("order");
+                let path = world.get::<Path>(*entity).expect("path");
                 debug_assert_eq!(*id, r.id);
                 RegimentSnap {
                     id: r.id,
@@ -157,6 +167,13 @@ impl BattleWorld {
                     morale: morale.m,
                     morale_state: morale.state,
                     order: order.kind,
+                    order_target: order.target,
+                    order_facing: order.facing,
+                    order_speed: order.speed,
+                    order_since: order.since,
+                    path: path.waypoints.clone(),
+                    path_next: path.next,
+                    path_requested: path.requested,
                     ammo: r.ammo,
                 }
             })
@@ -257,7 +274,18 @@ impl BattleWorld {
                         m: r.morale,
                         state: r.morale_state,
                     },
-                    Order { kind: r.order },
+                    Order {
+                        kind: r.order,
+                        target: r.order_target,
+                        facing: r.order_facing,
+                        speed: r.order_speed,
+                        since: r.order_since,
+                    },
+                    Path {
+                        waypoints: r.path.clone(),
+                        next: r.path_next,
+                        requested: r.path_requested,
+                    },
                 ))
                 .id();
             w.world
@@ -347,14 +375,32 @@ impl BattleWorld {
     /// runs. Phase 1 adds, in this order:
     /// - the spatial and anchor grids from positions (T1-031),
     /// - the nav grid from the map plus gate states (T1-032),
+    /// - the path request queue from `Path.requested` flags (T1-032; the
+    ///   paths themselves are stored),
     /// - flow fields per side (T2-042),
-    /// - `Path` components, re-requested rather than stored (T1-048),
     /// - `Rank` from slots (T1-041).
     pub(crate) fn rebuild_derived(&mut self) {
         use bevy_ecs::system::RunSystemOnce;
         self.world
             .run_system_once(crate::spatial::rebuild_spatial_grids)
             .expect("grid rebuild has no failing params");
+        let nav = {
+            let regs = &self.world.resource::<crate::resources::Regs>().0;
+            let map = &self.world.resource::<crate::resources::MapRes>().0;
+            crate::nav::NavGrid::from_map(map, regs, &regs.rules.movement)
+        };
+        self.world.resource_mut::<crate::resources::NavGridRes>().0 = nav;
+        let requested: Vec<RegimentId> = {
+            let ids = self.world.resource::<Ids>();
+            ids.regiment_entities
+                .iter()
+                .filter(|(_, e)| self.world.get::<Path>(*e).is_some_and(|p| p.requested))
+                .map(|(id, _)| *id)
+                .collect()
+        };
+        let mut queue = self.world.resource_mut::<crate::resources::PathRequests>();
+        queue.0.clear();
+        queue.0.extend(requested);
     }
 }
 

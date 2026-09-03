@@ -14,9 +14,11 @@ use crate::events::BattleEvent;
 use crate::hash::compute_hash;
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, LoadedMap, MapError};
+use crate::nav::NavGrid;
 use crate::resources::{
-    AnchorGridRes, BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, Phase, Regs,
-    Rejected, Rng, SetupRes, Sides, SpatialGridRes, StepEvents, ThreadCount,
+    AnchorGridRes, BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, NavGridRes,
+    PathRequests, PathfinderRes, Phase, Regs, Rejected, Rng, SetupRes, Sides, SpatialGridRes,
+    StepEvents, ThreadCount,
 };
 use crate::schedule::{NoopObserver, Stage, StageObserver, build_schedules};
 use crate::spatial::SpatialGrid;
@@ -80,7 +82,7 @@ impl BattleWorld {
         world.insert_resource(Rng::from_seed(seed));
         world.insert_resource(Ids::default());
         world.insert_resource(Events::default());
-        world.insert_resource(Regs(regs));
+        world.insert_resource(Regs(regs.clone()));
         world.insert_resource(Sides::default());
         world.insert_resource(CommandInbox::default());
         world.insert_resource(Rejected::default());
@@ -88,10 +90,15 @@ impl BattleWorld {
         world.insert_resource(LastHash::default());
         world.insert_resource(ThreadCount(1));
         world.insert_resource(SetupRes(None));
-        world.insert_resource(MapRes(Arc::new(LoadedMap::flat(
-            S::from_i32(FLAT_MAP_SIZE),
-            S::from_i32(FLAT_MAP_SIZE),
-        ))));
+        let flat_map = LoadedMap::flat(S::from_i32(FLAT_MAP_SIZE), S::from_i32(FLAT_MAP_SIZE));
+        world.insert_resource(NavGridRes(NavGrid::from_map(
+            &flat_map,
+            &regs,
+            &regs.rules.movement,
+        )));
+        world.insert_resource(PathfinderRes::default());
+        world.insert_resource(PathRequests::default());
+        world.insert_resource(MapRes(Arc::new(flat_map)));
         // Dimensioned by the Stage 6 system once the map and rules are known.
         let flat = S::from_i32(FLAT_MAP_SIZE);
         world.insert_resource(SpatialGridRes(SpatialGrid::new(flat, flat, S::ZERO)));
@@ -133,6 +140,11 @@ impl BattleWorld {
     /// The battle terrain.
     pub fn map(&self) -> &Arc<LoadedMap> {
         &self.world.resource::<MapRes>().0
+    }
+
+    /// The nav grid derived from the map.
+    pub fn nav_grid(&self) -> &NavGrid {
+        &self.world.resource::<NavGridRes>().0
     }
 
     /// The setup this world was built from, if any.

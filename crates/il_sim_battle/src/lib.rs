@@ -9,6 +9,7 @@ pub mod events;
 pub mod hash;
 pub mod interface;
 pub mod map;
+pub mod nav;
 pub mod resources;
 pub mod schedule;
 pub mod snapshot;
@@ -25,7 +26,10 @@ pub use interface::{
     ReinforcementGroup, SOLDIER_CAP, SideResult, SideSetup, VictoryRules, Weather,
 };
 pub use map::{FLAT_MAP_ID, LoadedMap, MapError, polygon_contains};
-pub use resources::{AnchorGridRes, BattlePhase, MapRes, SpatialGridRes};
+pub use nav::{AStar, NavGrid, PathResult, Pathfinder, string_pull};
+pub use resources::{
+    AnchorGridRes, BattlePhase, MapRes, NavGridRes, PathRequests, PathfinderRes, SpatialGridRes,
+};
 pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spatial::{Entry as GridEntry, SpatialGrid};

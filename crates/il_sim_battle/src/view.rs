@@ -18,8 +18,9 @@ use crate::components::{
     Regiment, SlotRef, Soldier, SoldierState,
 };
 use crate::map::LoadedMap;
+use crate::nav::NavGrid;
 use crate::resources::{
-    AnchorGridRes, BattlePhase, Ids, MapRes, Regs, SideState, Sides, SpatialGridRes,
+    AnchorGridRes, BattlePhase, Ids, MapRes, NavGridRes, Regs, SideState, Sides, SpatialGridRes,
 };
 use crate::spatial::SpatialGrid;
 
@@ -171,6 +172,11 @@ impl<'w> BattleView<'w> {
     /// The battle terrain.
     pub fn map(&self) -> &'w LoadedMap {
         &self.world.resource::<MapRes>().0
+    }
+
+    /// The nav grid derived from the map.
+    pub fn nav_grid(&self) -> &'w NavGrid {
+        &self.world.resource::<NavGridRes>().0
     }
 
     /// Soldier grid as rebuilt at Stage 6 of the last completed tick.
