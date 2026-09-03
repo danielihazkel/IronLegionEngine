@@ -6,6 +6,7 @@
 pub mod command;
 pub mod components;
 pub mod events;
+pub mod formation;
 pub mod hash;
 pub mod interface;
 pub mod map;
@@ -20,6 +21,7 @@ pub mod world;
 
 pub use command::{AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode};
 pub use events::BattleEvent;
+pub use formation::{Slot, effective_ranks, layout_for, layout_slots};
 pub use il_data::Rules;
 pub use interface::{
     BattleResult, BattleSetup, GeneralFate, GeneralSetup, RegimentResult, RegimentSetup,

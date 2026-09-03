@@ -248,8 +248,8 @@ flowchart LR
   `NavGrid::from_map` with impassable cells (rock, river outside crossings, walls, closed gates) and integer costs; `AStar` with integer octile heuristic, epoch-based closed set, node-index tie-break; `string_pull`; `Pathfinder` trait; `PathRequests` served `paths_per_tick` per tick in ascending regiment id at Stage 3.
   **Done when** A\* equals Dijkstra cost on random grids; string-pulled paths never cross impassable cells; the same request gives the same path across threads.
 
-- [ ] **T1-040 Formation templates and layout functions** · M · Refs SIM-FORM-001..011, TDD §7
-  `Slot`, `LayoutFn`, `layout_for`, Line, Column, Square, Wedge, Phalanx, Loose, Custom exactly as the rules state; role zones for mixed regiments (data only in Phase 1; mixed spawning is Phase 3).
+- [x] **T1-040 Formation templates and layout functions** · M · Refs SIM-FORM-001..011, TDD §7
+  `Slot`, `LayoutFn`, `layout_for`, Line, Column, Square, Wedge, Phalanx, Loose, Custom exactly as the rules state (square per the Phase 1 geometry in SIM-FORM-005); role zones for mixed regiments (data only in Phase 1; mixed spawning is Phase 3). Golden tables live in `tests/golden/layouts.json` (bit-exact; regenerate with `IL_UPDATE_GOLDEN=1 cargo test -p il_tests --test layout_golden`).
   **Done when** golden slot tables for each layout at n ∈ {1, 7, 60, 160, 500} match, front rank centred, no duplicates.
 
 - [ ] **T1-041 Slot assignment and resize** · M · Refs SIM-FORM-020..023, TDD §7 `assign_slots`

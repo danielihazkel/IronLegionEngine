@@ -480,9 +480,12 @@ pub struct FormationTemplate { pub id: ContentId, pub name_key: String, pub layo
     pub spacing_file: S, pub spacing_rank: S, pub role_zones: Vec<RoleZone>, pub morph_ticks: u16,
     pub integrity_bonus_attack: S, pub integrity_bonus_defence: S, pub speed_mult: S, pub custom_slots: Vec<V2>, pub min_files: u8, pub loose_mult: S, pub default_files_column: u8 }
 pub enum Layout { Line, Column, Square, Wedge, Phalanx, Loose, Custom }
-pub struct Slot { pub offset: V2, pub facing_offset: Angle<S>, pub rank: u8, pub file: u8, pub category: Option<UnitCategory> }
+pub struct Slot { pub offset: V2, pub facing_offset: Angle<S>, pub rank: u8, pub file: u16 /* u16 since T1-040: a 2,000-man single rank */, pub category: Option<UnitCategory> }
 pub trait LayoutFn { fn layout(&self, t: &FormationTemplate, n: u16, ranks: u8, radius: S, out: &mut Vec<Slot>); }
 pub fn layout_for(layout: Layout) -> &'static dyn LayoutFn;   // SIM-FORM-003..009
+// As built (T1-040): layout_slots(t, n, ranks, radius, out) dispatches on t.layout; effective_ranks(t, n, requested) clamps to [min_ranks, max_ranks] and to n;
+// files_for(n, ranks) = ceil(n / ranks); spacing(t, radius) = (spacing_file, spacing_rank) × 2 radius; ranks_used / files_used read a table back.
+// Column widens beyond default_files_column only if it would exceed 255 ranks; Wedge ignores `ranks`; Square uses `ranks` as the depth of each side.
 pub fn assign_slots(soldiers: &[(SoldierId, V2, UnitCategory)], slots: &[Slot], anchor: &Anchor, grid: &SpatialGrid, rules: &FormationRules, prev: &[Option<u16>], out: &mut Vec<Option<u16>>);  // SIM-FORM-022
 pub fn integrity(soldiers: &[V2], assigned: &[Option<u16>], slots_world: &[V2], radius: S) -> S;  // SIM-FORM-030
 pub struct GroupFormationTemplate { pub id: ContentId, pub kind: GroupKind, pub gap: S, pub skirmishers_forward: bool, pub cavalry_flanks: bool, pub lines: u8 }
