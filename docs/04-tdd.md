@@ -84,22 +84,23 @@ Feature flags:
 
 ### 1.2 Dependencies (pinned per phase)
 
-Phase 0 pins (T0-003) are the versions in the table; later phases pin their own crates when they arrive and update this table.
+Phase 0 pins (T0-003) are the versions in the table; later phases pin their own crates when they arrive and update this table. Phase 1 pins (T1-050) are the newest mutually compatible set on 2026-09-03; `egui-wgpu` 0.36 requires `wgpu` ^30 and `egui-winit` 0.36 requires `winit` ^0.30.13.
 
 | Crate | Version (initial) | Why | Used by |
 |---|---|---|---|
 | `bevy_ecs` | 0.19.1 (feature `multi_threaded`) | standalone ECS with schedules and parallel executor | il_sim_*, il_render (read) |
 | `bevy_tasks` | 0.19.1 | `ComputeTaskPool` for `BattleWorld::set_threads` | il_sim_battle |
-| `wgpu` | 22 | GPU API | il_render |
-| `winit` | 0.30 | window and input events | il_app |
-| `egui`, `egui-wgpu`, `egui-winit` | 0.29 | UI | il_ui, il_app |
+| `wgpu` | 30.0.1 | GPU API | il_render |
+| `winit` | 0.30.13 | window and input events | il_app, il_ui (event types) |
+| `egui`, `egui-wgpu`, `egui-winit` | 0.36.1 | UI (`egui-wgpu` paint pass lives in il_render) | il_ui, il_render |
 | `serde`, `serde_derive` | 1 | serialisation | all |
 | `json5` | 1.3 | JSON5 parse to `serde_json::Value` then typed (OQ-7 resolved in Phase 0: errors carry line and column) | il_data, il_cli |
 | `serde_json` | 1 | save headers, schema validation input | il_data, il_save |
 | `jsonschema` | 0.18 | content validation | il_data |
 | `postcard` | 1.1 | snapshot encoding (OQ-2 resolved in Phase 0) | il_save, il_sim_* |
 | `mlua` (`lua54`, `vendored`) | 0.10 | Lua | il_script |
-| `glam` | 0.29 | render-side math only (never in sim) | il_render, il_ui |
+| `glam` | 0.33.6 | render-side math only (never in sim) | il_render, il_ui |
+| `png`, `bytemuck`, `pollster` | 0.18.1 / 1 / 0.4 | atlas files, GPU buffer casts, blocking on device creation | il_render, il_cli (`genart`) |
 | `rayon` | 1 | not used directly; bevy_ecs task pool only | — |
 | `xxhash-rust` (`xxh3`) | 0.8 | state hash | il_core |
 | `tracing`, `tracing-subscriber` | 0.1 / 0.3 | spans | all |

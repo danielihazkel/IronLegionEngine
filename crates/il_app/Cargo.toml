@@ -4,8 +4,22 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+description = "Iron Legion application shell: window, fixed-step loop, render and UI wiring"
 
 [dependencies]
+il_core.workspace = true
+il_data.workspace = true
+il_sim_battle.workspace = true
+il_render.workspace = true
+winit.workspace = true
+clap.workspace = true
+anyhow.workspace = true
+json5.workspace = true
 
-[lints]
-workspace = true
+# Not `workspace = true`: the frame accumulator is wall-clock float math on the
+# app side of the sim boundary (SAD §6.1, TDD §15). Unsafe stays forbidden.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+float_arithmetic = "allow"

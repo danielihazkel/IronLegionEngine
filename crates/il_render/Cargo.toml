@@ -1,0 +1,26 @@
+[package]
+name = "il_render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "wgpu renderer: device, sprite/terrain/line pipelines, isometric camera, egui paint pass"
+
+[dependencies]
+il_core.workspace = true
+il_data.workspace = true
+il_sim_battle.workspace = true
+wgpu.workspace = true
+glam.workspace = true
+bytemuck.workspace = true
+pollster.workspace = true
+thiserror.workspace = true
+
+# Not `workspace = true`: the renderer is float-heavy render-side math, and it
+# is the one crate allowed to opt out of `unsafe_code = "forbid"` if a GPU API
+# ever requires it (SAD §5.2, TDD §18). It still denies unsafe today.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+float_arithmetic = "allow"

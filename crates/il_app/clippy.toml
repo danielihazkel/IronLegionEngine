@@ -1,8 +1,7 @@
-# Overrides the workspace clippy.toml: this crate may use the filesystem
-# (loading at startup, writing logs and snapshots). Wall-clock stays banned
-# so nothing time-dependent leaks into data that reaches the sim.
+# Overrides the workspace clippy.toml: the app shell owns the wall clock (frame
+# timing, the fixed-step accumulator, the profiler) and the filesystem
+# (scenario loading, logs). Wall-clock values never enter the sim except as
+# whole ticks through `BattleWorld::step` (SIM-DET-006, SAD §6.1).
 
-disallowed-methods = [
-  { path = "std::time::Instant::now", reason = "SIM-DET-006: no wall-clock in anything that feeds the sim" },
-  { path = "std::time::SystemTime::now", reason = "SIM-DET-006: no wall-clock in anything that feeds the sim" },
-]
+disallowed-methods = []
+disallowed-types = []

@@ -1,0 +1,6 @@
+# Overrides the workspace clippy.toml: the renderer runs on the app side of the
+# sim boundary, so wall-clock timing and file access (atlases) are allowed.
+# Nothing it computes feeds back into the simulation (SAD §5.2).
+
+disallowed-methods = []
+disallowed-types = []

@@ -1,0 +1,5 @@
+# Overrides the workspace clippy.toml: UI code may read the wall clock (double
+# click timing, egui) and never feeds the sim except through Commands.
+
+disallowed-methods = []
+disallowed-types = []

@@ -1,0 +1,20 @@
+[package]
+name = "il_ui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "egui panels, input mapping to Commands, selection model"
+
+[dependencies]
+il_core.workspace = true
+il_data.workspace = true
+il_sim_battle.workspace = true
+
+# Not `workspace = true`: screen-space gesture math is float math on the app
+# side of the sim boundary (TDD §11). Unsafe stays forbidden.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+float_arithmetic = "allow"

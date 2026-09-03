@@ -22,6 +22,16 @@ anyhow = "1"
 tracing = "0.1"
 clap = { version = "4", features = ["derive"] }
 toml = "0.8"
+# Phase 1 pins (T1-050, TDD §1.2): the newest mutually compatible trio on 2026-09-03.
+wgpu = "30.0.1"
+winit = "0.30.13"
+egui = "0.36.1"
+egui-wgpu = { version = "0.36.1", features = ["winit"] }
+egui-winit = { version = "0.36.1", default-features = false }
+glam = "0.33.6"
+png = "0.18.1"
+bytemuck = { version = "1", features = ["derive"] }
+pollster = "0.4"
 # Workspace crates
 il_core = { path = "crates/il_core" }
 il_data = { path = "crates/il_data" }
@@ -30,12 +40,14 @@ il_sim_battle = { path = "crates/il_sim_battle" }
 il_sim_campaign = { path = "crates/il_sim_campaign" }
 il_save = { path = "crates/il_save" }
 il_cli = { path = "crates/il_cli" }
+il_render = { path = "crates/il_render" }
+il_ui = { path = "crates/il_ui" }
 
 [workspace.lints.clippy]
 float_arithmetic = "deny"       # re-allowed only inside il_core::scalar
 
 [workspace.lints.rust]
-unsafe_code = "forbid"          # il_render will opt out locally in Phase 1
+unsafe_code = "forbid"          # il_render and il_app carry their own [lints] tables (Phase 1)
 
 # Debug builds run the 10,000-tick determinism test; optimise dependencies
 # (bevy_ecs) so it takes seconds, keep our own crates debuggable.

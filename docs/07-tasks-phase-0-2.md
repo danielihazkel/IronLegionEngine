@@ -286,7 +286,7 @@ flowchart LR
 
 ### RNDR — renderer
 
-- [ ] **T1-050 Window, wgpu device, surface, frame loop skeleton** · M · Refs REQ-TECH-003, TDD §10
+- [x] **T1-050 Window, wgpu device, surface, frame loop skeleton** · M · Refs REQ-TECH-003, TDD §10
   `winit` window; `wgpu` instance, adapter, device, surface with resize; clear-colour frame; `Renderer` struct.
   **Done when** a window opens, resizes, and closes cleanly on Windows.
 
