@@ -1,0 +1,7 @@
+// Hastati walk twice as fast. `$override: "merge"` is the default and is
+// spelled out here only to show the intent (Modding SDK 3.4).
+{
+  $override: "merge",
+  id: "rome:hastati",
+  speed_walk: 3.2,
+}

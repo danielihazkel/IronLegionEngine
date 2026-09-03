@@ -68,6 +68,9 @@ struct RunArgs {
     /// Mod root with mod.json5 and content/.
     #[arg(long, default_value = "game")]
     content_root: PathBuf,
+    /// Extra mod folder to load after the game; repeatable.
+    #[arg(long = "mod")]
+    mods: Vec<PathBuf>,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -82,6 +85,7 @@ fn main() -> anyhow::Result<()> {
                 restore_from: a.restore_from,
                 hash_log: a.hash_log,
                 content_root: a.content_root,
+                mods: a.mods,
             };
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();

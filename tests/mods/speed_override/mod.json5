@@ -1,0 +1,9 @@
+// Phase 1 exit-criterion mod (T1-082, REQ-MOD-001): overrides one number of
+// a flagship unit and nothing else.
+{
+  id: "speed_override",
+  name_key: "speed_override.mod.name",
+  version: "0.1.0",
+  engine_version: "*",
+  dependencies: [{ id: "rome", version: ">=0.1.0" }],
+}

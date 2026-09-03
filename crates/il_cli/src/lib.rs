@@ -34,6 +34,8 @@ pub struct RunOptions {
     pub hash_log: Option<PathBuf>,
     /// Mod root holding `mod.json5` and `content/`.
     pub content_root: PathBuf,
+    /// Extra mod folders loaded after the game (T1-082).
+    pub mods: Vec<PathBuf>,
 }
 
 impl RunOptions {
@@ -47,6 +49,7 @@ impl RunOptions {
             restore_from: None,
             hash_log: None,
             content_root: PathBuf::from("game"),
+            mods: Vec::new(),
         }
     }
 }
@@ -61,7 +64,17 @@ pub fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
 /// Loads the registries from a mod root, turning diagnostics into an error
 /// that lists every one of them.
 pub fn load_registries(content_root: &Path) -> anyhow::Result<Arc<Registries>> {
-    Registries::load_root(content_root)
+    load_registries_with_mods(content_root, &[])
+}
+
+/// Loads the game root plus extra mod folders (each holding a `mod.json5`).
+pub fn load_registries_with_mods(
+    content_root: &Path,
+    mods: &[PathBuf],
+) -> anyhow::Result<Arc<Registries>> {
+    let mut roots = vec![content_root.to_path_buf()];
+    roots.extend(mods.iter().cloned());
+    Registries::load_roots(&roots)
         .map(Arc::new)
         .map_err(|d| anyhow!("content errors in {}:\n{d}", content_root.display()))
 }
@@ -78,7 +91,7 @@ pub fn snapshot_path(scenario: &Path) -> PathBuf {
 /// cadence, also writing them as `tick,hash` lines to `out` (or the hash
 /// log). The hash is 16 lower-case hex digits.
 pub fn run(opts: &RunOptions, out: &mut dyn Write) -> anyhow::Result<Vec<(Tick, StateHash)>> {
-    let regs = load_registries(&opts.content_root)?;
+    let regs = load_registries_with_mods(&opts.content_root, &opts.mods)?;
     let setup = load_setup(&opts.scenario)?;
 
     let mut world = match &opts.restore_from {

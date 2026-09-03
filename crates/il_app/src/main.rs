@@ -29,6 +29,9 @@ struct Args {
     /// Mod root holding `mod.json5`, `content/` and `assets/`.
     #[arg(long, default_value = "game")]
     content_root: PathBuf,
+    /// Extra mod folder to load after the game; repeatable (T1-082).
+    #[arg(long = "mod")]
+    mods: Vec<PathBuf>,
     /// Simulation worker threads (`1` = single-threaded executor).
     #[arg(long, default_value_t = 1)]
     threads: usize,
@@ -51,15 +54,17 @@ fn load_setup(path: &Path) -> anyhow::Result<BattleSetup> {
     json5::from_str(&text).with_context(|| format!("parsing scenario {}", path.display()))
 }
 
-fn load_registries(root: &Path) -> anyhow::Result<Arc<Registries>> {
-    Registries::load_root(root)
+fn load_registries(root: &Path, mods: &[PathBuf]) -> anyhow::Result<Arc<Registries>> {
+    let mut roots = vec![root.to_path_buf()];
+    roots.extend(mods.iter().cloned());
+    Registries::load_roots(&roots)
         .map(Arc::new)
         .map_err(|d| anyhow!("content errors:\n{d}"))
 }
 
 fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let regs = load_registries(&args.content_root)?;
+    let regs = load_registries(&args.content_root, &args.mods)?;
     regs.locale.set_show_keys(args.show_keys);
     let mode = if args.bench_sprites {
         Mode::BenchSprites
