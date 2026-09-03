@@ -36,6 +36,9 @@
       ford: { name: "Ford" },
       bridge: { name: "Bridge" },
     },
+    maps: {
+      test_field: { name: "Test field" },
+    },
   },
   greece: {
     units: { hoplite: { name: "Hoplite" } },

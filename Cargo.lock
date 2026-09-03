@@ -1483,6 +1483,7 @@ dependencies = [
  "json5",
  "png",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

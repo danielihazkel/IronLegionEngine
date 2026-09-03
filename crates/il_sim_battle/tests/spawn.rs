@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use il_core::{PlayerId, SoldierId, Tick};
+use il_core::{PlayerId, S, Scalar, SoldierId, Tick};
 use il_data::{ContentId, Registries};
 use il_sim_battle::{
     BattleSetup, BattleWorld, GeneralSetup, RegimentSetup, ReinforcementGroup, SOLDIER_CAP,
@@ -27,7 +27,7 @@ fn regiment(id: u32, unit: &str, count: u16, x: f32, facing_deg: f32) -> Regimen
         experience: 0,
         fatigue: 0.0,
         formation: None,
-        position: Some([x, 0.0]),
+        position: Some([x, 150.0]),
         facing_deg: Some(facing_deg),
     }
 }
@@ -49,15 +49,15 @@ fn side(player: u8, regiments: Vec<RegimentSetup>) -> SideSetup {
 
 fn two_sides(count: u16) -> BattleSetup {
     BattleSetup {
-        map_id: None,
+        map_id: cid("rome:test_field"),
         seed: 42,
         weather: Default::default(),
         time_of_day: 12,
         time_limit_ticks: 48_000,
         reveal_deployment: false,
         sides: vec![
-            side(0, vec![regiment(1, "rome:hastati", count, -100.0, 0.0)]),
-            side(1, vec![regiment(2, "rome:hastati", count, 100.0, 180.0)]),
+            side(0, vec![regiment(1, "rome:hastati", count, 300.0, 0.0)]),
+            side(1, vec![regiment(2, "rome:hastati", count, 500.0, 180.0)]),
         ],
         victory: Default::default(),
     }
@@ -98,6 +98,37 @@ fn over_cap_is_rejected() {
         BattleWorld::new(&setup, regs()).unwrap_err(),
         SetupError::OverCap { count: 33_000, .. }
     ));
+}
+
+#[test]
+fn map_and_placement_are_validated() {
+    let mut setup = two_sides(10);
+    setup.map_id = cid("rome:atlantis");
+    assert_eq!(
+        BattleWorld::new(&setup, regs()).unwrap_err(),
+        SetupError::UnknownMap(cid("rome:atlantis"))
+    );
+    let mut setup = two_sides(10);
+    setup.sides[1].deployment_zone = 5;
+    assert_eq!(
+        BattleWorld::new(&setup, regs()).unwrap_err(),
+        SetupError::MissingDeploymentZone { side: 1, zone: 5 }
+    );
+    let mut setup = two_sides(10);
+    setup.sides[0].regiments[0].position = Some([-1.0, 10.0]);
+    assert!(matches!(
+        BattleWorld::new(&setup, regs()).unwrap_err(),
+        SetupError::PositionOutOfMap {
+            side: 0,
+            regiment: 1,
+            ..
+        }
+    ));
+    let mut setup = two_sides(10);
+    setup.sides[0].regiments[0].position = Some([800.0, 600.0]);
+    let w = BattleWorld::new(&setup, regs()).expect("the far corner is on the map");
+    assert_eq!(w.map().width, S::from_i32(800));
+    assert_eq!(w.map().zone_handles.len(), 7);
 }
 
 #[test]

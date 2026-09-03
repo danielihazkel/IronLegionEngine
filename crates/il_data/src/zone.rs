@@ -28,6 +28,9 @@ pub struct ZoneType {
     pub formation_integrity_mult: S,
     #[serde(default = "d_true")]
     pub passable: bool,
+    /// River cells under a polygon of this type are passable (SIM-MOVE-032).
+    #[serde(default)]
+    pub crossing: bool,
     pub colour: Rgb,
     #[serde(default)]
     pub deprecated: Option<String>,
@@ -50,5 +53,6 @@ impl ContentKind for ZoneType {
         h.write(&self.fatigue_mult);
         h.write(&self.formation_integrity_mult);
         h.write(&self.passable);
+        h.write(&self.crossing);
     }
 }

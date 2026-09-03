@@ -11,12 +11,13 @@ use il_sim_battle::components::{
 };
 use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 
-/// Golden hash of the freshly spawned 2 x 500 hastati world at seed 42.
+/// Golden hash of the freshly spawned 2 x 500 hastati world at seed 42 on
+/// the test map (re-baselined in T1-030 when the regiments moved onto it).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x6eb7_8629_5a28_fbd5;
+const GOLDEN_FRESH: u64 = 0x7af8_c96c_2094_821d;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0xdc88_4711_1c7f_8b23;
+const GOLDEN_1000: u64 = 0xc30d_3adf_2711_a672;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 

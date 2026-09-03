@@ -4,6 +4,7 @@
 //! in-process; `main.rs` is a thin clap wrapper.
 
 pub mod genart;
+pub mod genmap;
 pub mod validate;
 
 use std::io::Write;

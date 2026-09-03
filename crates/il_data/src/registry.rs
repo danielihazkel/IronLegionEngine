@@ -219,6 +219,17 @@ impl<T> Registry<T> {
             .map(|(i, item)| (Handle::from_index(i as u32), item))
     }
 
+    /// Live items, mutable, in ascending index order (pipeline post-passes
+    /// such as sidecar loading; registries are immutable once published).
+    pub(crate) fn iter_mut(&mut self) -> impl Iterator<Item = (Handle<T>, &mut T)> {
+        let removed = &self.removed;
+        self.items
+            .iter_mut()
+            .enumerate()
+            .filter(move |(i, _)| !removed.contains(&(*i as u32)))
+            .map(|(i, item)| (Handle::from_index(i as u32), item))
+    }
+
     /// Live ids in ascending index order.
     pub fn ids(&self) -> impl Iterator<Item = &ContentId> {
         self.ids

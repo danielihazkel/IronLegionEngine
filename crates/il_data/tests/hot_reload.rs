@@ -39,6 +39,7 @@ fn game_copy(name: &str) -> PathBuf {
     std::fs::copy(game.join("mod.json5"), dst.join("mod.json5")).unwrap();
     copy_dir(&game.join("content"), &dst.join("content"));
     copy_dir(&game.join("locale"), &dst.join("locale"));
+    copy_dir(&game.join("assets/maps"), &dst.join("assets/maps"));
     dst
 }
 

@@ -751,7 +751,7 @@ Tools:
 |---|---|
 | Terrain zone brush | `zones` polygons with a `type` from `open`, `forest`, `marsh`, `rock`, `road` (REQ-SIM-041) |
 | Height brush (raise, lower, smooth, flatten) | `heightmap` |
-| River tool (polyline with width) plus ford and bridge markers | `rivers[]`, `crossings[]` (REQ-SIM-042) |
+| River tool (polyline with width) plus ford and bridge polygons | `rivers[]`, `zones[]` of a `crossing: true` type such as `ford` or `bridge` (REQ-SIM-042) |
 | Road tool | zones of type `road` |
 | Settlement pieces (Phase 5 content, placeable but inert before then) | `structures[]` |
 | Deployment zones (one polygon per side, plus reinforcement edges) | `deployment[]`, `reinforcement_edges[]` |
@@ -766,10 +766,16 @@ Map JSON5 summary (full schema in TDD §6):
   size: { w: 2000, h: 1600 },                    // world units
   campaign_terrain_tags: ["hills", "forest"],    // campaign picks maps by tag
   weather_allowed: ["clear", "rain", "fog"],
-  heightmap: { cell: 4, path: "maps/thracian_hills.hgt" }, // 16-bit raw under assets_root
-  zones: [ { type: "forest", polygon: [[100,100],[400,120],[380,300]] } ],
+  heightmap: { cell: 4, path: "maps/thracian_hills.hgt", scale: 0.01 }, // 16-bit little-endian raw under assets_root,
+                                                                       // ceil(w/cell)+1 by ceil(h/cell)+1 samples row-major from y = 0, metres = raw * scale
+  base_zone: "rome:open",                        // zone type of the ground outside every polygon
+  zones: [                                       // later polygons override earlier ones
+    { type: "rome:forest", polygon: [[100,100],[400,120],[380,300]] },
+    // Fords and bridges are polygons of a zone type with `crossing: true` laid over a river.
+    { type: "rome:ford", polygon: [[885,730],[915,730],[915,790],[885,790]] },
+    { type: "rome:bridge", polygon: [[1496,830],[1504,830],[1504,870],[1496,870]] },
+  ],
   rivers: [ { width: 12, points: [[0,800],[900,760],[2000,900]] } ],
-  crossings: [ { kind: "ford", at: [900,760], width: 30 }, { kind: "bridge", at: [1500,850], width: 8 } ],
   deployment: [ { side: 0, polygon: [...] }, { side: 1, polygon: [...] } ],
   reinforcement_edges: [ { side: 0, edge: "west" } ],
 

@@ -17,11 +17,13 @@ use crate::components::{
     PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::interface::BattleSetup;
+use crate::map::{FLAT_MAP_ID, MapError};
 use crate::resources::{BattlePhase, Clock, Ids, Phase, Rng, SetupRes, SideState, Sides};
-use crate::world::BattleWorld;
+use crate::world::{BattleWorld, InstallMapError};
 
 /// Bumped whenever the encoding changes; `il_save` migrations key on it.
-pub const SNAPSHOT_VERSION: u32 = 1;
+/// 2: `map_id` required in the setup (T1-030).
+pub const SNAPSHOT_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RegimentSnap {
@@ -87,6 +89,10 @@ pub enum RestoreError {
     VersionMismatch { found: u32, expected: u32 },
     #[error("snapshot refers to unit type {0}, which is not in the registries")]
     UnknownUnitType(ContentId),
+    #[error("snapshot refers to map {0}, which is not in the registries")]
+    UnknownMap(ContentId),
+    #[error("{0}")]
+    Map(MapError),
     #[error("soldier {soldier} belongs to unknown regiment {regiment}")]
     OrphanSoldier {
         soldier: SoldierId,
@@ -94,6 +100,15 @@ pub enum RestoreError {
     },
     #[error("snapshot is malformed: {0}")]
     Malformed(&'static str),
+}
+
+impl From<InstallMapError> for RestoreError {
+    fn from(e: InstallMapError) -> Self {
+        match e {
+            InstallMapError::UnknownMap(id) => RestoreError::UnknownMap(id),
+            InstallMapError::Map(m) => RestoreError::Map(m),
+        }
+    }
 }
 
 impl Snapshot {
@@ -202,6 +217,7 @@ impl BattleWorld {
             });
         }
         let mut w = BattleWorld::empty(snapshot.rng.seed, regs.clone(), snapshot.phase);
+        w.install_map(&snapshot.setup.map_id)?;
         w.tick = snapshot.tick;
         w.phase = snapshot.phase;
         w.world.resource_mut::<Clock>().tick = snapshot.tick;
@@ -326,8 +342,8 @@ impl BattleWorld {
     }
 
     /// Reconstructs everything that is derived from hashed state and
-    /// therefore not stored in a snapshot (SIM-DET-005). Nothing derived
-    /// exists in Phase 0. Phase 1 adds, in this order:
+    /// therefore not stored in a snapshot (SIM-DET-005). The map itself is
+    /// installed by `restore` before this runs. Phase 1 adds, in this order:
     /// - the spatial grid from positions (T1-031, T1-048),
     /// - the nav grid from the map plus gate states (T1-032),
     /// - flow fields per side (T2-042),
@@ -339,7 +355,7 @@ impl BattleWorld {
 /// Placeholder setup for worlds built with `BattleWorld::empty`.
 fn empty_setup() -> BattleSetup {
     BattleSetup {
-        map_id: None,
+        map_id: ContentId::new(FLAT_MAP_ID).expect("valid id"),
         seed: 0,
         weather: Default::default(),
         time_of_day: 12,

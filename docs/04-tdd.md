@@ -302,7 +302,7 @@ pub mod interface {
     pub struct RegimentSetup { pub id: u32 /* campaign regiment id, echoed in result */, pub unit_type: ContentId,
         pub count: u16, pub experience: u8, pub fatigue: f32 /* data-side f32, converted */, pub formation: Option<ContentId>,
         pub position: Option<[f32; 2]>, pub facing_deg: Option<f32> /* TEMPORARY Phase 0 anchor (SAD T-7); removed in T2-070 */ }
-    // `map_id` is `Option<ContentId>` until map loading (T1-030) makes it required.
+    // `map_id` is required (T1-030); `BattleWorld::new` fails with `SetupError::UnknownMap`, `MissingDeploymentZone` or `PositionOutOfMap`.
     pub struct BattleResult { pub winner: Option<u8>, pub duration_ticks: u32, pub sides: Vec<SideResult>, pub summary: BattleSummary }
     pub struct SideResult { pub regiments: Vec<RegimentResult>, pub general_fate: GeneralFate, pub loot: i64 }
     pub struct RegimentResult { pub id: u32, pub initial: u16, pub survivors: u16, pub fled: u16, pub killed: u16, pub experience_gain: u16, pub ammo_left: u16 }
@@ -388,7 +388,7 @@ Projectiles: `Projectile { id, shooter_regiment, side, launch_tick, land_tick, s
 
 ### 4.4 Resources
 
-`Clock { tick }`, `Phase`, `Sides: Vec<SideState>` (deployment confirmed, defeated, edge, flow field handle), `Map: Arc<LoadedMap>` (heightmap, zones, nav grid, walls, gates), `SpatialGrid`, `NavGrid`, `HpaGraph`, `FlowFields`, `CommandQueue`, `Rng { streams: [RngStream; 9] }`, `Ids { soldiers, regiments, projectiles: IdAllocator }`, `Events: EventQueue<BattleEvent>`, `Rules: Arc<Rules>`, `Regs: Arc<Registries>`, `Weather`, `Timer`, `PendingDamage: Vec<(Tick, SoldierId, S, Angle<S>)>` (SIM-PROJ-008), `ThreadCount`.
+`Clock { tick }`, `Phase`, `Sides: Vec<SideState>` (deployment confirmed, defeated, edge, flow field handle), `MapRes(Arc<LoadedMap>)` (heightmap, zone raster, river flags, deployment polygons, inert walls and gates; built by `new`/`restore` from `map_id`, `BattleWorld::empty` holds a flat placeholder `engine:flat`), `SpatialGrid`, `NavGrid`, `HpaGraph`, `FlowFields`, `CommandQueue`, `Rng { streams: [RngStream; 9] }`, `Ids { soldiers, regiments, projectiles: IdAllocator }`, `Events: EventQueue<BattleEvent>`, `Rules: Arc<Rules>`, `Regs: Arc<Registries>`, `Weather`, `Timer`, `PendingDamage: Vec<(Tick, SoldierId, S, Angle<S>)>` (SIM-PROJ-008), `ThreadCount`.
 
 ### 4.5 Schedule
 
@@ -400,7 +400,7 @@ Stage 17 `flush_events_and_hash`: copy `Pos→PrevPos`, `Facing→PrevFacing`; h
 
 ### 4.6 Snapshot
 
-`Snapshot { version: u32, tick, phase, setup: BattleSetup, ids, rng, sides, regiments: Vec<RegimentSnap>, soldiers: Vec<SoldierSnap>, projectiles: Vec<ProjectileSnap>, pending_damage, timer }` encoded with postcard (`SNAPSHOT_VERSION = 1`). Phase 0 layout: `RegimentSnap { id, side, setup_id, unit_type: ContentId, anchor_pos, anchor_facing, morale, morale_state, order, ammo }`, `SoldierSnap { id, regiment, p, v, facing, hp, fatigue, slot, fsm_state, fsm_since }`, `IdsSnap { soldiers_next, regiments_next, projectiles_next }`; `PrevPos`/`PrevFacing` and `Body` are rebuilt on restore. `restore` rebuilds: `SpatialGrid` (from positions), `NavGrid`/`HpaGraph`/`FlowFields` (from map plus gate states), `Path` (re-requested), `Rank` (from slots). Snapshot of 32k soldiers ≈ 32k × 36 B ≈ 1.2 MB.
+`Snapshot { version: u32, tick, phase, setup: BattleSetup, ids, rng, sides, regiments: Vec<RegimentSnap>, soldiers: Vec<SoldierSnap>, projectiles: Vec<ProjectileSnap>, pending_damage, timer }` encoded with postcard (`SNAPSHOT_VERSION = 2` since T1-030, when `map_id` became required; Phase 0 snapshots are not migrated). Phase 0 layout: `RegimentSnap { id, side, setup_id, unit_type: ContentId, anchor_pos, anchor_facing, morale, morale_state, order, ammo }`, `SoldierSnap { id, regiment, p, v, facing, hp, fatigue, slot, fsm_state, fsm_since }`, `IdsSnap { soldiers_next, regiments_next, projectiles_next }`; `PrevPos`/`PrevFacing` and `Body` are rebuilt on restore. `restore` rebuilds: `SpatialGrid` (from positions), `NavGrid`/`HpaGraph`/`FlowFields` (from map plus gate states), `Path` (re-requested), `Rank` (from slots). Snapshot of 32k soldiers ≈ 32k × 36 B ≈ 1.2 MB.
 
 ### 4.7 Tests
 
@@ -459,7 +459,7 @@ pub struct PathRequests { queue: BTreeSet<RegimentId> }   // served ascending, `
 
 Note on Stage 4 reading the grid: steering at tick *t* uses the grid built at Stage 6 of tick *t−1* (positions of the previous tick). This is deterministic and avoids a second rebuild. Collision at Stage 7 uses the grid rebuilt at Stage 6 of the same tick.
 
-Terrain sampling: `LoadedMap::height_at(p) -> S` bilinear on a `Vec<S>`; `zone_at(p) -> Handle<ZoneType>` from a rasterised `Vec<u8>` at `map.zone_cell` (2 m).
+Terrain sampling (as built, T1-030): `LoadedMap::from_def(&MapDef, zone_cell) -> Result<LoadedMap, MapError>`; `height_at(p) -> S` bilinear on a `Vec<S>` of `height_cols × height_rows` samples at the map's `height_cell` (positions outside the map read the nearest edge); `zone_at(p) -> Option<Handle<ZoneType>>` from a rasterised `Vec<u8>` at `movement.zone_cell` (2 m) indexing the map's `zone_handles` table (`[0]` = `base_zone`; `None` only on the flat placeholder map); `river_at(p) -> bool` from a capsule raster of the rivers; `in_bounds`, `clamp`, `zone_cell_of`, `deployment_polygon(side)`. Zone polygons are rasterised by scanline at cell centres (even-odd, half-open on the right), later polygons overriding earlier ones. The heightmap sidecar is read by the `il_data` pipeline (`HeightmapRef::samples`, from the `assets_root` of the mod that last wrote `heightmap.path`; a missing or mis-sized file is a load diagnostic), so the sim never touches the filesystem.
 
 Budget: steering 8 ms at 20k (400 ns per soldier with 8 neighbours); collision 8 ms.
 
@@ -697,7 +697,7 @@ Tests: accumulator never runs more than the cap; pause records a `Pause` command
 
 ## 16. Editors (`il_editor`)
 
-- **Map editor (Phase 3).** Operates on `MapDef` (`id`, `name_key`, `size`, `campaign_terrain_tags`, `weather_allowed`, heightmap `Vec<f32>` at `height_cell` stored as a 16-bit raw sidecar, `zones` polygons, `rivers` with `crossings`, roads, `deployment` polygons, `reinforcement_edges`, and the reserved `structures` and `siege_points` lists; Modding SDK §6.1 shows the JSON5). Tools: raise/lower/smooth height brush, zone paint brush, polyline tool, polygon tool, piece placement; live nav grid preview; save to `content/maps/<id>.json5` plus a `.bin` sidecar for the heightmap (JSON5 stores the reference and dimensions).
+- **Map editor (Phase 3).** Operates on `MapDef` (`id`, `name_key`, `size`, `campaign_terrain_tags`, `weather_allowed`, heightmap `Vec<f32>` at `height_cell` stored as a 16-bit raw sidecar, `base_zone`, `zones` polygons (fords and bridges are polygons of a `crossing: true` zone type laid over a river), `rivers`, roads, `deployment` polygons, `reinforcement_edges`, and the reserved `structures` and `siege_points` lists; Modding SDK §6.1 shows the JSON5). Tools: raise/lower/smooth height brush, zone paint brush, polyline tool, polygon tool, piece placement; live nav grid preview; save to `content/maps/<id>.json5` plus the `.hgt` sidecar for the heightmap (JSON5 stores the reference and cell size; `il_cli genmap` writes the Phase 1 test map the same way).
 - **Unit and formation editors (Phase 6).** egui property grids over `Registry<UnitType>` and `Registry<FormationTemplate>` entries with schema-driven widgets (from the JSON Schema `description`/ranges); preview panel renders a formation at chosen `n`; save writes the item into the selected mod folder with a `$override: "merge"` diff if it derives from another mod's item.
 
 ## 17. Testing and CI
@@ -712,7 +712,7 @@ Tests: accumulator never runs more than the cap; pause records a `Pause` command
 | Replay verify | `il_cli replay --verify` on recorded replays in `tests/replays/` | nightly | REQ-SAVE-005 |
 | Cross-machine hash compare | manual runbook, `il_cli run --hash-log` on two machines and `il_cli desync-report` | before Phase 7 | REQ-TEST-006 |
 
-`il_cli` subcommands: `run <scenario.json5> --ticks N [--hash-every K] [--threads T] [--snapshot-at T]`, `bench`, `replay <file> --verify`, `validate <mods...>`, `desync-report <log_a> <log_b>`, `autoresolve <setup.json5>`.
+`il_cli` subcommands: `run <scenario.json5> --ticks N [--hash-every K] [--threads T] [--snapshot-at T]`, `bench`, `replay <file> --verify`, `validate <mods...>`, `desync-report <log_a> <log_b>`, `autoresolve <setup.json5>`, `genart [--mod-root]` (placeholder sprite sheets, T1-051), `genmap [--mod-root] [--id] [--seed]` (the deterministic Phase 1 test map and its heightmap, T1-030).
 
 ## 18. Coding conventions and determinism checklist
 

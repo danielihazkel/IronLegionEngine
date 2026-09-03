@@ -488,10 +488,72 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
         mod_list_hash: set.mod_list_hash(),
         content_registry_hash: 0,
     };
+    load_heightmaps(&mut regs.maps, &maps, set, &sources, &mut diags);
     regs.content_registry_hash = regs.compute_content_hash();
     LoadReport {
         registries: if diags.has_errors() { None } else { Some(regs) },
         diagnostics: diags,
+    }
+}
+
+/// Reads every map's `.hgt` sidecar (16-bit little-endian raw samples,
+/// `cols × rows` per `MapDef::heightmap_dims`) from the assets root of the
+/// mod that last wrote `heightmap.path`; a missing or mis-sized file is a
+/// diagnostic at that field (T1-030).
+fn load_heightmaps(
+    maps: &mut Registry<MapDef>,
+    acc: &KindAccumulator,
+    set: &ModSet,
+    sources: &Sources,
+    diags: &mut Diagnostics,
+) {
+    for (_, map) in maps.iter_mut() {
+        let Some(item) = acc.items.get(&map.id) else {
+            continue; // kept from a previous layout (hot reload)
+        };
+        let span = item
+            .value
+            .at_path(&[PathSeg::Key("heightmap"), PathSeg::Key("path")])
+            .map_or(item.defined_at, |v| v.span);
+        let file = sources.get(span.file);
+        let abs = set.mods[file.mod_index]
+            .assets_dir()
+            .join(&map.heightmap.path);
+        let (cols, rows) = map.heightmap_dims();
+        let expected = (cols as usize) * (rows as usize);
+        let diag = |message: String| {
+            Diagnostic::file_level(sources.display(span.file), message)
+                .at(span.line, span.col)
+                .field("heightmap.path")
+        };
+        match std::fs::read(&abs) {
+            Ok(bytes) if bytes.len() == expected * 2 => {
+                map.heightmap.samples = bytes
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|c| u16::from_le_bytes(*c))
+                    .collect();
+            }
+            Ok(bytes) => diags.push(
+                diag(format!(
+                    "heightmap {} holds {} bytes",
+                    abs.display(),
+                    bytes.len()
+                ))
+                .expected(format!(
+                    "{cols} x {rows} 16-bit samples = {} bytes for size {} x {} at cell {}",
+                    expected * 2,
+                    map.size.w,
+                    map.size.h,
+                    map.heightmap.cell
+                )),
+            ),
+            Err(e) => diags.push(diag(format!(
+                "cannot read heightmap {}: {e}",
+                abs.display()
+            ))),
+        }
     }
 }
 
@@ -539,6 +601,7 @@ mod tests {
         std::fs::create_dir_all(&dst).unwrap();
         std::fs::copy(game_dir().join("mod.json5"), dst.join("mod.json5")).unwrap();
         copy_dir(&game_dir().join("content"), &dst.join("content"));
+        copy_dir(&game_dir().join("assets/maps"), &dst.join("assets/maps"));
         dst
     }
 
@@ -571,7 +634,15 @@ mod tests {
         assert!(!regs.factions.is_empty());
         assert!(!regs.zones.is_empty());
         assert!(!regs.sprite_sets.is_empty());
-        assert!(regs.maps.is_empty(), "the test map arrives with T1-030");
+        let map = regs.maps.get(
+            regs.maps
+                .lookup(&ContentId::new("rome:test_field").unwrap())
+                .unwrap(),
+        );
+        let (cols, rows) = map.heightmap_dims();
+        assert_eq!((cols, rows), (201, 151));
+        assert_eq!(map.heightmap.samples.len(), 201 * 151);
+        assert_eq!(regs.zones.id_of(map.base_zone()).as_str(), "rome:open");
         assert_eq!(regs.rules.movement.nav_cell, S::from_f32_data(4.0));
         assert_eq!(regs.rules.formation.swap_passes, 2);
         assert!(!regs.input.keys_for("camera_pan_up").is_empty());

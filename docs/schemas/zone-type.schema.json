@@ -26,6 +26,7 @@
     "fatigue_mult": { "type": "number", "minimum": 0, "maximum": 10, "default": 1.0, "description": "Fatigue accumulation multiplier (Phase 2)." },
     "formation_integrity_mult": { "type": "number", "minimum": 0, "maximum": 5, "default": 1.0, "description": "Integrity multiplier applied inside the zone (SIM-FORM-031)." },
     "passable": { "type": "boolean", "default": true, "description": "False makes every nav cell touching the zone impassable (rock, water outside crossings)." },
+    "crossing": { "type": "boolean", "default": false, "description": "River cells under a polygon of this type are passable (ford, bridge; SIM-MOVE-032)." },
     "colour": { "$ref": "#/$defs/colour", "description": "Terrain tint used by the renderer until zone textures exist." }
   }
 }

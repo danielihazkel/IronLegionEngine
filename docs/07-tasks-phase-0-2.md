@@ -236,8 +236,8 @@ flowchart LR
 
 ### SIM — map, spatial, pathfinding, formations, movement
 
-- [ ] **T1-030 Map loading: heightmap, zones, rivers, reserved fields** · M · Refs SIM-CORE-001, SIM-MOVE-031..033, REQ-SIM-045, Modding SDK §6.1, TDD §6.2
-  `LoadedMap` from `MapDef`: 16-bit raw heightmap sidecar to `Vec<S>`, bilinear `height_at`, zone polygons rasterised to a `u8` grid at `zone_cell`, rivers as polylines with width, crossings, deployment polygons, reinforcement edges, `structures` and `siege_points` parsed and stored inert. `BattleWorld::new` now requires a map and validates deployment zones exist.
+- [x] **T1-030 Map loading: heightmap, zones, rivers, reserved fields** · M · Refs SIM-CORE-001, SIM-MOVE-031..033, REQ-SIM-045, Modding SDK §6.1, TDD §6.2
+  `LoadedMap` from `MapDef`: 16-bit raw heightmap sidecar (read by the `il_data` pipeline into `HeightmapRef::samples`) to `Vec<S>`, bilinear `height_at`, zone polygons rasterised to a `u8` grid at `zone_cell` (scanline, even-odd, cell centres; later polygons win; `base_zone` fills the rest), rivers as polylines with width rasterised as capsules into a per-cell river flag (crossings are ford/bridge zone polygons whose type has `crossing: true`), deployment polygons, reinforcement edges, `structures` and `siege_points` parsed and stored inert. `BattleWorld::new` requires `map_id` and validates that the map exists, that every side's deployment zone has a polygon and that placement positions lie on the map; `SNAPSHOT_VERSION = 2`. `il_cli genmap` writes the deterministic 800 × 600 m `rome:test_field` (hill, rock, river with an 8 m bridge and a 30 m ford, forest, marsh, road) committed under `game/`; `idle_1000.json5` moved onto it. Hand-written `tests/maps/tiny/` exercises the samples.
   **Done when** a test map loads and `height_at` and `zone_at` match hand-computed samples.
 
 - [ ] **T1-031 Uniform spatial grid** · M · Refs TDD §5, REQ-PATH-009, ADR-013

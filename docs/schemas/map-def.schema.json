@@ -14,7 +14,7 @@
   },
   "type": "object",
   "additionalProperties": false,
-  "required": ["id", "name_key", "size", "heightmap", "deployment"],
+  "required": ["id", "name_key", "size", "heightmap", "base_zone", "deployment"],
   "properties": {
     "$override": { "enum": ["merge", "replace"] },
     "$delete": { "const": true },
@@ -36,6 +36,7 @@
         "scale": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000, "default": 0.01, "description": "Metres per raw unit." }
       }
     },
+    "base_zone": { "$ref": "#/$defs/contentId", "description": "Zone type of the ground outside every zone polygon (content/zones/)." },
     "zones": {
       "type": "array", "default": [],
       "items": {

@@ -25,7 +25,7 @@ pub fn regiment(id: u32, unit: &str, count: u16, x: f32, facing_deg: f32) -> Reg
         experience: 0,
         fatigue: 0.0,
         formation: None,
-        position: Some([x, 0.0]),
+        position: Some([x, 150.0]),
         facing_deg: Some(facing_deg),
     }
 }
@@ -46,18 +46,19 @@ pub fn side(player: u8, regiments: Vec<RegimentSetup>) -> SideSetup {
 }
 
 /// Two sides, players 0 and 1, one hastati regiment of `count` each, facing
-/// each other across the origin. Regiment ids are 0 (side 0) and 1 (side 1).
+/// each other 200 m apart on the test map. Regiment ids are 0 (side 0) and
+/// 1 (side 1).
 pub fn two_sides(count: u16) -> BattleSetup {
     BattleSetup {
-        map_id: None,
+        map_id: cid("rome:test_field"),
         seed: 42,
         weather: Default::default(),
         time_of_day: 12,
         time_limit_ticks: 48_000,
         reveal_deployment: false,
         sides: vec![
-            side(0, vec![regiment(1, "rome:hastati", count, -100.0, 0.0)]),
-            side(1, vec![regiment(2, "rome:hastati", count, 100.0, 180.0)]),
+            side(0, vec![regiment(1, "rome:hastati", count, 300.0, 0.0)]),
+            side(1, vec![regiment(2, "rome:hastati", count, 500.0, 180.0)]),
         ],
         victory: Default::default(),
     }

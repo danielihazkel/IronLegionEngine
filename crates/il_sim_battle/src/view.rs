@@ -17,7 +17,8 @@ use crate::components::{
     Anchor, Facing, Fsm, Health, Morale, MoraleState, Order, OrderKind, Pos, PrevFacing, PrevPos,
     Regiment, SlotRef, Soldier, SoldierState,
 };
-use crate::resources::{BattlePhase, Ids, Regs, SideState, Sides};
+use crate::map::LoadedMap;
+use crate::resources::{BattlePhase, Ids, MapRes, Regs, SideState, Sides};
 
 type SoldierData = (
     &'static Soldier,
@@ -162,6 +163,11 @@ impl<'w> BattleView<'w> {
 
     pub fn regs(&self) -> &'w Arc<Registries> {
         &self.world.resource::<Regs>().0
+    }
+
+    /// The battle terrain.
+    pub fn map(&self) -> &'w LoadedMap {
+        &self.world.resource::<MapRes>().0
     }
 
     /// Sides by index; `sides()[regiment.side]` gives the owning player.

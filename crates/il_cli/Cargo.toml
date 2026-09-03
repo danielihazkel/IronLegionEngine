@@ -15,5 +15,8 @@ json5.workspace = true
 serde.workspace = true
 png.workspace = true
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true

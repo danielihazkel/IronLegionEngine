@@ -12,10 +12,11 @@ use crate::components::{
     PrevPos, Regiment, SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
+use crate::map::MapError;
 use crate::resources::{BattlePhase, Ids, Regs, SideState, Sides};
-use crate::world::BattleWorld;
+use crate::world::{BattleWorld, InstallMapError};
 
-#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+#[derive(Clone, Debug, PartialEq, thiserror::Error)]
 pub enum SetupError {
     #[error("a battle needs at least one side")]
     NoSides,
@@ -29,14 +30,42 @@ pub enum SetupError {
     EmptyRegiment { side: usize, regiment: u32 },
     #[error("side {side}: more than 255 sides are not supported")]
     TooManySides { side: usize },
+    #[error("unknown map {0}")]
+    UnknownMap(ContentId),
+    #[error("{0}")]
+    Map(MapError),
+    #[error("side {side}: the map defines no deployment polygon for zone {zone}")]
+    MissingDeploymentZone { side: usize, zone: u8 },
+    #[error("side {side}: regiment {regiment} at ({x}, {y}) is outside the map")]
+    PositionOutOfMap {
+        side: usize,
+        regiment: u32,
+        x: f32,
+        y: f32,
+    },
 }
 
-/// SIM-FLOW-019 validation: cap, unit types exist, one general per side.
-/// Map and deployment-zone checks are stubbed until T1-030 / T1-060.
+impl From<InstallMapError> for SetupError {
+    fn from(e: InstallMapError) -> Self {
+        match e {
+            InstallMapError::UnknownMap(id) => SetupError::UnknownMap(id),
+            InstallMapError::Map(m) => SetupError::Map(m),
+        }
+    }
+}
+
+/// SIM-FLOW-019 validation: cap, unit types exist, one general per side,
+/// the map exists and defines a deployment polygon for every side's zone,
+/// every (temporary) placement position lies on the map.
 pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError> {
     if setup.sides.is_empty() {
         return Err(SetupError::NoSides);
     }
+    let map = regs
+        .maps
+        .lookup(&setup.map_id)
+        .map(|h| regs.maps.get(h))
+        .ok_or_else(|| SetupError::UnknownMap(setup.map_id.clone()))?;
     let count = setup.soldier_total();
     if count > SOLDIER_CAP {
         return Err(SetupError::OverCap {
@@ -56,6 +85,12 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
                 unit_type: s.general.unit_type.clone(),
             });
         }
+        if !map.deployment.iter().any(|d| d.side == s.deployment_zone) {
+            return Err(SetupError::MissingDeploymentZone {
+                side,
+                zone: s.deployment_zone,
+            });
+        }
         let all = s
             .regiments
             .iter()
@@ -73,9 +108,21 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
                     regiment: r.id,
                 });
             }
+            if let Some([x, y]) = r.position
+                && !(x >= 0.0
+                    && y >= 0.0
+                    && S::from_f32_data(x) <= map.size.w
+                    && S::from_f32_data(y) <= map.size.h)
+            {
+                return Err(SetupError::PositionOutOfMap {
+                    side,
+                    regiment: r.id,
+                    x,
+                    y,
+                });
+            }
         }
     }
-    // TODO(T1-030): map exists; TODO(T1-060): deployment zones exist.
     Ok(())
 }
 
@@ -200,6 +247,7 @@ impl BattleWorld {
     pub fn new(setup: &BattleSetup, regs: Arc<Registries>) -> Result<Self, SetupError> {
         validate(setup, &regs)?;
         let mut w = BattleWorld::empty(setup.seed, regs.clone(), BattlePhase::Battle);
+        w.install_map(&setup.map_id)?;
         w.world.resource_mut::<Sides>().0 = setup
             .sides
             .iter()

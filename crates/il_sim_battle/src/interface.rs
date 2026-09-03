@@ -29,9 +29,8 @@ pub struct VictoryRules {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BattleSetup {
-    /// Optional until map loading lands (T1-030), then required.
-    #[serde(default)]
-    pub map_id: Option<ContentId>,
+    /// The battle map (`content/maps/`); required since T1-030.
+    pub map_id: ContentId,
     pub seed: u64,
     #[serde(default)]
     pub weather: Weather,
@@ -178,6 +177,7 @@ mod tests {
     fn minimal_json5_scenario_parses_with_defaults() {
         let setup: BattleSetup = json5::from_str(
             r#"{
+              map_id: "rome:test_field",
               seed: 42,
               sides: [
                 { faction: "rome:rome", player: 0,
@@ -192,6 +192,7 @@ mod tests {
             }"#,
         )
         .unwrap();
+        assert_eq!(setup.map_id.as_str(), "rome:test_field");
         assert_eq!(setup.time_of_day, 12);
         assert_eq!(setup.time_limit_ticks, 48_000);
         assert_eq!(setup.weather, Weather::Clear);

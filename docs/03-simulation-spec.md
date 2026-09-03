@@ -148,8 +148,8 @@ Conventions:
 | Rule | Statement | Satisfies |
 |---|---|---|
 | SIM-MOVE-030 | Slope along the movement direction `g = (h(p + d) − h(p)) / |d|` (rise over run, `d` is 1 m ahead). `slope_mult = clamp(1 − movement.slope_penalty × max(g, 0) + movement.slope_bonus × max(−g, 0), movement.slope_min_mult, movement.slope_max_mult)`; defaults 2.0, 0.5, 0.4, 1.2. | REQ-SIM-040 |
-| SIM-MOVE-031 | Zone types and data fields per type: `move_mult`, `move_cost`, `los_mult`, `conceal` (bool), `fatigue_mult`, `formation_integrity_mult`, `passable`. Built-in types: open, road, forest, marsh, rock (impassable), ford, bridge. Mods may add types. | REQ-SIM-041 |
-| SIM-MOVE-032 | Rivers are polylines with width; cells they cover are impassable except where a ford or bridge zone overlaps. Fords: `move_mult` 0.5, defence `× movement.ford_defence_mult` (default 0.7). Bridges: passable width equals the bridge zone width; SIM-MOVE-004 applies. | REQ-SIM-042 |
+| SIM-MOVE-031 | Zone types and data fields per type: `move_mult`, `move_cost`, `los_mult`, `conceal` (bool), `fatigue_mult`, `formation_integrity_mult`, `passable`, `crossing` (bool: river cells under a polygon of this type are passable). Built-in types: open, road, forest, marsh, rock (impassable), ford, bridge (both `crossing`). Mods may add types. A map names a `base_zone` for the ground outside every polygon; zone polygons are rasterised at `movement.zone_cell` cell centres, later polygons overriding earlier ones. | REQ-SIM-041 |
+| SIM-MOVE-032 | Rivers are polylines with width; the zone cells whose centre lies within half the width of the polyline are river cells, impassable except where a `crossing` zone polygon (ford, bridge) covers them. Fords: `move_mult` 0.5, defence `× movement.ford_defence_mult` (default 0.7). Bridges: passable width equals the bridge polygon width; SIM-MOVE-004 applies. | REQ-SIM-042 |
 | SIM-MOVE-033 | Walls are impassable line segments with height; gates are segments with `open/closed/destroyed` state; both are stored in the map format from Phase 1 and inert until Phase 5. | REQ-SIM-045, REQ-SIM-043 |
 
 ### 5.5 Collision

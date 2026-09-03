@@ -18,14 +18,15 @@ fn world() -> BattleWorld {
     let regs = Arc::new(Registries::load_root(&root).expect("game content loads"));
     let setup: BattleSetup = json5::from_str(
         r#"{
+          map_id: "rome:test_field",
           seed: 7,
           sides: [
             { faction: "rome:rome", player: 0, deployment_zone: 0,
               general: { unit_type: "rome:hastati", name_key: "g0" },
-              regiments: [ { id: 1, unit_type: "rome:hastati", count: 6, position: [0, 0], facing_deg: 0 } ] },
+              regiments: [ { id: 1, unit_type: "rome:hastati", count: 6, position: [300, 150], facing_deg: 0 } ] },
             { faction: "rome:rome", player: 1, deployment_zone: 1,
               general: { unit_type: "rome:hastati", name_key: "g1" },
-              regiments: [ { id: 2, unit_type: "rome:hastati", count: 6, position: [40, 0], facing_deg: 180 } ] },
+              regiments: [ { id: 2, unit_type: "rome:hastati", count: 6, position: [340, 150], facing_deg: 180 } ] },
           ],
         }"#,
     )
@@ -52,7 +53,7 @@ fn snapshot_interpolates_between_prev_and_current_positions() {
     let delta = V2::new(S::from_i32(2), S::from_i32(0));
     world.debug_translate_all(delta, None);
     let selected = BTreeSet::new();
-    let camera = Camera::new(Vec2::new(20.0, 0.0));
+    let camera = Camera::new(Vec2::new(320.0, 150.0));
     let view = world.view();
     let ids: Vec<_> = view.soldiers_unordered().map(|s| s.id).collect();
 
@@ -99,7 +100,7 @@ fn snapshot_culls_to_the_camera_and_marks_selection() {
     let mut near = RenderSnapshot::default();
     build_snapshot(
         &view,
-        &input(Camera::new(Vec2::ZERO), 0.0, &selected),
+        &input(Camera::new(Vec2::new(300.0, 150.0)), 0.0, &selected),
         &mut near,
     );
     assert!(near.counts.visible_soldiers >= 6);

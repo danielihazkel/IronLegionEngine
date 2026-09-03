@@ -5,17 +5,18 @@ use std::sync::Arc;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{MultiThreadedExecutor, SingleThreadedExecutor};
 use bevy_tasks::{ComputeTaskPool, TaskPoolBuilder};
-use il_core::{Angle, RegimentId, S, SoldierId, StateHash, Tick, V2};
-use il_data::Registries;
+use il_core::{Angle, RegimentId, S, Scalar, SoldierId, StateHash, Tick, V2};
+use il_data::{ContentId, Registries};
 
 use crate::command::{Command, RejectReason};
 use crate::components::{Anchor, Facing, Pos};
 use crate::events::BattleEvent;
 use crate::hash::compute_hash;
 use crate::interface::BattleSetup;
+use crate::map::{FLAT_MAP_ID, LoadedMap, MapError};
 use crate::resources::{
-    BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, Phase, Regs, Rejected, Rng, SetupRes,
-    Sides, StepEvents, ThreadCount,
+    BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, Phase, Regs, Rejected, Rng,
+    SetupRes, Sides, StepEvents, ThreadCount,
 };
 use crate::schedule::{NoopObserver, Stage, StageObserver, build_schedules};
 use crate::view::{BattleView, ViewQueries};
@@ -29,6 +30,22 @@ pub struct StepOutput {
     pub events: Vec<BattleEvent>,
     /// Commands Stage 0 refused, with the reason.
     pub rejected: Vec<(Command, RejectReason)>,
+}
+
+/// Side of the placeholder map of [`BattleWorld::empty`], metres.
+const FLAT_MAP_SIZE: i32 = 1024;
+
+/// Why `install_map` failed; mapped onto `SetupError` and `RestoreError`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum InstallMapError {
+    UnknownMap(ContentId),
+    Map(MapError),
+}
+
+impl From<MapError> for InstallMapError {
+    fn from(e: MapError) -> Self {
+        InstallMapError::Map(e)
+    }
 }
 
 pub struct BattleWorld {
@@ -70,6 +87,10 @@ impl BattleWorld {
         world.insert_resource(LastHash::default());
         world.insert_resource(ThreadCount(1));
         world.insert_resource(SetupRes(None));
+        world.insert_resource(MapRes(Arc::new(LoadedMap::flat(
+            S::from_i32(FLAT_MAP_SIZE),
+            S::from_i32(FLAT_MAP_SIZE),
+        ))));
         let view_queries = ViewQueries::new(&mut world);
         let mut w = Self {
             world,
@@ -84,6 +105,29 @@ impl BattleWorld {
 
     pub(crate) fn set_setup(&mut self, setup: BattleSetup) {
         self.world.resource_mut::<SetupRes>().0 = Some(setup);
+    }
+
+    /// Builds the terrain of `map_id` from the registries and installs it
+    /// (`new`, `restore`). `FLAT_MAP_ID` keeps the placeholder map.
+    pub(crate) fn install_map(&mut self, map_id: &ContentId) -> Result<(), InstallMapError> {
+        if map_id.as_str() == FLAT_MAP_ID {
+            return Ok(());
+        }
+        let map = {
+            let regs = &self.world.resource::<Regs>().0;
+            let handle = regs
+                .maps
+                .lookup(map_id)
+                .ok_or_else(|| InstallMapError::UnknownMap(map_id.clone()))?;
+            LoadedMap::from_def(regs.maps.get(handle), regs.rules.movement.zone_cell)?
+        };
+        self.world.resource_mut::<MapRes>().0 = Arc::new(map);
+        Ok(())
+    }
+
+    /// The battle terrain.
+    pub fn map(&self) -> &Arc<LoadedMap> {
+        &self.world.resource::<MapRes>().0
     }
 
     /// The setup this world was built from, if any.

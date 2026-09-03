@@ -18,6 +18,8 @@ enum Command {
     Run(RunArgs),
     /// Regenerate the placeholder sprite sheets and frame tables (T1-051).
     Genart(GenartArgs),
+    /// Regenerate the Phase 1 test map and its heightmap (T1-030).
+    Genmap(GenmapArgs),
     /// Load the given mod roots and print every diagnostic; exit 1 on errors.
     Validate(ValidateArgs),
 }
@@ -41,6 +43,19 @@ struct GenartArgs {
     /// `<root>/content/sprites/`.
     #[arg(long, default_value = "game")]
     mod_root: PathBuf,
+}
+
+#[derive(Args)]
+struct GenmapArgs {
+    /// Mod root; the map goes to `<root>/content/maps/`, the heightmap to
+    /// `<root>/assets/maps/`.
+    #[arg(long, default_value = "game")]
+    mod_root: PathBuf,
+    /// ContentId of the map.
+    #[arg(long, default_value = "rome:test_field")]
+    id: String,
+    #[arg(long, default_value_t = 7)]
+    seed: u64,
 }
 
 #[derive(Args)]
@@ -96,6 +111,16 @@ fn main() -> anyhow::Result<()> {
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();
             il_cli::genart::generate(&a.mod_root, &mut lock)
+        }
+        Command::Genmap(a) => {
+            let opts = il_cli::genmap::GenmapOptions {
+                mod_root: a.mod_root,
+                id: a.id,
+                seed: a.seed,
+            };
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            il_cli::genmap::generate(&opts, &mut lock)
         }
         Command::Validate(a) => {
             let opts = il_cli::validate::ValidateOptions {

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use crate::command::{Command, RejectReason};
 use crate::events::BattleEvent;
 use crate::interface::BattleSetup;
+use crate::map::LoadedMap;
 
 /// The tick being simulated is `tick + 1`; `tick` counts completed ticks.
 /// Incremented at the start of `step` so the hash at Stage 17 covers the
@@ -109,6 +110,11 @@ pub struct Events(pub EventQueue<BattleEvent>);
 /// Content registries; sim code reads by handle only (SAD §3 principle 7).
 #[derive(Resource, Clone)]
 pub struct Regs(pub Arc<Registries>);
+
+/// The battle terrain (TDD §4.4 `Map`), built from `BattleSetup.map_id`
+/// at `new` and `restore`; immutable for the whole battle.
+#[derive(Resource, Clone)]
+pub struct MapRes(pub Arc<LoadedMap>);
 
 // Rules are `il_data::Rules`, read through `Regs.0.rules` (T1-023), so a
 // registry swap (hot reload) carries new tunables too.
