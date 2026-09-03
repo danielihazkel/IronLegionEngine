@@ -16,6 +16,16 @@ struct Cli {
 enum Command {
     /// Run a scenario for N ticks and print `tick,hash` lines.
     Run(RunArgs),
+    /// Regenerate the placeholder sprite sheets and frame tables (T1-051).
+    Genart(GenartArgs),
+}
+
+#[derive(Args)]
+struct GenartArgs {
+    /// Mod root; sheets go to `<root>/assets/sprites/units/`, frame tables to
+    /// `<root>/content/sprites/`.
+    #[arg(long, default_value = "game")]
+    mod_root: PathBuf,
 }
 
 #[derive(Args)]
@@ -62,6 +72,11 @@ fn main() -> anyhow::Result<()> {
             let mut lock = stdout.lock();
             il_cli::run(&opts, &mut lock)?;
             Ok(())
+        }
+        Command::Genart(a) => {
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            il_cli::genart::generate(&a.mod_root, &mut lock)
         }
     }
 }

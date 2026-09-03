@@ -290,7 +290,7 @@ flowchart LR
   `winit` window; `wgpu` instance, adapter, device, surface with resize; clear-colour frame; `Renderer` struct.
   **Done when** a window opens, resizes, and closes cleanly on Windows.
 
-- [ ] **T1-051 Sprite atlas and instanced sprite pipeline** · L · Refs REQ-RNDR-002, TDD §10.1 instancing, depth
+- [x] **T1-051 Sprite atlas and instanced sprite pipeline** · L · Refs REQ-RNDR-002, TDD §10.1 instancing, depth
   Atlas loader (PNG plus a JSON5 frame table per `SpriteSet`), 32-byte instance layout, ring of 3 instance buffers, one draw per atlas, depth from projected y, alpha-to-coverage. Placeholder art: one 8-facing sheet per unit category is enough for Phase 1.
   **Done when** 32,768 instances render at over 60 FPS on the target GPU in a synthetic test.
 

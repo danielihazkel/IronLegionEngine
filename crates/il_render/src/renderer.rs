@@ -1,8 +1,19 @@
-//! Device, surface and the per-frame skeleton (T1-050).
+//! Device, surface, frame targets and the per-frame sprite pass (T1-050,
+//! T1-051).
+
+use std::path::Path;
 
 use thiserror::Error;
 
-/// Errors while bringing up the GPU.
+use crate::atlas::{Atlas, AtlasError, AtlasId, Rgba8Image, SpriteSheet};
+use crate::sprite::{SpritePipeline, SpriteScene};
+
+/// Depth attachment format shared by every pipeline.
+pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+/// MSAA sample count; alpha-to-coverage needs multisampling.
+pub(crate) const SAMPLES: u32 = 4;
+
+/// Errors while bringing up the GPU or presenting.
 #[derive(Debug, Error)]
 pub enum RenderError {
     #[error("creating the window surface: {0}")]
@@ -17,6 +28,8 @@ pub enum RenderError {
     SurfaceLost,
     #[error("the surface configuration failed validation")]
     SurfaceConfig,
+    #[error(transparent)]
+    Atlas(#[from] AtlasError),
 }
 
 /// Linear-space clear colour.
@@ -36,12 +49,53 @@ impl ClearColour {
     };
 }
 
-/// Owns the wgpu device, queue and window surface.
+/// MSAA colour and depth attachments, recreated on resize.
+struct Targets {
+    width: u32,
+    height: u32,
+    msaa: wgpu::TextureView,
+    depth: wgpu::TextureView,
+}
+
+impl Targets {
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        };
+        let make = |label, format| {
+            device
+                .create_texture(&wgpu::TextureDescriptor {
+                    label: Some(label),
+                    size,
+                    mip_level_count: 1,
+                    sample_count: SAMPLES,
+                    dimension: wgpu::TextureDimension::D2,
+                    format,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                })
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        };
+        Self {
+            width,
+            height,
+            msaa: make("msaa colour", format),
+            depth: make("depth", DEPTH_FORMAT),
+        }
+    }
+}
+
+/// Owns the wgpu device, queue, window surface, pipelines and atlases.
 pub struct Renderer {
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    targets: Targets,
+    sprites: SpritePipeline,
+    atlases: Vec<Atlas>,
 }
 
 impl Renderer {
@@ -108,12 +162,17 @@ impl Renderer {
             view_formats: vec![],
         };
         surface.configure(&device, &config);
+        let targets = Targets::new(&device, format, config.width, config.height);
+        let sprites = SpritePipeline::new(&device, format, SAMPLES);
 
         Ok(Self {
             surface,
             device,
             queue,
             config,
+            targets,
+            sprites,
+            atlases: Vec::new(),
         })
     }
 
@@ -122,6 +181,16 @@ impl Renderer {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.config.width = width.max(1);
         self.config.height = height.max(1);
+        self.surface.configure(&self.device, &self.config);
+    }
+
+    /// Vsync on (`AutoVsync`) or off (`AutoNoVsync`, used by the sprite bench).
+    pub fn set_vsync(&mut self, on: bool) {
+        self.config.present_mode = if on {
+            wgpu::PresentMode::AutoVsync
+        } else {
+            wgpu::PresentMode::AutoNoVsync
+        };
         self.surface.configure(&self.device, &self.config);
     }
 
@@ -142,10 +211,35 @@ impl Renderer {
         &self.queue
     }
 
-    /// Clears the next frame to `colour` and presents it. An outdated or
+    /// Loads a sheet's PNG from `assets_root` and uploads it. Returns the id
+    /// batches refer to.
+    pub fn load_atlas(
+        &mut self,
+        sheet: SpriteSheet,
+        assets_root: &Path,
+    ) -> Result<AtlasId, RenderError> {
+        let path = sheet.atlas_path(assets_root);
+        let image = Rgba8Image::load_png(&path)?;
+        let atlas = Atlas::upload(
+            &self.device,
+            &self.queue,
+            &self.sprites.atlas_layout,
+            sheet,
+            &image,
+            &path,
+        )?;
+        self.atlases.push(atlas);
+        Ok(AtlasId(self.atlases.len() as u32 - 1))
+    }
+
+    pub fn atlas(&self, id: AtlasId) -> Option<&Atlas> {
+        self.atlases.get(id.0 as usize)
+    }
+
+    /// Clears to `colour`, draws the sprite scene and presents. An outdated or
     /// suboptimal surface is reconfigured and the frame skipped; a timeout or
     /// an occluded window skips the frame; a lost surface is an error.
-    pub fn render_clear(&mut self, colour: ClearColour) -> Result<(), RenderError> {
+    pub fn render(&mut self, colour: ClearColour, scene: &SpriteScene) -> Result<(), RenderError> {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame) => frame,
             wgpu::CurrentSurfaceTexture::Suboptimal(_) | wgpu::CurrentSurfaceTexture::Outdated => {
@@ -158,6 +252,19 @@ impl Renderer {
             wgpu::CurrentSurfaceTexture::Lost => return Err(RenderError::SurfaceLost),
             wgpu::CurrentSurfaceTexture::Validation => return Err(RenderError::SurfaceConfig),
         };
+        if self.targets.width != self.config.width || self.targets.height != self.config.height {
+            self.targets = Targets::new(
+                &self.device,
+                self.config.format,
+                self.config.width,
+                self.config.height,
+            );
+        }
+        let screen = [self.config.width as f32, self.config.height as f32];
+        let instances = self
+            .sprites
+            .upload(&self.device, &self.queue, screen, scene);
+
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
@@ -167,12 +274,12 @@ impl Renderer {
                 label: Some("il_render frame"),
             });
         {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear"),
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("sprites"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
+                    view: &self.targets.msaa,
                     depth_slice: None,
-                    resolve_target: None,
+                    resolve_target: Some(&view),
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color {
                             r: colour.r,
@@ -180,14 +287,31 @@ impl Renderer {
                             b: colour.b,
                             a: 1.0,
                         }),
-                        store: wgpu::StoreOp::Store,
+                        store: wgpu::StoreOp::Discard,
                     },
                 })],
-                depth_stencil_attachment: None,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.targets.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
                 timestamp_writes: None,
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
+            pass.set_pipeline(&self.sprites.pipeline);
+            pass.set_bind_group(0, &self.sprites.globals_bind_group, &[]);
+            pass.set_vertex_buffer(0, instances.slice(..));
+            for batch in &scene.batches {
+                let Some(atlas) = self.atlases.get(batch.atlas.0 as usize) else {
+                    continue;
+                };
+                pass.set_bind_group(1, &atlas.bind_group, &[]);
+                pass.draw(0..6, batch.range.clone());
+            }
         }
         self.queue.submit(Some(encoder.finish()));
         self.queue.present(frame);

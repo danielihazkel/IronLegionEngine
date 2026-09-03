@@ -14,6 +14,9 @@ wgpu.workspace = true
 glam.workspace = true
 bytemuck.workspace = true
 pollster.workspace = true
+png.workspace = true
+serde.workspace = true
+json5.workspace = true   # frame tables; moves to il_data's parser with T1-023
 thiserror.workspace = true
 
 # Not `workspace = true`: the renderer is float-heavy render-side math, and it

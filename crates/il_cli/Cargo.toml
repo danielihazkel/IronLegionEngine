@@ -13,6 +13,7 @@ clap.workspace = true
 anyhow.workspace = true
 json5.workspace = true
 serde.workspace = true
+png.workspace = true
 
 [lints]
 workspace = true

@@ -5,6 +5,10 @@
 //! debug overlays (T1-054), and the egui paint pass (T1-060). The renderer
 //! only ever reads simulation state through `BattleView` (SAD §5.2).
 
+pub mod atlas;
 mod renderer;
+pub mod sprite;
 
+pub use atlas::{Anim, Atlas, AtlasError, AtlasId, SpriteSheet};
 pub use renderer::{ClearColour, RenderError, Renderer};
+pub use sprite::{SpriteBatch, SpriteInstance, SpriteScene};

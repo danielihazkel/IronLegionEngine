@@ -66,6 +66,7 @@ mymod/
     technologies/*.json5
     buildings/*.json5
     maps/*.json5
+    sprites/*.json5             sprite sheet frame tables (SpriteSet)
     ai/*.json5
     rules/                      engine tunables, one file per system
       morale.json5
@@ -80,7 +81,7 @@ mymod/
     main.lua
     missions/*.lua
   assets/                       assets_root (default)
-    sprites/
+    sprites/                    PNG sheets referenced by content/sprites/*.json5
     atlases/
     sounds/
     music/
