@@ -14,6 +14,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 cargo run -p il_cli -- run tests/scenarios/idle_1000.json5 --ticks 10000 --hash-every 1000
+cargo run --release -p il_cli -- bench --soldiers 2000 --baseline benches/baseline.json
 ```
 
 ## Crate map

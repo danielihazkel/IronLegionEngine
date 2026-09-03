@@ -328,9 +328,9 @@ flowchart LR
 
 ### TEST — benchmarks and scenarios
 
-- [ ] **T1-080 Benchmark suite** · M · Refs REQ-TOOL-002, REQ-PERF-005, TDD §17
-  `benches/` with criterion benches per stage at 2k, 10k, 20k soldiers using generated setups; a checked-in baseline JSON and a comparison script that fails at +20 %.
-  **Done when** `cargo bench` produces per-stage numbers and the Phase 1 stages (2 to 7) sum to under 10 ms at 2k.
+- [x] **T1-080 Benchmark suite** · M · Refs REQ-TOOL-002, REQ-PERF-005, TDD §17
+  `il_cli bench --soldiers 2000|10000|20000 --ticks 600 [--json F] [--baseline benches/baseline.json [--strict]] [--record-baseline F]` times every schedule stage (mean, p95, max) through a `StageObserver` on a setup generated in code (regiments of 200 on `rome:test_field`, a scripted advance, column change, wheel, return march, reform, halt); criterion micro-benches in `benches/benches/` (grid rebuild, `assign_slots`, A\*, `layout_slots`, whole tick at 2k/10k/20k); `benches/baseline.json` recorded on the target machine (`docs/evidence/phase1/machine.md`); `--strict` fails at +20 %, CI runs the comparison warn-only.
+  **Done when** `il_cli bench` produces per-stage numbers and the Phase 1 stages (2 to 7) sum to under 10 ms at 2k (measured 3.5 ms, whole tick 4.0 ms, release build, 8 threads).
 
 - [x] **T1-081 Scripted command-stream scenarios** · S · Refs REQ-TEST-002
   Scenario files may include a `commands` list; `il_cli run` feeds them; add `move_reform_2000.json5` (10 regiments, moves, formation changes, wheels) to the determinism set.

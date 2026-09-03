@@ -53,3 +53,8 @@ jobs:
             if ((Compare-Object (Get-Content a.hashlog) (Get-Content b.hashlog)).Count -ne 0) { throw "hash logs differ for $scenario" }
             Get-Content a.hashlog
           }
+
+      # Warn-only (T1-080): CI runners are not the target machine, so a
+      # +20 % change here is a hint; `--strict` is for the recording PC.
+      - name: Benchmark against the checked-in baseline
+        run: cargo run --release -p il_cli -- bench --soldiers 2000 --ticks 100 --baseline benches/baseline.json

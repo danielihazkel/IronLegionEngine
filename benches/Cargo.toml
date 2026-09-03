@@ -6,6 +6,11 @@ rust-version.workspace = true
 license.workspace = true
 description = "Workspace benchmarks: criterion micro-benches of the hot sim paths (T1-031, T1-080)."
 
+[lib]
+# Criterion owns the harness; `cargo bench -- <criterion flags>` must not
+# reach the libtest runner of the lib.
+bench = false
+
 [dependencies]
 il_core.workspace = true
 il_data.workspace = true
@@ -14,6 +19,7 @@ bevy_ecs.workspace = true
 
 [dev-dependencies]
 criterion.workspace = true
+il_cli.workspace = true
 
 [[bench]]
 name = "spatial"
@@ -21,6 +27,18 @@ harness = false
 
 [[bench]]
 name = "formation"
+harness = false
+
+[[bench]]
+name = "nav"
+harness = false
+
+[[bench]]
+name = "layout"
+harness = false
+
+[[bench]]
+name = "tick"
 harness = false
 
 [lints]

@@ -1,0 +1,429 @@
+{
+  "machine": "Intel Core i9-7900X (10 cores / 20 threads, 3.3 GHz base), 32 GB DDR4-2400, NVIDIA GeForce GTX 1080 Ti, Windows 11 Pro 10.0.26200, rustc 1.98.0, Balanced power plan",
+  "recorded": "2026-09-03",
+  "runs": {
+    "10000": {
+      "soldiers": 10000,
+      "regiments": 50,
+      "ticks": 600,
+      "threads": 8,
+      "profile": "release",
+      "stages": [
+        {
+          "index": 0,
+          "name": "ApplyCommands",
+          "mean_ms": 0.0034271666666666647,
+          "p95_ms": 0.0040999999999999995,
+          "max_ms": 0.18159999999999998
+        },
+        {
+          "index": 1,
+          "name": "Ai",
+          "mean_ms": 0.05272983333333334,
+          "p95_ms": 0.11230000000000001,
+          "max_ms": 0.15100000000000002
+        },
+        {
+          "index": 2,
+          "name": "Formation",
+          "mean_ms": 0.35129949999999993,
+          "p95_ms": 1.6596,
+          "max_ms": 7.960999999999999
+        },
+        {
+          "index": 3,
+          "name": "RegimentMovement",
+          "mean_ms": 0.24954399999999965,
+          "p95_ms": 0.44049999999999995,
+          "max_ms": 0.5902000000000001
+        },
+        {
+          "index": 4,
+          "name": "SoldierSteering",
+          "mean_ms": 3.555305166666667,
+          "p95_ms": 4.8189,
+          "max_ms": 6.2252
+        },
+        {
+          "index": 5,
+          "name": "Integrate",
+          "mean_ms": 0.1891268333333336,
+          "p95_ms": 0.3009,
+          "max_ms": 0.6863
+        },
+        {
+          "index": 6,
+          "name": "SpatialGrid",
+          "mean_ms": 0.2511655000000001,
+          "p95_ms": 0.4211,
+          "max_ms": 0.8518
+        },
+        {
+          "index": 7,
+          "name": "Collision",
+          "mean_ms": 5.605162333333333,
+          "p95_ms": 9.249500000000001,
+          "max_ms": 14.351700000000001
+        },
+        {
+          "index": 8,
+          "name": "Visibility",
+          "mean_ms": 0.09631216666666657,
+          "p95_ms": 0.1777,
+          "max_ms": 0.2503
+        },
+        {
+          "index": 9,
+          "name": "Targeting",
+          "mean_ms": 0.06176699999999998,
+          "p95_ms": 0.10959999999999999,
+          "max_ms": 0.22369999999999998
+        },
+        {
+          "index": 10,
+          "name": "Combat",
+          "mean_ms": 0.04831499999999996,
+          "p95_ms": 0.096,
+          "max_ms": 0.1744
+        },
+        {
+          "index": 11,
+          "name": "Projectiles",
+          "mean_ms": 0.04495249999999999,
+          "p95_ms": 0.0817,
+          "max_ms": 0.4355
+        },
+        {
+          "index": 12,
+          "name": "Abilities",
+          "mean_ms": 0.03865666666666667,
+          "p95_ms": 0.0693,
+          "max_ms": 0.1523
+        },
+        {
+          "index": 13,
+          "name": "Fatigue",
+          "mean_ms": 0.03392516666666665,
+          "p95_ms": 0.056499999999999995,
+          "max_ms": 0.1303
+        },
+        {
+          "index": 14,
+          "name": "Morale",
+          "mean_ms": 0.032198833333333295,
+          "p95_ms": 0.049499999999999995,
+          "max_ms": 0.2242
+        },
+        {
+          "index": 15,
+          "name": "Death",
+          "mean_ms": 0.03218833333333335,
+          "p95_ms": 0.048900000000000006,
+          "max_ms": 0.1606
+        },
+        {
+          "index": 16,
+          "name": "BattleFlow",
+          "mean_ms": 0.03158166666666664,
+          "p95_ms": 0.0496,
+          "max_ms": 0.1503
+        },
+        {
+          "index": 17,
+          "name": "EventsAndHash",
+          "mean_ms": 0.48708183333333294,
+          "p95_ms": 0.8373,
+          "max_ms": 2.0500000000000003
+        }
+      ],
+      "tick": {
+        "mean_ms": 11.168485666666667,
+        "p95_ms": 16.7279,
+        "max_ms": 21.4922
+      },
+      "phase1_stages_mean_ms": 10.201603333333335
+    },
+    "2000": {
+      "soldiers": 2000,
+      "regiments": 10,
+      "ticks": 600,
+      "threads": 8,
+      "profile": "release",
+      "stages": [
+        {
+          "index": 0,
+          "name": "ApplyCommands",
+          "mean_ms": 0.002346999999999996,
+          "p95_ms": 0.0043,
+          "max_ms": 0.1674
+        },
+        {
+          "index": 1,
+          "name": "Ai",
+          "mean_ms": 0.03237549999999999,
+          "p95_ms": 0.0605,
+          "max_ms": 0.152
+        },
+        {
+          "index": 2,
+          "name": "Formation",
+          "mean_ms": 0.16837166666666667,
+          "p95_ms": 0.3436,
+          "max_ms": 2.1479
+        },
+        {
+          "index": 3,
+          "name": "RegimentMovement",
+          "mean_ms": 0.12003283333333331,
+          "p95_ms": 0.2196,
+          "max_ms": 0.7343999999999999
+        },
+        {
+          "index": 4,
+          "name": "SoldierSteering",
+          "mean_ms": 1.0340610000000006,
+          "p95_ms": 1.5257999999999998,
+          "max_ms": 1.9526999999999999
+        },
+        {
+          "index": 5,
+          "name": "Integrate",
+          "mean_ms": 0.0953375,
+          "p95_ms": 0.1661,
+          "max_ms": 0.2986
+        },
+        {
+          "index": 6,
+          "name": "SpatialGrid",
+          "mean_ms": 0.14288816666666654,
+          "p95_ms": 0.30479999999999996,
+          "max_ms": 0.3871
+        },
+        {
+          "index": 7,
+          "name": "Collision",
+          "mean_ms": 1.9379013333333335,
+          "p95_ms": 3.6603999999999997,
+          "max_ms": 5.249700000000001
+        },
+        {
+          "index": 8,
+          "name": "Visibility",
+          "mean_ms": 0.07386866666666671,
+          "p95_ms": 0.1625,
+          "max_ms": 0.257
+        },
+        {
+          "index": 9,
+          "name": "Targeting",
+          "mean_ms": 0.05521716666666668,
+          "p95_ms": 0.10579999999999999,
+          "max_ms": 0.2689
+        },
+        {
+          "index": 10,
+          "name": "Combat",
+          "mean_ms": 0.04188399999999996,
+          "p95_ms": 0.0847,
+          "max_ms": 0.1577
+        },
+        {
+          "index": 11,
+          "name": "Projectiles",
+          "mean_ms": 0.03749833333333333,
+          "p95_ms": 0.0713,
+          "max_ms": 0.1467
+        },
+        {
+          "index": 12,
+          "name": "Abilities",
+          "mean_ms": 0.034303500000000056,
+          "p95_ms": 0.0598,
+          "max_ms": 0.132
+        },
+        {
+          "index": 13,
+          "name": "Fatigue",
+          "mean_ms": 0.03413066666666666,
+          "p95_ms": 0.0601,
+          "max_ms": 0.1168
+        },
+        {
+          "index": 14,
+          "name": "Morale",
+          "mean_ms": 0.03437366666666667,
+          "p95_ms": 0.0574,
+          "max_ms": 0.1482
+        },
+        {
+          "index": 15,
+          "name": "Death",
+          "mean_ms": 0.034009166666666674,
+          "p95_ms": 0.0608,
+          "max_ms": 0.1434
+        },
+        {
+          "index": 16,
+          "name": "BattleFlow",
+          "mean_ms": 0.033037000000000025,
+          "p95_ms": 0.057800000000000004,
+          "max_ms": 0.1157
+        },
+        {
+          "index": 17,
+          "name": "EventsAndHash",
+          "mean_ms": 0.11758033333333326,
+          "p95_ms": 0.2396,
+          "max_ms": 0.4056
+        }
+      ],
+      "tick": {
+        "mean_ms": 4.032218500000002,
+        "p95_ms": 6.395,
+        "max_ms": 7.9402
+      },
+      "phase1_stages_mean_ms": 3.498592500000001
+    },
+    "20000": {
+      "soldiers": 20000,
+      "regiments": 100,
+      "ticks": 600,
+      "threads": 8,
+      "profile": "release",
+      "stages": [
+        {
+          "index": 0,
+          "name": "ApplyCommands",
+          "mean_ms": 0.0037180000000000156,
+          "p95_ms": 0.0056,
+          "max_ms": 0.1509
+        },
+        {
+          "index": 1,
+          "name": "Ai",
+          "mean_ms": 0.06617033333333336,
+          "p95_ms": 0.1301,
+          "max_ms": 0.1986
+        },
+        {
+          "index": 2,
+          "name": "Formation",
+          "mean_ms": 0.584905333333333,
+          "p95_ms": 2.5130999999999997,
+          "max_ms": 8.656699999999999
+        },
+        {
+          "index": 3,
+          "name": "RegimentMovement",
+          "mean_ms": 0.4734709999999999,
+          "p95_ms": 0.7646000000000001,
+          "max_ms": 1.7065
+        },
+        {
+          "index": 4,
+          "name": "SoldierSteering",
+          "mean_ms": 7.737717833333337,
+          "p95_ms": 9.815000000000001,
+          "max_ms": 12.2492
+        },
+        {
+          "index": 5,
+          "name": "Integrate",
+          "mean_ms": 0.3268981666666669,
+          "p95_ms": 0.47,
+          "max_ms": 0.621
+        },
+        {
+          "index": 6,
+          "name": "SpatialGrid",
+          "mean_ms": 0.49239799999999934,
+          "p95_ms": 0.8524999999999999,
+          "max_ms": 1.0386
+        },
+        {
+          "index": 7,
+          "name": "Collision",
+          "mean_ms": 11.155245666666666,
+          "p95_ms": 19.7898,
+          "max_ms": 25.311899999999998
+        },
+        {
+          "index": 8,
+          "name": "Visibility",
+          "mean_ms": 0.11460083333333332,
+          "p95_ms": 0.1924,
+          "max_ms": 0.2639
+        },
+        {
+          "index": 9,
+          "name": "Targeting",
+          "mean_ms": 0.07862399999999996,
+          "p95_ms": 0.14909999999999998,
+          "max_ms": 0.1887
+        },
+        {
+          "index": 10,
+          "name": "Combat",
+          "mean_ms": 0.061029999999999994,
+          "p95_ms": 0.11689999999999999,
+          "max_ms": 0.20220000000000002
+        },
+        {
+          "index": 11,
+          "name": "Projectiles",
+          "mean_ms": 0.05610166666666668,
+          "p95_ms": 0.1007,
+          "max_ms": 0.41590000000000005
+        },
+        {
+          "index": 12,
+          "name": "Abilities",
+          "mean_ms": 0.052864333333333284,
+          "p95_ms": 0.09069999999999999,
+          "max_ms": 0.1439
+        },
+        {
+          "index": 13,
+          "name": "Fatigue",
+          "mean_ms": 0.04578783333333335,
+          "p95_ms": 0.08399999999999999,
+          "max_ms": 0.1564
+        },
+        {
+          "index": 14,
+          "name": "Morale",
+          "mean_ms": 0.03785133333333331,
+          "p95_ms": 0.06830000000000001,
+          "max_ms": 0.1346
+        },
+        {
+          "index": 15,
+          "name": "Death",
+          "mean_ms": 0.03528916666666666,
+          "p95_ms": 0.0608,
+          "max_ms": 0.1145
+        },
+        {
+          "index": 16,
+          "name": "BattleFlow",
+          "mean_ms": 0.03494149999999997,
+          "p95_ms": 0.0577,
+          "max_ms": 0.1138
+        },
+        {
+          "index": 17,
+          "name": "EventsAndHash",
+          "mean_ms": 1.0658074999999996,
+          "p95_ms": 2.2143,
+          "max_ms": 3.4889
+        }
+      ],
+      "tick": {
+        "mean_ms": 22.427641333333362,
+        "p95_ms": 32.8925,
+        "max_ms": 42.9179
+      },
+      "phase1_stages_mean_ms": 20.770636000000003
+    }
+  }
+}

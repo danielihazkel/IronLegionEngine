@@ -16,12 +16,48 @@ struct Cli {
 enum Command {
     /// Run a scenario for N ticks and print `tick,hash` lines.
     Run(RunArgs),
+    /// Time every schedule stage on a generated move/reform battle (T1-080).
+    Bench(BenchArgs),
     /// Regenerate the placeholder sprite sheets and frame tables (T1-051).
     Genart(GenartArgs),
     /// Regenerate the Phase 1 test map and its heightmap (T1-030).
     Genmap(GenmapArgs),
     /// Load the given mod roots and print every diagnostic; exit 1 on errors.
     Validate(ValidateArgs),
+}
+
+#[derive(Args)]
+struct BenchArgs {
+    /// Soldier count: a multiple of 200 (2000, 10000, 20000).
+    #[arg(long, default_value_t = 2000)]
+    soldiers: u32,
+    /// Ticks to step; the scripted command stream spans 600.
+    #[arg(long, default_value_t = 600)]
+    ticks: u32,
+    /// Worker threads; 1 runs the single-threaded executor.
+    #[arg(long, default_value_t = 8)]
+    threads: usize,
+    /// Mod root with mod.json5 and content/.
+    #[arg(long, default_value = "game")]
+    content_root: PathBuf,
+    /// Write the report as JSON.
+    #[arg(long)]
+    json: Option<PathBuf>,
+    /// Compare stage means against this baseline (benches/baseline.json).
+    #[arg(long)]
+    baseline: Option<PathBuf>,
+    /// With --baseline: exit 1 when any stage is more than 20 % slower.
+    #[arg(long)]
+    strict: bool,
+    /// Insert this run into a baseline file (created if missing).
+    #[arg(long)]
+    record_baseline: Option<PathBuf>,
+    /// Machine description stored with --record-baseline.
+    #[arg(long)]
+    machine: Option<String>,
+    /// Date stored with --record-baseline.
+    #[arg(long)]
+    recorded: Option<String>,
 }
 
 #[derive(Args)]
@@ -105,6 +141,27 @@ fn main() -> anyhow::Result<()> {
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();
             il_cli::run(&opts, &mut lock)?;
+            Ok(())
+        }
+        Command::Bench(a) => {
+            let opts = il_cli::bench::BenchOptions {
+                soldiers: a.soldiers,
+                ticks: a.ticks,
+                threads: a.threads,
+                content_root: a.content_root,
+                json: a.json,
+                baseline: a.baseline,
+                strict: a.strict,
+                record_baseline: a.record_baseline,
+                machine: a.machine,
+                recorded: a.recorded,
+            };
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            let (_, regressions) = il_cli::bench::bench(&opts, &mut lock)?;
+            if opts.strict && !regressions.is_empty() {
+                return Err(il_cli::bench::strict_error(&regressions));
+            }
             Ok(())
         }
         Command::Genart(a) => {

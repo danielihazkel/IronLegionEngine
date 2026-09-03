@@ -1575,6 +1575,7 @@ version = "0.1.0"
 dependencies = [
  "bevy_ecs",
  "criterion",
+ "il_cli",
  "il_core",
  "il_data",
  "il_sim_battle",
