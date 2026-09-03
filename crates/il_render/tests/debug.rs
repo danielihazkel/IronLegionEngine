@@ -15,7 +15,7 @@ const SCREEN: Vec2 = Vec2::new(1280.0, 800.0);
 fn world() -> BattleWorld {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
     let regs = Arc::new(Registries::load_root(&root).expect("game content loads"));
-    let scenario = il_cli::parse_scenario(
+    let scenario: il_sim_battle::Scenario = json5::from_str(
         r#"{
           map_id: "rome:test_field", seed: 7,
           sides: [

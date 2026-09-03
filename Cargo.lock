@@ -1625,7 +1625,6 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "glam 0.33.6",
- "il_cli",
  "il_core",
  "il_data",
  "il_sim_battle",
