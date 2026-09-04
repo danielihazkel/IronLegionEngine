@@ -44,7 +44,7 @@
   // Projectiles (SIM-PROJ-001..009)
   projectile_cap: 8192,
   projectile_radius: 0.3,      // m
-  scatter_scale: 0.15,
+  scatter_scale: 0.17,        // tuned on the §15.3 row 5 band (T2-031)
   direct_apex: 2,              // m
   gravity: 9.81,               // m/s^2
   shield_mult: 0.5,

@@ -44,6 +44,21 @@ pub struct Corpse {
     pub died: Tick,
 }
 
+/// A projectile in flight (T2-031): a short segment along its direction of
+/// travel at its interpolated position, lifted by the arc height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProjectileInst {
+    /// World-space ends of the segment.
+    pub a: [f32; 2],
+    pub b: [f32; 2],
+    /// Ground height plus the arc height at the midpoint.
+    pub height: f32,
+    pub side: u8,
+}
+
+/// Half-length of a drawn projectile, metres.
+pub const PROJECTILE_HALF_LENGTH: f32 = 0.4;
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegimentBlock {
     pub id: RegimentId,
@@ -59,6 +74,7 @@ pub struct EntityCounts {
     pub soldiers: u32,
     pub regiments: u32,
     pub visible_soldiers: u32,
+    pub projectiles: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -68,6 +84,8 @@ pub struct RenderSnapshot {
     pub camera: Camera,
     pub soldiers: Vec<SoldierInst>,
     pub regiments: Vec<RegimentBlock>,
+    /// Projectiles inside the view (T2-031).
+    pub projectiles: Vec<ProjectileInst>,
     pub counts: EntityCounts,
 }
 
@@ -79,6 +97,7 @@ impl Default for RenderSnapshot {
             camera: Camera::new(Vec2::ZERO),
             soldiers: Vec::new(),
             regiments: Vec::new(),
+            projectiles: Vec::new(),
             counts: EntityCounts::default(),
         }
     }
@@ -107,6 +126,7 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
     out.camera = input.camera;
     out.soldiers.clear();
     out.regiments.clear();
+    out.projectiles.clear();
 
     // Regiment table first: side and selection per regiment, ascending id so
     // soldiers can binary-search it.
@@ -166,9 +186,38 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
             corpse: true,
         });
     }
+    // Projectiles: the arc is closed-form from the launch data, so the
+    // renderer evaluates it at the interpolated time `tick − 1 + alpha`.
+    let mut projectiles = 0u32;
+    let now = (view.tick().0 as f32 - 1.0 + alpha).max(0.0);
+    for p in view.projectiles() {
+        projectiles += 1;
+        let launch = p.launch_tick.0 as f32;
+        let land = p.land_tick.0 as f32;
+        let u = if land > launch {
+            ((now - launch) / (land - launch)).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        let start = v2(p.start);
+        let end = v2(p.end);
+        let pos = start + (end - start) * u;
+        if pos.x < min.x || pos.y < min.y || pos.x > max.x || pos.y > max.y {
+            continue;
+        }
+        let dir = (end - start).normalize_or_zero() * PROJECTILE_HALF_LENGTH;
+        let z = p.apex.to_f32_render() * 4.0 * u * (1.0 - u);
+        out.projectiles.push(ProjectileInst {
+            a: (pos - dir).to_array(),
+            b: (pos + dir).to_array(),
+            height: crate::terrain::ground_height(map, pos) + z,
+            side: p.side,
+        });
+    }
     out.counts = EntityCounts {
         soldiers: total,
         regiments: out.regiments.len() as u32,
         visible_soldiers: out.soldiers.len() as u32,
+        projectiles,
     };
 }

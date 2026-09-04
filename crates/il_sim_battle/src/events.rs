@@ -42,6 +42,14 @@ pub enum BattleEvent {
     /// `count` soldiers of the regiment threw this tick (SIM-PROJ-003,
     /// T2-030); the statistical path emits it too (REQ-CMBT-015).
     VolleyFired { regiment: RegimentId, count: u16 },
+    /// A projectile reached its landing point (SIM-PROJ-006, T2-031);
+    /// `victim` is the soldier it struck, if any. Never emitted by the
+    /// statistical path, which has no visible projectile.
+    ProjectileLanded {
+        pos: V2,
+        hit: bool,
+        victim: Option<SoldierId>,
+    },
     /// Direct fire was refused this tick because `blocker`, a friendly
     /// regiment, lay in the line of fire (SIM-PROJ-009); the mode is
     /// unchanged and fire resumes when the line clears.

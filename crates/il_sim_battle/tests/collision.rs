@@ -5,9 +5,9 @@
 mod common;
 
 use il_core::{Angle, RegimentId, S, Scalar, V2};
-use il_sim_battle::components::{Body, Order, OrderKind, Path, Pos};
+use il_sim_battle::components::{Body, Fire, Order, OrderKind, Path, Pos};
 use il_sim_battle::resources::Ids;
-use il_sim_battle::{BattleWorld, PathRequests, SpeedMode};
+use il_sim_battle::{BattleWorld, FireMode, PathRequests, SpeedMode};
 
 fn v(x: f32, y: f32) -> V2 {
     V2::from_f32_data(x, y)
@@ -33,6 +33,17 @@ fn order_move(w: &mut BattleWorld, rid: u32, target: V2, facing: f32) {
         .resource_mut::<PathRequests>()
         .0
         .insert(RegimentId(rid));
+    w.recompute_hash();
+}
+
+/// Hastati carry pila (T2-030); a collision test wants none thrown.
+fn hold_fire(w: &mut BattleWorld, rid: u32) {
+    let e = w
+        .ecs()
+        .resource::<Ids>()
+        .regiment_entity(RegimentId(rid))
+        .unwrap();
+    w.ecs_mut().get_mut::<Fire>(e).unwrap().mode = FireMode::Hold;
     w.recompute_hash();
 }
 
@@ -101,6 +112,8 @@ fn regiments_marching_through_each_other_end_without_overlaps() {
     let mut w = BattleWorld::new(&setup, common::regs()).unwrap();
     order_move(&mut w, 0, v(440.0, 150.0), 0.0);
     order_move(&mut w, 1, v(360.0, 150.0), 180.0);
+    hold_fire(&mut w, 0);
+    hold_fire(&mut w, 1);
     let mut collided = false;
     let mut idle_since: Option<u32> = None;
     for t in 0..2_000u32 {

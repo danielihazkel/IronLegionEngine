@@ -1,4 +1,5 @@
-//! Ranged combat (T2-030; SIM-PROJ-001..004, SIM-PROJ-009, TDD §8.2).
+//! Ranged combat (T2-030, T2-031; SIM-PROJ-001..006, SIM-PROJ-009, TDD
+//! §8.2).
 //!
 //! Stage 9 `ranged_target` (exclusive, ascending regiment id) picks each
 //! shooting regiment's enemy regiment on its stagger tick and fills the
@@ -7,6 +8,9 @@
 //! and records every shot into a shared buffer; `ranged_spawn` (exclusive)
 //! sorts the buffer by shooter id, allocates projectile ids in that order,
 //! spends ammo, resets the cooldowns and emits the events (SAD §8 rule 2).
+//! Stage 11 `projectile_stage` (exclusive) lands the projectiles whose
+//! tick has come, applies the damage queue in `(tick, target)` order and
+//! drops the landed projectiles from the list.
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -18,18 +22,20 @@ use il_core::{
 };
 use il_data::ProjectileArc;
 
+use crate::combat::attack::{Kill, Kills};
 use crate::combat::formulas::{
-    apex_height, cooldown_ticks, fatigue_mults, flight_ticks, range_mult, scatter,
+    apex_height, attack_arc, cooldown_ticks, fatigue_mults, flight_ticks, range_mult,
+    ranged_damage, scatter,
 };
 use crate::command::FireMode;
 use crate::components::{
-    Anchor, FatigueC, Fire, Fsm, Morale, MoraleState, Pos, RangedState, Regiment, Soldier,
-    SoldierState, Vel,
+    Anchor, Body, Facing, FatigueC, Fire, Fsm, Health, Morale, MoraleState, Pos, RangedState,
+    Regiment, Soldier, SoldierState, Vel,
 };
 use crate::events::BattleEvent;
 use crate::resources::{
-    AnchorGridRes, Clock, Events, Ids, MapRes, MeleeGateRes, Projectile, Projectiles,
-    RangedGateRes, Regs, Rng,
+    AnchorGridRes, Clock, Events, Ids, MapRes, MeleeGateRes, Pending, PendingDamage, Projectile,
+    Projectiles, RangedGateRes, Regs, Rng, SpatialGridRes,
 };
 use crate::spatial::Entry;
 
@@ -641,12 +647,187 @@ pub fn ranged_spawn(world: &mut World) {
     }
 }
 
+// ------------------------------------------------------------ Stage 11 (T2-031)
+
+/// SIM-PROJ-006: the soldier a projectile landing at `land` strikes among
+/// `candidates` (`(id, distance to the landing point, collision radius)`,
+/// ascending id): the nearest whose circle, grown by `projectile_radius`,
+/// covers the point; ties keep the lowest id (strict `<` over an
+/// ascending-id input).
+pub fn pick_victim(
+    candidates: impl IntoIterator<Item = (SoldierId, S, S)>,
+    projectile_radius: S,
+) -> Option<SoldierId> {
+    let mut best: Option<(S, SoldierId)> = None;
+    for (id, d, r) in candidates {
+        if d <= r + projectile_radius && best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, id));
+        }
+    }
+    best.map(|(_, id)| id)
+}
+
+/// SIM-PROJ-006: lands every projectile whose `land_tick` is `tick`, in
+/// ascending id: the grid at the landing point (this tick's Stage 7
+/// build) gives the candidates, the impact arc is read from the victim's
+/// facing toward the shooter, and the damage is queued for this tick.
+fn projectile_land(world: &mut World, tick: Tick) {
+    let landing: Vec<Projectile> = world
+        .resource::<Projectiles>()
+        .0
+        .iter()
+        .filter(|p| p.land_tick == tick)
+        .copied()
+        .collect();
+    if landing.is_empty() {
+        return;
+    }
+    let (projectile_radius, max_radius) = {
+        let regs = &world.resource::<Regs>().0;
+        let max_radius = regs
+            .units
+            .iter()
+            .map(|(_, u)| u.soldier_radius)
+            .fold(S::ZERO, |a, b| a.max(b));
+        (regs.rules.combat.projectile_radius, max_radius)
+    };
+    let mut scratch: Vec<usize> = Vec::new();
+    let mut queued: Vec<Pending> = Vec::new();
+    let mut events: Vec<BattleEvent> = Vec::new();
+    for p in &landing {
+        let victim = {
+            let grid = &world.resource::<SpatialGridRes>().0;
+            grid.query_circle_indices(p.end, max_radius + projectile_radius, &mut scratch);
+            let entries = grid.entries();
+            pick_victim(
+                scratch.iter().map(|&k| {
+                    let e = &entries[k];
+                    let r = world.get::<Body>(e.entity).map_or(S::ZERO, |b| b.r);
+                    (e.id, e.pos.distance(p.end), r)
+                }),
+                projectile_radius,
+            )
+        };
+        if let Some(victim_id) = victim
+            && let Some(ve) = world.resource::<Ids>().soldier_entity(victim_id)
+            && let (Some(soldier), Some(facing)) =
+                (world.get::<Soldier>(ve), world.get::<Facing>(ve))
+        {
+            let regs = &world.resource::<Regs>().0;
+            let unit = regs.units.get(soldier.unit);
+            let arc = attack_arc(facing.theta, p.start - p.end, unit.frontal_arc_deg);
+            let damage = ranged_damage(
+                p.damage,
+                unit.armour,
+                p.pen,
+                arc,
+                unit.shield,
+                &regs.rules.combat,
+            );
+            queued.push(Pending {
+                apply_tick: tick,
+                target: victim_id,
+                damage,
+                shooter: p.shooter,
+                shooter_regiment: p.shooter_regiment,
+            });
+        }
+        events.push(BattleEvent::ProjectileLanded {
+            pos: p.end,
+            hit: victim.is_some(),
+            victim,
+        });
+    }
+    world.resource_mut::<PendingDamage>().0.extend(queued);
+    let mut queue = world.resource_mut::<Events>();
+    for e in events {
+        queue.0.push(tick, e);
+    }
+}
+
+/// TDD §8.2 `apply_pending_damage`: the entries whose tick has come land
+/// in `(apply_tick, target id)` order (a stable sort, so the queue order
+/// breaks ties); a soldier whose hp crosses zero joins `Kills` with the
+/// shooter and its regiment. Entries for a future tick stay queued.
+fn apply_pending_damage(world: &mut World, tick: Tick) {
+    let mut queue = core::mem::take(&mut world.resource_mut::<PendingDamage>().0);
+    if queue.is_empty() {
+        return;
+    }
+    queue.sort_by_key(|p| (p.apply_tick, p.target));
+    let mut later = Vec::with_capacity(queue.len());
+    let mut kills = Vec::new();
+    for p in queue {
+        if p.apply_tick.0 > tick.0 {
+            later.push(p);
+            continue;
+        }
+        let Some(e) = world.resource::<Ids>().soldier_entity(p.target) else {
+            continue;
+        };
+        let Some(mut health) = world.get_mut::<Health>(e) else {
+            continue;
+        };
+        let before = health.hp;
+        health.hp = before - p.damage;
+        if before > S::ZERO && health.hp <= S::ZERO {
+            kills.push(Kill {
+                victim: p.target,
+                killer: Some(p.shooter),
+                killer_regiment: Some(p.shooter_regiment),
+            });
+        }
+    }
+    world.resource_mut::<PendingDamage>().0 = later;
+    world.resource_mut::<Kills>().0.extend(kills);
+}
+
+/// Stage 11 `projectile_stage` (T2-031): land, apply the damage queue,
+/// drop the landed projectiles. Exclusive, one defined order.
+pub fn projectile_stage(world: &mut World) {
+    let tick = world.resource::<Clock>().tick;
+    projectile_land(world, tick);
+    apply_pending_damage(world, tick);
+    world
+        .resource_mut::<Projectiles>()
+        .0
+        .retain(|p| p.land_tick.0 > tick.0);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn v(x: f32, y: f32) -> V2 {
         V2::from_f32_data(x, y)
+    }
+
+    #[test]
+    fn victim_is_the_nearest_covered_circle_and_ties_take_the_lowest_id() {
+        let r = S::from_f32_data(0.4);
+        let pr = S::from_f32_data(0.3);
+        let s = |x: f32| S::from_f32_data(x);
+        // Nearest wins over a lower id.
+        assert_eq!(
+            pick_victim([(SoldierId(1), s(0.5), r), (SoldierId(2), s(0.2), r)], pr),
+            Some(SoldierId(2))
+        );
+        // Equal distances: the lowest id (first in ascending input).
+        assert_eq!(
+            pick_victim([(SoldierId(3), s(0.5), r), (SoldierId(4), s(0.5), r)], pr),
+            Some(SoldierId(3))
+        );
+        // Outside r + projectile_radius (0.7 m): nothing is hit.
+        assert_eq!(
+            pick_victim([(SoldierId(3), s(0.71), r), (SoldierId(4), s(2.0), r)], pr),
+            None
+        );
+        // A bigger soldier (cavalry, 0.7 m) is covered from further away.
+        assert_eq!(
+            pick_victim([(SoldierId(5), s(0.9), s(0.7))], pr),
+            Some(SoldierId(5))
+        );
+        assert_eq!(pick_victim([], pr), None);
     }
 
     #[test]

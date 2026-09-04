@@ -30,8 +30,7 @@
     seed_base: 5000,
     tick_limit: 1200,            // eight volleys take 561 ticks plus the last flight
     assertions: [
-      // Casualties need landing (T2-031); until then the row is carried inactive.
-      { name: "hastati lose 15-35", kind: "casualties", side: 1, min_lost: 0.125, max_lost: 0.292, min_fraction: 0.90, active: false },
+      { name: "hastati lose 15-35", kind: "casualties", side: 1, min_lost: 0.125, max_lost: 0.292, min_fraction: 0.90 },
     ],
   },
 }

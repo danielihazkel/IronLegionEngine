@@ -11,10 +11,11 @@
 //! the pure rule functions.
 
 //!
-//! Ranged (T2-030): Stage 9 `ranged_target` picks each shooting regiment's
-//! target on its stagger tick; Stage 10 `ranged_fire` computes the shots in
-//! parallel and `ranged_spawn` turns them into projectiles in shooter id
-//! order.
+//! Ranged (T2-030, T2-031): Stage 9 `ranged_target` picks each shooting
+//! regiment's target on its stagger tick; Stage 10 `ranged_fire` computes
+//! the shots in parallel and `ranged_spawn` turns them into projectiles in
+//! shooter id order; Stage 11 `projectile_stage` lands them and applies
+//! the damage queue.
 
 pub mod attack;
 pub mod death;
@@ -33,5 +34,8 @@ pub use formulas::{
 };
 pub use gate::melee_gate;
 pub use pursue::pursue_update;
-pub use ranged::{Shot, Shots, ranged_fire, ranged_spawn, ranged_target, segment_hits_circle};
+pub use ranged::{
+    Shot, Shots, pick_victim, projectile_stage, ranged_fire, ranged_spawn, ranged_target,
+    segment_hits_circle,
+};
 pub use target::{melee_recount, melee_target, rebuild_attackers, rebuild_charge_mass};

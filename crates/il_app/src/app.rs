@@ -606,6 +606,9 @@ impl App {
         self.profiler.frame(dt, stepped);
     }
 
+    /// Colour of a projectile segment (pale wood on any ground).
+    const PROJECTILE_COLOUR: [u8; 4] = [236, 224, 186, 255];
+
     /// Builds the render snapshot and sprite scene for the battle.
     fn build_battle_scene(&mut self, screen: Vec2, time: f32) {
         let camera = *self.camera_mut();
@@ -622,6 +625,12 @@ impl App {
         build_snapshot(&session.world.view(), &input, &mut self.snapshot);
         self.lines.clear();
         deployment_outlines(session.world.map(), &camera, screen, &mut self.lines);
+        // Projectiles as short lifted segments (T2-031, plan decision 9).
+        for p in &self.snapshot.projectiles {
+            let a = camera.world_to_screen(Vec2::from(p.a), p.height, screen);
+            let b = camera.world_to_screen(Vec2::from(p.b), p.height, screen);
+            self.lines.segment(a, b, Self::PROJECTILE_COLOUR);
+        }
         if DEV {
             build_debug_lines(
                 &session.world.view(),

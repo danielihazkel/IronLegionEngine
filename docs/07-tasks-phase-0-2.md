@@ -419,9 +419,10 @@ flowchart LR
   **Done when** 120 velites fire 8 synchronised volleys and ammo reaches 0.
   Done 2026-09-04: `combat/ranged.rs` (Stage 9 `ranged_target`, Stage 10 `ranged_fire` + `ranged_spawn`), the ranged formulas in `combat/formulas.rs`, `RangedState`/`Fire`/`Projectiles`/`PendingDamage` in the hash and snapshot (`SNAPSHOT_VERSION = 5`, goldens re-baselined), `FireMode` accepted at Stage 0 (`NotRanged`), `VolleyFired`/`FireBlocked` events, `persia:archer` (indirect), the `F` fire toggle in il_app, `Hold` scripted into the melee band files, `tests/ranged.rs` (eight volleys 80 ticks apart, ammo 0, hold/resume, target validation and fallback, friendly block, out of range, restore mid-flight, 1 vs 8 threads) and `tests/tests/ranged_mods.rs` (`volley: false`). Projectiles accumulate until T2-031 lands them.
 
-- [ ] **T2-031 Projectile flight and landing** · M · Refs SIM-PROJ-005..007, 009, TDD §8.2 `projectile_advance`, `projectile_land`
-  Precomputed `land_tick`, direct and indirect arcs, Stage 11 advance in parallel, landing query, nearest hit with shield and arc rules, `PendingDamage` applied in `(tick, target id)` order, friendly fire.
+- [x] **T2-031 Projectile flight and landing** · M · Refs SIM-PROJ-005..007, 009, TDD §8.2 `projectile_land`
+  Precomputed `land_tick`, direct and indirect arcs evaluated in closed form (no advance system), Stage 11 landing query, nearest hit with shield and arc rules, `PendingDamage` applied in `(tick, target id)` order, friendly fire, projectiles drawn as segments in il_app.
   **Done when** flight-time golden tests pass and the volley scenario band (Simulation Spec §15.3 row 5) holds.
+  Done 2026-09-04: Stage 11 `projectile_stage` in `combat/ranged.rs` (`projectile_land`, `apply_pending_damage`, landed projectiles dropped), `ProjectileLanded` event, kill credit through the shooter's regiment; `RenderSnapshot.projectiles` and the lifted line segments in il_app; `tests/ranged.rs` gained the landing tests (nearest victim, shields from the front only, friendly fire under arrows, one death for a melee-plus-javelin kill, a dead shooter's credit, restore with the damage queue, 1,800 archers at 1 vs 8 threads). Row 5 holds 50/50 after tuning `scatter_scale` from 0.15 to 0.17 (recorded in §15.1 and §15.3).
 
 - [ ] **T2-032 Statistical fallback above the cap** · M · Refs SIM-PROJ-008, REQ-CMBT-015, SAD T-3
   When the pool is exhausted, resolve volleys statistically with the same `hash_draw` slots and delayed damage.

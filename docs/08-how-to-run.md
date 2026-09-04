@@ -85,6 +85,14 @@ cargo run --release -p il_app -- tests/scenarios/bands/melee_hastati_vs_velites.
 
 The hastati line attack-moves into the velites on its own (the file scripts it). Expect: the line advances, the two regiments lock together with a ragged front, soldiers fall and stay on the ground as darkened sprites for thirty seconds, and the weaker side thins out first. Nobody routs yet: morale arrives with T2-041.
 
+### 4b. The volley check (Phase 2, T2-031)
+
+```
+cargo run --release -p il_app -- tests/scenarios/bands/volley_velites_vs_hastati.json5
+```
+
+Nobody moves: the velites throw at will from 35 m. Expect: every four seconds a volley of pale javelins arcs from the loose line into the hastati, a few of them fall each time and stay as corpses, and after eight volleys the velites are out of javelins and stop. Select the velites and press `F` to make them hold fire, `F` again to resume.
+
 ## 5. Headless tools (`il_cli`)
 
 ```
@@ -100,7 +108,7 @@ cargo run -p il_cli -- genart
 - `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
 - `validate` loads the mod roots you list and prints every diagnostic with file, line and column; exit code 1 on errors.
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers, `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release.
-- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; a file's rout clauses print `skip` until morale exists (T2-041), and the volley file's casualty clause until projectiles land (T2-031).
+- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; a file's rout clauses print `skip` until morale exists (T2-041).
 - `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
 
 Criterion micro-benches:

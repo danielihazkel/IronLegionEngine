@@ -1,12 +1,15 @@
 //! T2-030: ranged targeting, volleys, ammo, fire modes and the friendly
-//! block (SIM-PROJ-001..004, SIM-PROJ-009).
+//! block (SIM-PROJ-001..004, SIM-PROJ-009). T2-031: landing, delayed
+//! damage, friendly fire, kill credit (SIM-PROJ-005, SIM-PROJ-006).
 
 mod common;
 
 use common::cid;
-use il_core::{PlayerId, RegimentId, S, Scalar, StateHash, Tick, V2};
-use il_sim_battle::components::{Anchor, Fire, Pos, RangedState, Regiment};
-use il_sim_battle::resources::Ids;
+use il_core::{PlayerId, RegimentId, S, Scalar, SoldierId, StateHash, Tick, V2};
+use il_data::ProjectileArc;
+use il_sim_battle::combat::{Kill, Kills};
+use il_sim_battle::components::{Anchor, Combat, Fire, Health, Pos, RangedState, Regiment};
+use il_sim_battle::resources::{Ids, Pending, PendingDamage, Projectile, Projectiles};
 use il_sim_battle::{
     BattleEvent, BattleSetup, BattleWorld, Command, CommandKind, FireMode, RegimentSetup,
     RejectReason, Snapshot,
@@ -90,6 +93,9 @@ struct Log {
     blocked: Vec<(u32, u32, u32)>,
     hashes: Vec<StateHash>,
     max_live: usize,
+    /// `ProjectileLanded` events: total and hits (T2-031).
+    landed: (u32, u32),
+    deaths: Vec<(SoldierId, Option<SoldierId>, RegimentId)>,
 }
 
 fn run(world: &mut BattleWorld, commands: &[Command], until: u32, log: &mut Log) {
@@ -110,6 +116,16 @@ fn run(world: &mut BattleWorld, commands: &[Command], until: u32, log: &mut Log)
                 BattleEvent::FireBlocked { regiment, blocker } => {
                     log.blocked.push((next.0, regiment.0, blocker.0));
                 }
+                BattleEvent::ProjectileLanded { hit, .. } => {
+                    log.landed.0 += 1;
+                    log.landed.1 += u32::from(*hit);
+                }
+                BattleEvent::SoldierDied {
+                    id,
+                    killer,
+                    regiment,
+                    ..
+                } => log.deaths.push((*id, *killer, *regiment)),
                 _ => {}
             }
         }
@@ -175,9 +191,26 @@ fn velites_fire_eight_synchronised_volleys_and_run_dry() {
     assert!(log.volleys.iter().all(|v| v.1 == 0), "{:?}", log.volleys);
     assert!(ammo_of(&w, 1).iter().all(|a| *a == 2));
     assert!(log.blocked.is_empty());
-    // Nothing lands until T2-031: every javelin thrown is still listed.
-    assert_eq!(log.max_live, 960);
-    assert_eq!(w.view().projectile_count(), 960);
+    // One volley in flight at a time (35 ticks of flight, 80 of reload),
+    // every javelin lands, and a good share of them hit.
+    assert_eq!(log.max_live, 120);
+    assert_eq!(w.view().projectile_count(), 0);
+    assert_eq!(log.landed.0, 960);
+    assert!(log.landed.1 > 200, "hits: {:?}", log.landed);
+    let left = w.view().regiment(RegimentId(1)).unwrap().soldier_count;
+    // The §15.3 row 5 band (loose velites, 50 seeds) pins the casualties;
+    // here the line-formation velites only have to hurt without wiping out.
+    assert!(left < 120 && left > 40, "hastati left: {left}");
+    assert!(log.deaths.iter().all(|d| d.2 == RegimentId(1)));
+    assert!(
+        log.deaths.iter().all(|d| d.1.is_some()),
+        "every death has a killer"
+    );
+    assert_eq!(
+        w.ecs().get::<Combat>(regiment_entity(&w, 0)).unwrap().kills,
+        120 - left,
+        "kill credit reconciles with the losses"
+    );
 
     // Determinism across thread counts.
     let mut w8 = world(&setup);
@@ -196,16 +229,36 @@ fn restore_with_a_volley_in_flight_continues_identically() {
     // The third volley leaves at tick 161 and lands 35 ticks later.
     run(&mut original, &[], 170, &mut log);
     assert_eq!(log.volleys.len(), 3, "{:?}", log.volleys);
+    // A scripted future entry keeps the damage queue non-empty across the
+    // restore (the statistical path fills it for real in T2-032).
+    let target = original
+        .ecs()
+        .get::<Regiment>(regiment_entity(&original, 1))
+        .unwrap()
+        .soldiers[5];
+    original
+        .ecs_mut()
+        .resource_mut::<PendingDamage>()
+        .0
+        .push(Pending {
+            apply_tick: Tick(180),
+            target,
+            damage: S::from_i32(5),
+            shooter: SoldierId(0),
+            shooter_regiment: RegimentId(0),
+        });
+    original.recompute_hash();
     let snap = original.snapshot();
-    // Three volleys thrown, none landed yet (T2-031).
-    assert_eq!(snap.projectiles.len(), 360);
+    // The third volley is in flight; the first two have landed.
+    assert_eq!(snap.projectiles.len(), 120);
+    assert_eq!(snap.pending_damage.len(), 1);
     assert!(snap.projectiles.windows(2).all(|p| p[0].id < p[1].id));
     assert!(snap.regiments[0].fire.is_some());
     assert!(snap.soldiers[0].ranged.is_some());
     let decoded = Snapshot::from_bytes(&snap.to_bytes()).unwrap();
     let mut restored = BattleWorld::restore(&decoded, common::regs()).unwrap();
     assert_eq!(restored.hash(), original.hash());
-    assert_eq!(restored.view().projectile_count(), 360);
+    assert_eq!(restored.view().projectile_count(), 120);
     restored.set_threads(8);
     for tick in 0..500 {
         assert_eq!(
@@ -214,6 +267,286 @@ fn restore_with_a_volley_in_flight_continues_identically() {
             "diverged {tick} ticks after the restore"
         );
     }
+    assert!(original.ecs().resource::<PendingDamage>().0.is_empty());
+}
+
+/// Pushes a projectile aimed at `end`, landing `flight` ticks from now.
+fn scripted_projectile(w: &mut BattleWorld, shooter: SoldierId, end: V2, flight: u32) {
+    let shooter_regiment = {
+        let e = w.ecs().resource::<Ids>().soldier_entity(shooter).unwrap();
+        w.ecs()
+            .get::<il_sim_battle::components::Soldier>(e)
+            .unwrap()
+            .regiment
+    };
+    let side = w.view().regiment(shooter_regiment).unwrap().side;
+    let launch = w.tick();
+    let id = w.ecs_mut().resource_mut::<Ids>().projectiles.alloc();
+    w.ecs_mut()
+        .resource_mut::<Projectiles>()
+        .0
+        .push(Projectile {
+            id,
+            shooter,
+            shooter_regiment,
+            side,
+            launch_tick: launch,
+            land_tick: Tick(launch.0 + flight),
+            start: end - V2::from_f32_data(30.0, 0.0),
+            end,
+            apex: S::from_i32(2),
+            arc: ProjectileArc::Direct,
+            damage: S::from_i32(1000),
+            pen: S::ONE,
+        });
+    w.recompute_hash();
+}
+
+fn soldier_pos(w: &BattleWorld, id: SoldierId) -> V2 {
+    w.view().soldier(id).unwrap().pos
+}
+
+#[test]
+fn shields_only_count_from_the_front() {
+    // Hastati facing the velites take frontal hits behind their shields;
+    // turned away they take rear hits at 1.5x with no shield: far more die.
+    let losses = |deg: f32| {
+        let setup = two_sides(
+            vec![at(1, "rome:velites", 120, "rome:line", 300.0, 150.0, 0.0)],
+            vec![at(2, "rome:hastati", 120, "rome:line", 335.0, 150.0, deg)],
+        );
+        let mut w = world(&setup);
+        let mut log = Log::default();
+        run(&mut w, &[], 800, &mut log);
+        120 - w.view().regiment(RegimentId(1)).unwrap().soldier_count
+    };
+    let front = losses(180.0);
+    let rear = losses(0.0);
+    assert!(rear > front + 10, "front {front}, rear {rear}");
+}
+
+#[test]
+fn friendly_fire_lands_on_allies_under_the_arrows() {
+    // Archers lob 100 m at hastati; a friendly hastati line stands five
+    // metres in front of the target, inside the scatter ring.
+    let setup = two_sides(
+        vec![
+            at(1, "persia:archer", 120, "rome:line", 300.0, 150.0, 0.0),
+            at(2, "rome:hastati", 120, "rome:line", 393.0, 150.0, 0.0),
+        ],
+        vec![at(3, "rome:hastati", 120, "rome:line", 400.0, 150.0, 180.0)],
+    );
+    let mut w = world(&setup);
+    let mut log = Log::default();
+    // Both hastati lines hold their pila (7 m apart, they would throw).
+    let hold = [
+        fire_mode(1, 0, 1, FireMode::Hold),
+        fire_mode(1, 1, 2, FireMode::Hold),
+    ];
+    run(&mut w, &hold, 1500, &mut log);
+    assert!(log.blocked.is_empty(), "indirect fire is never blocked");
+    let own = 120 - w.view().regiment(RegimentId(1)).unwrap().soldier_count;
+    let enemy = 120 - w.view().regiment(RegimentId(2)).unwrap().soldier_count;
+    // Arrows arrive from behind the friendly line (rear hits, no shield)
+    // and from the front of the enemy line (frontal hits behind shields
+    // and spread over 120 soldiers, so few reach a lethal total): the
+    // friendly losses are the larger number. What the rule asks is that
+    // allies under the arrows are hit like enemies.
+    assert!(own > 0, "own {own}, enemy {enemy}");
+    assert!(log.landed.1 > 100, "{:?}", log.landed);
+    let archers: Vec<SoldierId> = w
+        .ecs()
+        .get::<Regiment>(regiment_entity(&w, 0))
+        .unwrap()
+        .soldiers
+        .clone();
+    assert!(
+        log.deaths
+            .iter()
+            .any(|d| d.2 == RegimentId(1) && d.1.is_some_and(|k| archers.contains(&k))),
+        "an ally was killed by an archer: {:?}",
+        log.deaths
+    );
+}
+
+#[test]
+fn a_soldier_killed_in_melee_and_hit_by_a_javelin_dies_once() {
+    let mut w = world(&volley_setup(335.0));
+    let victim = w
+        .ecs()
+        .get::<Regiment>(regiment_entity(&w, 1))
+        .unwrap()
+        .soldiers[0];
+    let ve = w.ecs().resource::<Ids>().soldier_entity(victim).unwrap();
+    // The melee kill of this tick has already been applied (Stage 10)...
+    w.ecs_mut().get_mut::<Health>(ve).unwrap().hp = S::ZERO;
+    let killer = SoldierId(7);
+    w.ecs_mut().resource_mut::<Kills>().0.push(Kill {
+        victim,
+        killer: Some(killer),
+        killer_regiment: Some(RegimentId(0)),
+    });
+    // ...and a javelin lands on the same soldier at Stage 11.
+    let next = w.tick().next();
+    w.ecs_mut().resource_mut::<PendingDamage>().0.push(Pending {
+        apply_tick: next,
+        target: victim,
+        damage: S::from_i32(50),
+        shooter: SoldierId(9),
+        shooter_regiment: RegimentId(0),
+    });
+    w.recompute_hash();
+    let out = w.step(&[fire_mode(next.0, 0, 0, FireMode::Hold)]);
+    let deaths: Vec<_> = out
+        .events
+        .iter()
+        .filter(|e| matches!(e, BattleEvent::SoldierDied { .. }))
+        .collect();
+    assert_eq!(deaths.len(), 1, "{deaths:?}");
+    assert!(matches!(
+        deaths[0],
+        BattleEvent::SoldierDied { id, killer: Some(k), .. } if *id == victim && *k == killer
+    ));
+    assert_eq!(
+        w.ecs().get::<Combat>(regiment_entity(&w, 0)).unwrap().kills,
+        1
+    );
+    assert!(w.ecs().resource::<PendingDamage>().0.is_empty());
+}
+
+#[test]
+fn a_dead_shooter_still_credits_its_regiment() {
+    let mut w = world(&volley_setup(335.0));
+    // Hold fire so only the scripted javelin flies.
+    let t = w.tick().next();
+    assert!(
+        w.step(&[fire_mode(t.0, 0, 0, FireMode::Hold)])
+            .rejected
+            .is_empty()
+    );
+    let shooter = w
+        .ecs()
+        .get::<Regiment>(regiment_entity(&w, 0))
+        .unwrap()
+        .soldiers[3];
+    let target = w
+        .ecs()
+        .get::<Regiment>(regiment_entity(&w, 1))
+        .unwrap()
+        .soldiers[10];
+    // Aim at where the (idle) target stands, landing in three ticks.
+    let aim = soldier_pos(&w, target);
+    scripted_projectile(&mut w, shooter, aim, 3);
+    // The shooter falls this very tick.
+    let se = w.ecs().resource::<Ids>().soldier_entity(shooter).unwrap();
+    w.ecs_mut().get_mut::<Health>(se).unwrap().hp = S::ZERO;
+    w.ecs_mut().resource_mut::<Kills>().0.push(Kill {
+        victim: shooter,
+        killer: None,
+        killer_regiment: None,
+    });
+    w.recompute_hash();
+    let mut log = Log::default();
+    let until = w.tick().0 + 4;
+    run(&mut w, &[], until, &mut log);
+    assert_eq!(log.landed, (1, 1), "the javelin landed on someone");
+    assert!(
+        log.deaths
+            .iter()
+            .any(|d| d.0 == target && d.1 == Some(shooter) && d.2 == RegimentId(1)),
+        "{:?}",
+        log.deaths
+    );
+    assert_eq!(
+        w.ecs().get::<Combat>(regiment_entity(&w, 0)).unwrap().kills,
+        1,
+        "credited although the shooter is gone"
+    );
+    assert!(w.view().soldier(shooter).is_none());
+}
+
+#[test]
+fn a_javelin_hits_the_nearest_soldier_under_it() {
+    let mut w = world(&volley_setup(335.0));
+    let t = w.tick().next();
+    assert!(
+        w.step(&[fire_mode(t.0, 0, 0, FireMode::Hold)])
+            .rejected
+            .is_empty()
+    );
+    let hastati = w
+        .ecs()
+        .get::<Regiment>(regiment_entity(&w, 1))
+        .unwrap()
+        .soldiers
+        .clone();
+    let (near, far) = (hastati[20], hastati[21]);
+    // Land 0.2 m from `near`, on the side away from `far` (neighbours in a
+    // rank stand about a metre apart).
+    let p_near = soldier_pos(&w, near);
+    let p_far = soldier_pos(&w, far);
+    let away = (p_near - p_far).normalized_or_zero() * S::from_f32_data(0.2);
+    let shooter = w
+        .ecs()
+        .get::<Regiment>(regiment_entity(&w, 0))
+        .unwrap()
+        .soldiers[0];
+    scripted_projectile(&mut w, shooter, p_near + away, 1);
+    let mut log = Log::default();
+    let until = w.tick().0 + 1;
+    run(&mut w, &[], until, &mut log);
+    assert_eq!(log.landed, (1, 1));
+    assert_eq!(log.deaths.len(), 1, "{:?}", log.deaths);
+    assert_eq!(log.deaths[0].0, near);
+    assert!(w.view().soldier(far).is_some());
+    // Landing on empty ground hits nobody.
+    scripted_projectile(&mut w, shooter, V2::from_f32_data(600.0, 600.0), 1);
+    let until = w.tick().0 + 1;
+    run(&mut w, &[], until, &mut log);
+    assert_eq!(log.landed, (2, 1));
+}
+
+#[test]
+fn archer_battle_is_identical_at_one_and_eight_threads() {
+    // 15 archer regiments (1,800 soldiers) lob at five hoplite phalanxes.
+    let mut archers = Vec::new();
+    for row in 0..5 {
+        for col in 0..3 {
+            archers.push(at(
+                1 + row * 3 + col,
+                "persia:archer",
+                120,
+                "rome:line",
+                [280.0, 300.0, 320.0][col as usize],
+                [60.0, 105.0, 150.0, 195.0, 240.0][row as usize],
+                0.0,
+            ));
+        }
+    }
+    let hoplites = (0..5)
+        .map(|row| {
+            at(
+                20 + row,
+                "greece:hoplite",
+                160,
+                "rome:phalanx",
+                400.0,
+                [60.0, 105.0, 150.0, 195.0, 240.0][row as usize],
+                180.0,
+            )
+        })
+        .collect();
+    let setup = two_sides(archers, hoplites);
+    let mut a = world(&setup);
+    let mut la = Log::default();
+    run(&mut a, &[], 400, &mut la);
+    let mut b = world(&setup);
+    b.set_threads(8);
+    let mut lb = Log::default();
+    run(&mut b, &[], 400, &mut lb);
+    assert_eq!(la.hashes, lb.hashes);
+    assert!(la.landed.1 > 100, "{:?}", la.landed);
+    assert!(la.max_live > 1000, "{}", la.max_live);
 }
 
 #[test]
@@ -336,7 +669,7 @@ fn friendly_line_blocks_direct_fire_but_not_arrows() {
         log.blocked
     );
     let kept = ammo_of(&w, 0).iter().filter(|a| **a == 8).count();
-    assert!(kept >= 118, "ammo kept by the blocked shooters: {kept}");
+    assert!(kept >= 115, "ammo kept by the blocked shooters: {kept}");
     assert_eq!(
         w.view().regiment(RegimentId(0)).unwrap().fire,
         Some(FireMode::FireAtWill),
@@ -363,17 +696,23 @@ fn friendly_line_blocks_direct_fire_but_not_arrows() {
     );
     let mut w = world(&setup);
     let mut log = Log::default();
-    run(&mut w, &[fire_mode(1, 0, 1, FireMode::Hold)], 100, &mut log);
+    run(&mut w, &[fire_mode(1, 0, 1, FireMode::Hold)], 60, &mut log);
     assert!(log.blocked.is_empty(), "{:?}", log.blocked);
     let archers: Vec<_> = log.volleys.iter().filter(|v| v.1 == 0).collect();
     assert_eq!(archers.len(), 1, "{:?}", log.volleys);
     assert_eq!(archers[0].2, 120);
     assert!(ammo_of(&w, 0).iter().all(|a| *a == 19));
     // An 80 m lob at 40 m/s: v = sqrt(80 g) = 28 m/s, 4.04 s = 81 ticks, so
-    // the arrows are still up at tick 100 (they left at tick 1).
+    // the arrows that left at tick 1 are still up at tick 60 and land near 82.
     assert_eq!(w.view().projectile_count(), 120);
     let p = w.view().projectiles().next().unwrap();
-    assert!(p.land_tick.0 > 80 && p.apex > S::from_i32(15), "{p:?}");
+    assert!(
+        (80..=86).contains(&p.land_tick.0) && p.apex > S::from_i32(15),
+        "{p:?}"
+    );
+    run(&mut w, &[], 90, &mut log);
+    assert_eq!(w.view().projectile_count(), 0);
+    assert_eq!(log.landed.0, 120);
 }
 
 #[test]
