@@ -3,7 +3,7 @@
   "$id": "https://ironlegion.dev/schemas/zone-type.schema.json",
   "title": "Iron Legion terrain zone type",
   "description": "A terrain zone type (content/zones/*.json5) referenced by map zone polygons (Simulation Spec SIM-MOVE-031). Mods may add zone types.",
-  "x-schema-version": 1,
+  "x-schema-version": 2,
   "$defs": {
     "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
     "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
@@ -27,6 +27,8 @@
     "formation_integrity_mult": { "type": "number", "minimum": 0, "maximum": 5, "default": 1.0, "description": "Integrity multiplier applied inside the zone (SIM-FORM-031)." },
     "passable": { "type": "boolean", "default": true, "description": "False makes every nav cell touching the zone impassable (rock, water outside crossings)." },
     "crossing": { "type": "boolean", "default": false, "description": "River cells under a polygon of this type are passable (ford, bridge; SIM-MOVE-032)." },
+    "defence_mult": { "type": "number", "minimum": 0, "maximum": 5, "default": 1.0, "description": "Melee defence multiplier for a defender standing in the zone (SIM-CMBT-016)." },
+    "ford": { "type": "boolean", "default": false, "description": "A ford: defenders standing in it also take movement.ford_defence_mult (SIM-MOVE-032, SIM-CMBT-016)." },
     "colour": { "$ref": "#/$defs/colour", "description": "Terrain tint used by the renderer until zone textures exist." }
   }
 }

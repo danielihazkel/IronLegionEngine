@@ -111,6 +111,8 @@ struct Raw {
     defence: f32,
     #[serde(default)]
     armour: f32,
+    #[serde(default)]
+    armour_penetration: f32,
     damage: f32,
     #[serde(default = "d_attack_interval")]
     attack_interval_ticks: u16,
@@ -199,6 +201,9 @@ pub struct UnitType {
     pub attack: S,
     pub defence: S,
     pub armour: S,
+    /// Melee armour penetration fraction (SIM-CMBT-013); the ranged block
+    /// carries its own.
+    pub armour_penetration: S,
     pub damage: S,
     pub attack_interval_ticks: u16,
     pub reach: S,
@@ -257,6 +262,7 @@ impl<'de> Deserialize<'de> for UnitType {
             attack: s(r.attack),
             defence: s(r.defence),
             armour: s(r.armour),
+            armour_penetration: s(r.armour_penetration),
             damage: s(r.damage),
             attack_interval_ticks: r.attack_interval_ticks,
             reach: s(r.reach),
@@ -334,6 +340,7 @@ impl ContentKind for UnitType {
         h.write(&self.attack);
         h.write(&self.defence);
         h.write(&self.armour);
+        h.write(&self.armour_penetration);
         h.write(&self.damage);
         h.write_u16(self.attack_interval_ticks);
         h.write(&self.reach);

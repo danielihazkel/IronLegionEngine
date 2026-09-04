@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/rules-morale.schema.json",
+  "title": "Iron Legion morale rules (content/rules/morale.json5)",
+  "description": "Engine tunables read by the morale, routing, rally and shatter systems (Simulation Spec 7 and 15.1). One merged object per enabled mod set; every field is required because the engine carries no numeric defaults.",
+  "x-schema-version": 1,
+  "$defs": {
+    "stateMults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attack", "defence", "interval", "speed"],
+      "properties": {
+        "attack": { "type": "number", "minimum": 0, "maximum": 5 },
+        "defence": { "type": "number", "minimum": 0, "maximum": 5 },
+        "interval": { "type": "number", "exclusiveMinimum": 0, "maximum": 5 },
+        "speed": { "type": "number", "minimum": 0, "maximum": 5 }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "t_unsettled", "t_shaken", "t_broken", "t_routing", "hysteresis",
+    "rally_margin", "rally_safe_radius", "max_routs", "shatter_strength",
+    "general_death_shock", "rout_shock", "rout_shock_radius",
+    "disengage_penalty", "charged_penalty",
+    "casualty_rate_ref", "casualty_total_ref", "fatigue_start",
+    "ally_radius", "allies_ref", "routing_ref", "outnumber_ref",
+    "engage_fatigue_ticks", "safe_radius", "exp_bonus", "w", "state_mults"
+  ],
+  "properties": {
+    "t_unsettled": { "type": "number", "minimum": 0, "maximum": 100, "description": "Morale at or below which a regiment is Unsettled (SIM-MOR-003)." },
+    "t_shaken": { "type": "number", "minimum": 0, "maximum": 100, "description": "Morale at or below which a regiment is Shaken (SIM-MOR-003)." },
+    "t_broken": { "type": "number", "minimum": 0, "maximum": 100, "description": "Morale at or below which a regiment is Broken (SIM-MOR-003)." },
+    "t_routing": { "type": "number", "minimum": 0, "maximum": 100, "description": "Morale at or below which a regiment routs (SIM-MOR-003)." },
+    "hysteresis": { "type": "number", "minimum": 0, "maximum": 100, "description": "Points above a threshold needed to leave a state upward (SIM-MOR-003)." },
+    "rally_margin": { "type": "number", "minimum": 0, "maximum": 100, "description": "Points above t_routing needed to rally (SIM-MOR-031)." },
+    "rally_safe_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres free of enemies needed to rally (SIM-MOR-031)." },
+    "max_routs": { "type": "integer", "minimum": 1, "maximum": 255, "description": "Routs after which the next one shatters the regiment (SIM-MOR-032)." },
+    "shatter_strength": { "type": "number", "minimum": 0, "maximum": 1, "description": "Fraction of initial strength below which a rout shatters (SIM-MOR-032)." },
+    "general_death_shock": { "type": "number", "minimum": 0, "maximum": 100, "description": "One-time morale loss when the general dies (SIM-MOR-014)." },
+    "rout_shock": { "type": "number", "minimum": 0, "maximum": 100, "description": "One-time morale loss to allies of a routing regiment (SIM-MOR-033)." },
+    "rout_shock_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres within which the rout shock applies (SIM-MOR-033)." },
+    "disengage_penalty": { "type": "number", "minimum": 0, "maximum": 100, "description": "One-time morale loss when ordered away from a fight (SIM-MOR-025)." },
+    "charged_penalty": { "type": "number", "minimum": 0, "maximum": 100, "description": "One-time morale loss when charged from flank or rear; half from the front (SIM-MOR-026)." },
+    "casualty_rate_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Fraction lost in 5 s that is a full casualty_rate drain (SIM-MOR-010)." },
+    "casualty_total_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Fraction lost overall that is a full casualty_total drain (SIM-MOR-011)." },
+    "fatigue_start": { "type": "number", "minimum": 0, "maximum": 1, "description": "Mean fatigue at which the fatigue factor starts (SIM-MOR-012)." },
+    "ally_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres for counting nearby allies (SIM-MOR-015, SIM-MOR-016)." },
+    "allies_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Steady allies nearby that saturate allies_near (SIM-MOR-015)." },
+    "routing_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Routing allies nearby that saturate allies_routing (SIM-MOR-016)." },
+    "outnumber_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Enemy-to-own ratio excess that saturates outnumbered (SIM-MOR-020)." },
+    "engage_fatigue_ticks": { "type": "integer", "minimum": 1, "maximum": 1000000, "description": "Ticks engaged that saturate engaged_duration (SIM-MOR-022)." },
+    "safe_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres free of enemies for the recovery factor (SIM-MOR-024)." },
+    "exp_bonus": { "type": "number", "minimum": 0, "maximum": 1, "description": "Starting morale bonus per experience level (SIM-MOR-001)." },
+    "w": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Factor weights in points per second at full effect (SIM-MOR-002).",
+      "required": ["casualty_rate", "casualty_total", "fatigue", "general_aura", "allies_near", "allies_routing", "high_ground", "fear", "flanked", "outnumbered", "integrity", "engaged_duration", "winning", "recovery"],
+      "properties": {
+        "casualty_rate": { "type": "number", "minimum": -100, "maximum": 100 },
+        "casualty_total": { "type": "number", "minimum": -100, "maximum": 100 },
+        "fatigue": { "type": "number", "minimum": -100, "maximum": 100 },
+        "general_aura": { "type": "number", "minimum": -100, "maximum": 100 },
+        "allies_near": { "type": "number", "minimum": -100, "maximum": 100 },
+        "allies_routing": { "type": "number", "minimum": -100, "maximum": 100 },
+        "high_ground": { "type": "number", "minimum": -100, "maximum": 100 },
+        "fear": { "type": "number", "minimum": -100, "maximum": 100 },
+        "flanked": { "type": "number", "minimum": -100, "maximum": 100 },
+        "outnumbered": { "type": "number", "minimum": -100, "maximum": 100 },
+        "integrity": { "type": "number", "minimum": -100, "maximum": 100 },
+        "engaged_duration": { "type": "number", "minimum": -100, "maximum": 100 },
+        "winning": { "type": "number", "minimum": -100, "maximum": 100 },
+        "recovery": { "type": "number", "minimum": -100, "maximum": 100 }
+      }
+    },
+    "state_mults": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Attack, defence, attack-interval and speed multipliers per morale state; Shattered uses the routing row (SIM-MOR-004).",
+      "required": ["steady", "unsettled", "shaken", "broken", "routing"],
+      "properties": {
+        "steady": { "$ref": "#/$defs/stateMults" },
+        "unsettled": { "$ref": "#/$defs/stateMults" },
+        "shaken": { "$ref": "#/$defs/stateMults" },
+        "broken": { "$ref": "#/$defs/stateMults" },
+        "routing": { "$ref": "#/$defs/stateMults" }
+      }
+    }
+  }
+}

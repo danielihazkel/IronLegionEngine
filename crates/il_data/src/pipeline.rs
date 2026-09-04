@@ -19,7 +19,10 @@ use crate::map_def::MapDef;
 use crate::merge::{ApplyCtx, KindAccumulator, MergedItem, merge_singleton};
 use crate::registries::{ModInfo, Registries};
 use crate::registry::{ContentKind, Lookup, Registry, ResolveError};
-use crate::rules::{FormationRules, InputBindings, MovementRules, Rules};
+use crate::rules::{
+    BattleFlowRules, CombatRules, FatigueRules, FormationRules, GeneralRules, InputBindings,
+    MoraleRules, MovementRules, Rules, VisibilityRules,
+};
 use crate::schema::KindTag;
 use crate::source::Sources;
 use crate::sprite_set::SpriteSet;
@@ -378,6 +381,14 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
     let sprite_sets = merge_kind::<SpriteSet>(set, &mut sources, &mut diags);
     let movement = merge_singleton_file(set, "rules", "movement", &mut sources, &mut diags);
     let formation_rules = merge_singleton_file(set, "rules", "formation", &mut sources, &mut diags);
+    let combat_rules = merge_singleton_file(set, "rules", "combat", &mut sources, &mut diags);
+    let morale_rules = merge_singleton_file(set, "rules", "morale", &mut sources, &mut diags);
+    let fatigue_rules = merge_singleton_file(set, "rules", "fatigue", &mut sources, &mut diags);
+    let general_rules = merge_singleton_file(set, "rules", "general", &mut sources, &mut diags);
+    let visibility_rules =
+        merge_singleton_file(set, "rules", "visibility", &mut sources, &mut diags);
+    let battle_flow_rules =
+        merge_singleton_file(set, "rules", "battle_flow", &mut sources, &mut diags);
     let input = merge_singleton_file(set, "input", "bindings", &mut sources, &mut diags);
     let locale = load_locales(set, &mut sources, &mut diags);
 
@@ -435,10 +446,82 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
         &mut diags,
         set,
     );
-    let rules = match (movement, formation) {
-        (Some(movement), Some(formation)) => Rules {
+    let combat: Option<CombatRules> = build_singleton(
+        &combat_rules,
+        KindTag::RulesCombat,
+        "content/rules/combat.json5",
+        &sources,
+        &mut diags,
+        set,
+    );
+    let morale: Option<MoraleRules> = build_singleton(
+        &morale_rules,
+        KindTag::RulesMorale,
+        "content/rules/morale.json5",
+        &sources,
+        &mut diags,
+        set,
+    );
+    let fatigue: Option<FatigueRules> = build_singleton(
+        &fatigue_rules,
+        KindTag::RulesFatigue,
+        "content/rules/fatigue.json5",
+        &sources,
+        &mut diags,
+        set,
+    );
+    let general: Option<GeneralRules> = build_singleton(
+        &general_rules,
+        KindTag::RulesGeneral,
+        "content/rules/general.json5",
+        &sources,
+        &mut diags,
+        set,
+    );
+    let visibility: Option<VisibilityRules> = build_singleton(
+        &visibility_rules,
+        KindTag::RulesVisibility,
+        "content/rules/visibility.json5",
+        &sources,
+        &mut diags,
+        set,
+    );
+    let battle_flow: Option<BattleFlowRules> = build_singleton(
+        &battle_flow_rules,
+        KindTag::RulesBattleFlow,
+        "content/rules/battle_flow.json5",
+        &sources,
+        &mut diags,
+        set,
+    );
+    let rules = match (
+        movement,
+        formation,
+        combat,
+        morale,
+        fatigue,
+        general,
+        visibility,
+        battle_flow,
+    ) {
+        (
+            Some(movement),
+            Some(formation),
+            Some(combat),
+            Some(morale),
+            Some(fatigue),
+            Some(general),
+            Some(visibility),
+            Some(battle_flow),
+        ) => Rules {
             movement,
             formation,
+            combat,
+            morale,
+            fatigue,
+            general,
+            visibility,
+            battle_flow,
         },
         _ => Rules::zeroed(),
     };
@@ -645,6 +728,19 @@ mod tests {
         assert_eq!(regs.zones.id_of(map.base_zone()).as_str(), "rome:open");
         assert_eq!(regs.rules.movement.nav_cell, S::from_f32_data(4.0));
         assert_eq!(regs.rules.formation.swap_passes, 2);
+        // Phase 2 rules files (T2-010): one field per file proves each loaded.
+        assert_eq!(regs.rules.combat.retarget_period_ticks, 4);
+        assert_eq!(regs.rules.morale.max_routs, 2);
+        assert_eq!(regs.rules.fatigue.thresholds[1], S::from_f32_data(0.5));
+        assert_eq!(regs.rules.general.hp_mult, S::from_f32_data(3.0));
+        assert_eq!(regs.rules.visibility.period_ticks, 10);
+        assert_eq!(regs.rules.battle_flow.pursuit_ticks, 2400);
+        let ford = regs.zones.get(
+            regs.zones
+                .lookup(&ContentId::new("rome:ford").unwrap())
+                .unwrap(),
+        );
+        assert!(ford.ford && ford.defence_mult == S::ONE);
         assert!(!regs.input.keys_for("camera_pan_up").is_empty());
         assert_eq!(regs.locale.get("rome.units.hastati.name"), "Hastati");
         assert_eq!(regs.locale.get("rome.zones.ford.name"), "Ford");

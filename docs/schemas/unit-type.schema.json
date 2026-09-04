@@ -163,6 +163,13 @@
       "default": 0,
       "description": "Flat damage reduction after a hit lands."
     },
+    "armour_penetration": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0,
+      "description": "Fraction of the defender's armour ignored by melee hits (SIM-CMBT-013). The ranged block carries its own."
+    },
     "damage": {
       "type": "number",
       "minimum": 0,

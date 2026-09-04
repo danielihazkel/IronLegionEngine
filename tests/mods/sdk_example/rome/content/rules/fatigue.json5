@@ -1,0 +1,22 @@
+// Fatigue tunables (Simulation Spec 8 and 15.1; schema
+// docs/schemas/rules-fatigue.schema.json). Every field is required: the
+// engine carries no numeric defaults.
+{
+  // Rates per second by activity (SIM-FAT-002); idle recovers.
+  rate_idle: -0.010,
+  rate_walk: 0.004,
+  rate_march: 0.002,
+  rate_run: 0.020,
+  rate_fighting: 0.015,
+  rate_routing: 0.020,
+  armour_rate: 0.0002,         // added per point of armour to positive rates
+
+  // States: Fresh, Active, Tired upper bounds; Exhausted above (SIM-FAT-003)
+  thresholds: [0.25, 0.5, 0.75],
+
+  // Continuous multipliers at full fatigue (SIM-FAT-004)
+  speed_loss: 0.3,
+  attack_loss: 0.3,
+  defence_loss: 0.2,
+  interval_gain: 0.4,
+}

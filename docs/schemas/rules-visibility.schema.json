@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/rules-visibility.schema.json",
+  "title": "Iron Legion visibility rules (content/rules/visibility.json5)",
+  "description": "Engine tunables for line of sight and fog of war (Simulation Spec 11 and 15.1). One merged object per enabled mod set; every field is required because the engine carries no numeric defaults.",
+  "x-schema-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["period_ticks", "conceal_radius", "height_bonus", "eye_height", "los_sample", "memory_ticks"],
+  "properties": {
+    "period_ticks": { "type": "integer", "minimum": 1, "maximum": 1000, "description": "Ticks between visibility updates per faction (SIM-VIS-004)." },
+    "conceal_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres within which a concealed regiment is still seen (SIM-VIS-003)." },
+    "height_bonus": { "type": "number", "minimum": 0, "maximum": 5, "description": "Line-of-sight radius bonus at full height advantage (SIM-VIS-001)." },
+    "eye_height": { "type": "number", "minimum": 0, "maximum": 10, "description": "Metres above the ground for line-of-sight segments (SIM-VIS-002)." },
+    "los_sample": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Metres between heightmap samples along a sight line (SIM-VIS-002)." },
+    "memory_ticks": { "type": "integer", "minimum": 0, "maximum": 1000000, "description": "Ticks a last-seen position is remembered for UI ghosts (SIM-VIS-005)." }
+  }
+}

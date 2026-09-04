@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/rules-general.schema.json",
+  "title": "Iron Legion general rules (content/rules/general.json5)",
+  "description": "Engine tunables for generals and their auras (Simulation Spec 9 and 15.1). One merged object per enabled mod set; every field is required because the engine carries no numeric defaults.",
+  "x-schema-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["aura_radius", "aura_attack", "aura_per_rank", "hp_mult", "wounded_hp"],
+  "properties": {
+    "aura_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres around the general within which allied anchors get the aura (SIM-GEN-002)." },
+    "aura_attack": { "type": "number", "minimum": 0, "maximum": 5, "description": "Attack bonus fraction inside the aura (SIM-GEN-002)." },
+    "aura_per_rank": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres of aura radius per general rank (SIM-GEN-002)." },
+    "hp_mult": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Hit point multiplier of the general soldier (SIM-GEN-001)." },
+    "wounded_hp": { "type": "number", "minimum": 0, "maximum": 1, "description": "Hit point fraction below which a surviving general is Wounded (SIM-GEN-004)." }
+  }
+}

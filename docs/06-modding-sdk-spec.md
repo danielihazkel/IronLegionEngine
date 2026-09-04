@@ -70,10 +70,12 @@ mymod/
     rules/                      engine tunables, one merged object per file
       movement.json5
       formation.json5
-      morale.json5              (Phase 2)
-      fatigue.json5             (Phase 2)
-      combat.json5              (Phase 2)
-      battle_flow.json5         (Phase 2)
+      combat.json5
+      morale.json5
+      fatigue.json5
+      general.json5
+      visibility.json5
+      battle_flow.json5
     abilities/*.json5           (Phase 2)
     technologies/*.json5        (Phase 4)
     buildings/*.json5           (Phase 4)
@@ -91,7 +93,7 @@ mymod/
     music/                      (Phase 2)
 ```
 
-Folders marked with a phase are reserved for that phase; at the end of Phase 1 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `input`, `rules/movement.json5`, `rules/formation.json5` and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read in Phase 1 are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `input-bindings`, `rules-movement`, `rules-formation`, `mod-manifest`).
+Folders marked with a phase are reserved for that phase; since T2-010 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `input`, the eight `rules/*.json5` files (`movement`, `formation`, `combat`, `morale`, `fatigue`, `general`, `visibility`, `battle_flow`) and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `input-bindings`, `rules-movement`, `rules-formation`, `rules-combat`, `rules-morale`, `rules-fatigue`, `rules-general`, `rules-visibility`, `rules-battle_flow`, `mod-manifest`).
 
 Rules:
 
@@ -543,8 +545,8 @@ Each file is one object of named tunables for one system. The Simulation Spec ow
 // mymod/content/rules/morale.json5
 {
   // Routing allies frighten neighbours more strongly in our mod.
-  routing_ally_penalty: 6.0,
-  routing_ally_radius: 45.0,
+  rout_shock: 6.0,
+  rout_shock_radius: 45.0,
 }
 ```
 

@@ -247,14 +247,14 @@ pub trait ContentKind: DeserializeOwned + Clone + Send + Sync + 'static {
 pub struct Registries {
     pub units: Registry<UnitType>, pub formations: Registry<FormationTemplate>, pub group_formations: Registry<GroupFormationTemplate>,
     pub factions: Registry<Faction>, pub zones: Registry<ZoneType>, pub maps: Registry<MapDef>, pub sprite_sets: Registry<SpriteSet>,
-    pub rules: Rules,                         // `Rules { movement: MovementRules, formation: FormationRules }`, every field required (§3.3 step 6); `il_sim_battle::Rules` re-exports it
+    pub rules: Rules,                         // `Rules { movement, formation, combat, morale, fatigue, general, visibility, battle_flow }`, one struct per `content/rules/*.json5`, every field required (§3.3 step 6); `il_sim_battle::Rules` re-exports it
     pub input: InputBindings, pub locale: Locale, pub mods: Vec<ModInfo>,
     pub mod_list_hash: u64,                   // xxh3 over (id, version) pairs in load order
     pub content_registry_hash: u64,           // `compute_content_hash()`: xxh3 over `hash_content` of every item, kinds in a fixed order, items in ContentId order; independent of file order, whitespace, key order and registry layout (Networking Spec §4.2)
 }
 // Typed kinds exported with it: UnitType (Ranged, ExperienceTier, UnitCategory, UnitSounds, ProjectileArc), FormationTemplate (Layout, RoleZone),
 // GroupFormationTemplate (GroupKind), Faction (DiplomacyPersonality), ZoneType, MapDef (MapSize, HeightmapRef, ZonePolygon, River, DeploymentZone,
-// ReinforcementEdge, MapEdge), SpriteSet (Anim), InputBindings (Binding), MovementRules, FormationRules, de::Rgb; `merge::{KindAccumulator, MergedItem, Tombstone}`, `Sources`/`SourceFile` and `Lookup` are the pipeline's working types.
+// ReinforcementEdge, MapEdge), SpriteSet (Anim), InputBindings (Binding), MovementRules, FormationRules, CombatRules, MoraleRules (MoraleWeights, StateMults, StateMultsTable), FatigueRules, GeneralRules, VisibilityRules, BattleFlowRules (TimeoutWinner), de::Rgb; `merge::{KindAccumulator, MergedItem, Tombstone}`, `Sources`/`SourceFile` and `Lookup` are the pipeline's working types.
 
 pub struct ModSet { pub mods: Vec<LoadedMod>, pub warnings: Vec<String> }   // resolved load order; `index_of`, `mod_list_hash`
 pub struct LoadedMod { pub manifest: Manifest, pub root: PathBuf, pub is_game: bool }   // `namespaces()`
@@ -569,7 +569,7 @@ Tests: layout functions produce `n` slots, centred front rank, no duplicates; as
 pub struct CombatRules { pub base_hit: S, pub hit_scale: S, pub min_hit: S, pub max_hit: S, pub min_damage: S, pub engage_radius: S, pub retarget_period_ticks: u16, pub reach_slack: S,
     pub charge_window_ticks: u16, pub charge_dmg_share: S, pub charge_distance: S, pub charge_mass_mult: S, pub brace_integrity: S,
     pub flank_dmg_mult: S, pub rear_dmg_mult: S, pub flank_def_mult: S, pub rear_def_mult: S, pub height_defence: S, pub height_range: S, pub height_ref: S,
-    pub second_rank_reach_bonus: S, pub exp_step: S, pub pursuit_hit_mult: S, pub pursue_repath_ticks: u16, pub corpse_ticks: u16,
+    pub second_rank_reach_bonus: S, pub exp_step: S, pub pursuit_hit_mult: S, pub pursue_repath_ticks: u16, pub corpse_ticks: u16, pub attack_move_radius: S,
     pub projectile_cap: u32, pub projectile_radius: S, pub scatter_scale: S, pub direct_apex: S, pub gravity: S, pub shield_mult: S, pub stat_hit_base: S, pub friendly_block_dist: S, pub volley: bool, pub ranged_retarget_ticks: u16 }
 
 pub fn hit_probability(a: S, d: S, r: &CombatRules) -> S;                    // SIM-CMBT-011
@@ -600,7 +600,10 @@ Tests: flight time golden values; landing hit selection equals nearest; statisti
 pub struct MoraleRules { pub t_unsettled: S, pub t_shaken: S, pub t_broken: S, pub t_routing: S, pub hysteresis: S, pub rally_margin: S, pub rally_safe_radius: S,
     pub max_routs: u8, pub shatter_strength: S, pub general_death_shock: S, pub rout_shock: S, pub rout_shock_radius: S, pub disengage_penalty: S, pub charged_penalty: S,
     pub casualty_rate_ref: S, pub casualty_total_ref: S, pub fatigue_start: S, pub ally_radius: S, pub allies_ref: S, pub routing_ref: S, pub outnumber_ref: S,
-    pub engage_fatigue_ticks: u32, pub safe_radius: S, pub exp_bonus: S, pub w: MoraleWeights, pub state_mults: [StateMults; 5] }
+    pub engage_fatigue_ticks: u32, pub safe_radius: S, pub exp_bonus: S, pub w: MoraleWeights, pub state_mults: StateMultsTable }
+pub struct StateMults { pub attack: S, pub defence: S, pub interval: S, pub speed: S }              // SIM-MOR-004
+pub struct StateMultsTable { pub steady: StateMults, pub unsettled: StateMults, pub shaken: StateMults, pub broken: StateMults, pub routing: StateMults }
+impl StateMultsTable { pub fn for_state(&self, discriminant: u8) -> &StateMults; }  // MoraleState as u8; Shattered (5) reads the routing row
 pub struct MoraleWeights { pub casualty_rate: S, pub casualty_total: S, pub fatigue: S, pub general_aura: S, pub allies_near: S, pub allies_routing: S, pub high_ground: S, pub fear: S, pub flanked: S, pub outnumbered: S, pub integrity: S, pub engaged_duration: S, pub winning: S, pub recovery: S }
 pub fn morale_factors(ctx: &RegimentContext) -> [S; 14];        // x_f per SIM-MOR-010..024, order = MoraleWeights field order
 pub fn morale_state(m: S, current: MoraleState, r: &MoraleRules) -> MoraleState;  // SIM-MOR-003 hysteresis
@@ -608,6 +611,11 @@ pub fn morale_state(m: S, current: MoraleState, r: &MoraleRules) -> MoraleState;
 pub struct FatigueRules { pub rate_idle: S, pub rate_walk: S, pub rate_march: S, pub rate_run: S, pub rate_fighting: S, pub rate_routing: S, pub armour_rate: S,
     pub thresholds: [S; 3], pub speed_loss: S, pub attack_loss: S, pub defence_loss: S, pub interval_gain: S }
 pub fn fatigue_mults(f: S, r: &FatigueRules) -> FatigueMults;   // SIM-FAT-004
+
+pub struct GeneralRules { pub aura_radius: S, pub aura_attack: S, pub aura_per_rank: S, pub hp_mult: S, pub wounded_hp: S }   // §9
+pub struct VisibilityRules { pub period_ticks: u16, pub conceal_radius: S, pub height_bonus: S, pub eye_height: S, pub los_sample: S, pub memory_ticks: u32 }   // §11
+pub enum TimeoutWinner { Defender, MostSoldiers }
+pub struct BattleFlowRules { pub time_limit_ticks: u32, pub deploy_timeout_ticks: u32, pub pursuit_ticks: u32, pub fled_return_fraction: S, pub timeout_winner: TimeoutWinner, pub exp_per_kill: S, pub exp_survive: S, pub loot_per_enemy_killed: S }   // §12
 
 pub struct Ability { pub id: ContentId, pub name_key: String, pub targeting: Targeting, pub radius: S, pub range: S, pub cooldown_ticks: u16, pub duration_ticks: u16, pub energy_cost: S,
     pub effects: Vec<Effect>, pub stacking: Stacking, pub requires_not_engaged: bool, pub requires_not_moving: bool }

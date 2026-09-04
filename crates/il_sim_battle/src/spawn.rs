@@ -278,7 +278,9 @@ impl BattleWorld {
         for (side, s) in setup.sides.iter().enumerate() {
             for r in &s.regiments {
                 let unit = regs.units.lookup(&r.unit_type).expect("validated above");
-                spawn_regiment(&mut w.world, side as u8, r, unit, 0);
+                // SIM-PROJ-003: ammo per soldier comes from the unit's ranged block.
+                let ammo = regs.units.get(unit).ranged.as_ref().map_or(0, |rg| rg.ammo);
+                spawn_regiment(&mut w.world, side as u8, r, unit, ammo);
             }
         }
         // Reinforcement groups are validated but spawn only in T2-070.

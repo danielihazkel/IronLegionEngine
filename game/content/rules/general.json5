@@ -1,0 +1,10 @@
+// General and aura tunables (Simulation Spec 9 and 15.1; schema
+// docs/schemas/rules-general.schema.json). Every field is required: the
+// engine carries no numeric defaults.
+{
+  aura_radius: 60,             // m (SIM-GEN-002)
+  aura_attack: 0.05,           // attack bonus inside the aura
+  aura_per_rank: 5,            // m of radius per general rank
+  hp_mult: 3,                  // SIM-GEN-001
+  wounded_hp: 0.3,             // hp fraction below which the fate is Wounded (SIM-GEN-004)
+}

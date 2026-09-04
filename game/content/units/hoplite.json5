@@ -15,6 +15,7 @@
   attack: 32,
   defence: 38,
   armour: 10,
+  armour_penetration: 0,
   damage: 30,
   attack_interval_ticks: 34,
   reach: 1.2,

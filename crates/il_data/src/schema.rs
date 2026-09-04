@@ -23,11 +23,17 @@ pub enum KindTag {
     SpriteSet,
     RulesMovement,
     RulesFormation,
+    RulesCombat,
+    RulesMorale,
+    RulesFatigue,
+    RulesGeneral,
+    RulesVisibility,
+    RulesBattleFlow,
     InputBindings,
 }
 
 impl KindTag {
-    pub const ALL: [KindTag; 11] = [
+    pub const ALL: [KindTag; 17] = [
         KindTag::Manifest,
         KindTag::Unit,
         KindTag::Formation,
@@ -38,6 +44,12 @@ impl KindTag {
         KindTag::SpriteSet,
         KindTag::RulesMovement,
         KindTag::RulesFormation,
+        KindTag::RulesCombat,
+        KindTag::RulesMorale,
+        KindTag::RulesFatigue,
+        KindTag::RulesGeneral,
+        KindTag::RulesVisibility,
+        KindTag::RulesBattleFlow,
         KindTag::InputBindings,
     ];
 
@@ -54,6 +66,12 @@ impl KindTag {
             KindTag::SpriteSet => "sprite set",
             KindTag::RulesMovement => "movement rules",
             KindTag::RulesFormation => "formation rules",
+            KindTag::RulesCombat => "combat rules",
+            KindTag::RulesMorale => "morale rules",
+            KindTag::RulesFatigue => "fatigue rules",
+            KindTag::RulesGeneral => "general rules",
+            KindTag::RulesVisibility => "visibility rules",
+            KindTag::RulesBattleFlow => "battle-flow rules",
             KindTag::InputBindings => "input bindings",
         }
     }
@@ -77,6 +95,24 @@ impl KindTag {
             }
             KindTag::RulesFormation => {
                 include_str!("../../../docs/schemas/rules-formation.schema.json")
+            }
+            KindTag::RulesCombat => {
+                include_str!("../../../docs/schemas/rules-combat.schema.json")
+            }
+            KindTag::RulesMorale => {
+                include_str!("../../../docs/schemas/rules-morale.schema.json")
+            }
+            KindTag::RulesFatigue => {
+                include_str!("../../../docs/schemas/rules-fatigue.schema.json")
+            }
+            KindTag::RulesGeneral => {
+                include_str!("../../../docs/schemas/rules-general.schema.json")
+            }
+            KindTag::RulesVisibility => {
+                include_str!("../../../docs/schemas/rules-visibility.schema.json")
+            }
+            KindTag::RulesBattleFlow => {
+                include_str!("../../../docs/schemas/rules-battle_flow.schema.json")
             }
             KindTag::InputBindings => {
                 include_str!("../../../docs/schemas/input-bindings.schema.json")

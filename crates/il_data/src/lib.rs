@@ -51,7 +51,11 @@ pub use merge::{KindAccumulator, MergedItem, Tombstone};
 pub use pipeline::{discover_set, load, load_report, load_roots};
 pub use registries::{ModInfo, Registries};
 pub use registry::{ContentKind, DuplicateId, Lookup, Registry, ResolveError};
-pub use rules::{Binding, FormationRules, InputBindings, MovementRules, Rules};
+pub use rules::{
+    BattleFlowRules, Binding, CombatRules, FatigueRules, FormationRules, GeneralRules,
+    InputBindings, MoraleRules, MoraleWeights, MovementRules, Rules, StateMults, StateMultsTable,
+    TimeoutWinner, VisibilityRules,
+};
 pub use schema::KindTag;
 pub use source::{SourceFile, Sources};
 pub use sprite_set::{Anim, SpriteSet};

@@ -178,7 +178,8 @@ Conventions:
 | SIM-CMBT-001 | A soldier is in melee reach of enemy `j` if `|p_i − p_j| ≤ r_i + r_j + unit_i.reach`. | REQ-CMBT-002 |
 | SIM-CMBT-002 | Melee targeting runs every `combat.retarget_period_ticks` (default 4) per soldier (staggered by `id % period`): if the current target is alive and within `reach + combat.reach_slack` (default 0.5 m), keep it; else choose the nearest enemy soldier within `combat.engage_radius` (default 3 m) from the spatial grid, preferring soldiers already fighting fewer attackers (`attacker_count` ascending), ties by ascending id. Soldiers without a target within `engage_radius` return to `MoveToSlot`. | REQ-CMBT-003 |
 | SIM-CMBT-003 | A regiment is engaged if any soldier is `Fighting`. Engaged regiments ignore `Move` orders' facing but obey the move (disengage), taking a morale penalty (SIM-MOR-010, factor `disengage`). | — |
-| SIM-CMBT-004 | Regiments in `AttackRegiment` or `AttackMove` orders path to the target regiment's anchor (re-pathed every `combat.pursue_repath_ticks`, default 20) and switch to `run` within `combat.charge_distance` (default 30 m) if `unit.charge_bonus > 0`. | REQ-CMBT-005 |
+| SIM-CMBT-004 | Regiments in `AttackRegiment` or `AttackMove` orders path to the target regiment's anchor (re-pathed every `combat.pursue_repath_ticks`, default 20) and switch to `run` within `combat.charge_distance` (default 30 m) if `unit.charge_bonus > 0`; the speed mode stays `run` until another order changes it. | REQ-CMBT-005 |
+| SIM-CMBT-005 | An `AttackMove` regiment has no target regiment until, on one of its re-path ticks, an enemy regiment with living soldiers has its anchor within `combat.attack_move_radius` (default 40 m) of the regiment's anchor; the nearest such regiment (ties by ascending id) becomes the target and SIM-CMBT-004 applies. When the target has no living soldiers the regiment resumes the move to its original point. | REQ-CMBT-005 |
 
 ### 6.2 Melee resolution
 
@@ -187,10 +188,10 @@ Conventions:
 | SIM-CMBT-010 | Each `Fighting` soldier has a cooldown; when it reaches 0 it attacks its target and resets to `unit.attack_interval_ticks × fatigue_interval_mult(F) × morale_interval_mult(M) × status_mult`, rounded to nearest tick, minimum 2. Initial cooldown on entering `Fighting` is `rng-free`: `(id % attack_interval_ticks)` to stagger. | REQ-CMBT-001, REQ-CMBT-007 |
 | SIM-CMBT-011 | Hit roll: `A = unit_i.attack × fatigue_attack_mult(F_i) × morale_attack_mult(M_i) × (1 + template_i.integrity_bonus_attack × I_i) × charge_mult × experience_mult × status_mult`; `D = unit_j.defence × fatigue_defence_mult(F_j) × morale_defence_mult(M_j) × (1 + template_j.integrity_bonus_defence × I_j) × flank_defence_mult × terrain_defence_mult × status_mult`. Hit probability `P = clamp(combat.base_hit + combat.hit_scale × (A − D) / (A + D), combat.min_hit, combat.max_hit)`; defaults 0.5, 0.5, 0.05, 0.95. The attack hits if `rng.combat_melee(tick, id_i, 0) < P`. | REQ-CMBT-001 |
 | SIM-CMBT-012 | Second-rank attack: a soldier whose slot is in rank 1 (second rank) and whose unit has `second_rank_attack` (or is in Phalanx) may target enemies in reach of the soldier in the slot directly ahead, using its own `reach + combat.second_rank_reach_bonus` (default 1.0 m). | REQ-CMBT-003 |
-| SIM-CMBT-013 | Damage on hit: `dmg = max(unit_i.damage × charge_dmg_mult × flank_dmg_mult × experience_mult − unit_j.armour × (1 − unit_i.armour_penetration), combat.min_damage)` (default 1). `hp_j −= dmg`. | REQ-CMBT-001 |
+| SIM-CMBT-013 | Damage on hit: `dmg = max(unit_i.damage × charge_dmg_mult × flank_dmg_mult × experience_mult − unit_j.armour × (1 − unit_i.armour_penetration), combat.min_damage)` (default 1); `armour_penetration` is the unit's top-level melee field (default 0), distinct from `ranged.armour_penetration`. `hp_j −= dmg`. | REQ-CMBT-001 |
 | SIM-CMBT-014 | Frontal arc: an attack is frontal if the attacker lies within `±unit_j.frontal_arc_deg / 2` (default 120°) of the defender's facing; flank if within ±150°; rear otherwise. `flank_dmg_mult` and `flank_defence_mult`: front 1.0/1.0, flank `combat.flank_dmg_mult` (1.25) / `combat.flank_def_mult` (0.8), rear `combat.rear_dmg_mult` (1.5) / `combat.rear_def_mult` (0.6). | REQ-CMBT-004 |
-| SIM-CMBT-015 | Charge: when a regiment in `run` mode first gains an engaged soldier, all its soldiers get `charge_mult = 1 + unit.charge_bonus` and `charge_dmg_mult = 1 + unit.charge_bonus × combat.charge_dmg_share` (default 0.5) for `combat.charge_window_ticks` (default 60). A defender unit with `anti_cavalry_bonus > 0`, not moving, with `I ≥ combat.brace_integrity` (default 0.7), facing the charge within its frontal arc, negates the attacker's charge bonus if the attacker is cavalry and gains `attack × (1 + anti_cavalry_bonus)` versus cavalry. | REQ-CMBT-005, REQ-CMBT-006 |
-| SIM-CMBT-016 | Terrain defence: `terrain_defence_mult = zone.defence_mult × (1 + combat.height_defence × sat((h_j − h_i) / combat.height_ref))`; defaults 0.15 and 5 m. Ford penalty per SIM-MOVE-032. | REQ-SIM-040 |
+| SIM-CMBT-015 | Charge: when a regiment in `run` mode first gains an engaged soldier, all its soldiers get `charge_mult = 1 + unit.charge_bonus` and `charge_dmg_mult = 1 + unit.charge_bonus × combat.charge_dmg_share` (default 0.5) for `combat.charge_window_ticks` (default 60). A defender unit with `anti_cavalry_bonus > 0`, not moving, with `I ≥ combat.brace_integrity` (default 0.7), facing the charge within its frontal arc, negates the attacker's charge bonus if the attacker is cavalry and gains `attack × (1 + anti_cavalry_bonus)` versus cavalry. Charge push: while the window is open the regiment's soldiers push with mass `unit.mass × combat.charge_mass_mult` (default 2.0) in collision resolution (SIM-MOVE-040), so a charge shoves lighter defenders back without any extra force. | REQ-CMBT-005, REQ-CMBT-006 |
+| SIM-CMBT-016 | Terrain defence: `terrain_defence_mult = zone.defence_mult × ford_mult × (1 + combat.height_defence × sat((h_j − h_i) / combat.height_ref))` where `zone` is the defender's zone type (`defence_mult` default 1; forest 1.1, marsh 0.8), `ford_mult = movement.ford_defence_mult` when that zone type has `ford: true` and 1 otherwise (SIM-MOVE-032), and `sat` clamps to [−1, 1]; defaults 0.15 and 5 m. | REQ-SIM-040 |
 | SIM-CMBT-017 | Experience: regiment `experience` in [0, 9]; `experience_mult = 1 + combat.exp_step × experience` (default 0.03). | REQ-CAMP-042 |
 | SIM-CMBT-018 | Attack results (hit or miss, damage, killer) are recorded in per-soldier buffers during the parallel phase and applied in ascending attacker id; deaths are resolved in Stage 15. | REQ-SIM-008 |
 
@@ -402,44 +403,140 @@ These live in `game/content/rules/*.json5` and unit files. Values are starting p
 
 ### 15.1 Rules files
 
-| Field | Default | Field | Default |
-|---|---|---|---|
-| `movement.nav_cell` | 4 | `combat.base_hit` | 0.5 |
-| `movement.hpa_cluster` | 16 | `combat.hit_scale` | 0.5 |
-| `movement.wheel_rate` | 45 °/s | `combat.min_hit` / `max_hit` | 0.05 / 0.95 |
-| `movement.waypoint_radius` | 2 | `combat.min_damage` | 1 |
-| `movement.slot_arrive_radius` | 0.3 | `combat.engage_radius` | 3 |
-| `movement.slot_leave_radius` | 0.6 | `combat.retarget_period_ticks` | 4 |
-| `movement.sep_weight` | 1.5 | `combat.charge_window_ticks` | 60 |
-| `movement.slope_penalty` / `slope_bonus` | 2.0 / 0.5 | `combat.charge_dmg_share` | 0.5 |
-| `movement.collision_iterations` | 2 | `combat.flank_dmg_mult` / `rear_dmg_mult` | 1.25 / 1.5 |
-| `movement.paths_per_tick` | 8 | `combat.flank_def_mult` / `rear_def_mult` | 0.8 / 0.6 |
-| `formation.keep_slot_radius` | 1.5 | `combat.height_defence` / `height_range` | 0.15 / 0.2 |
-| `formation.integrity_radius` | 1.0 × sf | `combat.projectile_cap` | 8192 |
-| `formation.integrity_morale_threshold` | 0.5 | `combat.scatter_scale` | 0.15 |
-| `formation.morph_speed_mult` | 0.5 | `combat.shield_mult` | 0.5 |
-| `formation.group_gap` | 6 | `combat.pursuit_hit_mult` | 1.5 |
-| `morale.t_unsettled/shaken/broken/routing` | 70/50/30/15 | `fatigue.rate_idle` | −0.010 |
-| `morale.hysteresis` | 5 | `fatigue.rate_walk / march / run` | 0.004 / 0.002 / 0.020 |
-| `morale.rally_margin` | 15 | `fatigue.rate_fighting / routing` | 0.015 / 0.020 |
-| `morale.max_routs` | 2 | `fatigue.speed_loss / attack_loss / defence_loss / interval_gain` | 0.3 / 0.3 / 0.2 / 0.4 |
-| `morale.shatter_strength` | 0.25 | `general.aura_radius` | 60 |
-| `morale.general_death_shock` | 20 | `general.aura_attack` | 0.05 |
-| `morale.rout_shock` / `rout_shock_radius` | 5 / 30 | `general.hp_mult` | 3 |
-| `visibility.period_ticks` | 10 | `battle_flow.time_limit_ticks` | 48000 |
-| `visibility.conceal_radius` | 25 | `battle_flow.pursuit_ticks` | 2400 |
-| `ai.army_period_ticks` / `regiment_period_ticks` | 40 / 20 | `battle_flow.fled_return_fraction` | 0.5 |
-| `movement.hpa_gate_split` | 6 nav cells | `movement.straggler_radius` | 3 × sf |
-| `movement.straggler_fraction` / `straggler_slowdown` | 0.25 / 0.5 | `movement.sep_margin` / `sep_max_neighbours` | 0.2 / 8 |
-| `movement.arrive_damping` | 0.5 | `movement.lookahead_ticks` | 4 |
-| `movement.soldier_turn_rate` | 360 °/s | `movement.slope_min_mult` / `slope_max_mult` | 0.4 / 1.2 |
-| `movement.ford_defence_mult` | 0.7 | `movement.spatial_cell` / `anchor_cell` / `zone_cell` | 4 / 16 / 2 |
-| `formation.reform_angle` | 10° | `formation.assign_search_radius` | 30 |
-| `formation.swap_passes` | 2 | `formation.turn_in_place_angle` | 120° |
-| `formation.integrity_period_ticks` | 5 | `formation.skirmish_offset` | 20 |
-| `formation.width_tolerance` | 0.1 | | |
+One table per file under `game/content/rules/`; every field is required (the engine carries no numeric defaults) and each file has a schema `docs/schemas/rules-<file>.schema.json`. Values marked *chosen* were fixed in T2-010 without a rule stating them and are the first candidates for tuning.
 
-Morale factor weights (`morale.w_*`, points per second at full effect): casualty_rate −6, casualty_total −2 (per second level), fatigue −1.5, general_aura +1, allies_near +1, allies_routing −3, high_ground +0.5, fear −4, flanked −3, outnumbered −2, integrity −1.5, engaged_duration −1, winning +2, recovery +3.
+**`movement.json5`** (§5)
+
+| Field | Default | Rule |
+|---|---|---|
+| `nav_cell` | 4 | SIM-MOVE-001 |
+| `hpa_cluster` / `hpa_gate_split` | 16 / 6 nav cells | SIM-MOVE-003 |
+| `paths_per_tick` | 8 | SIM-MOVE-005 |
+| `wheel_rate` | 45 °/s | SIM-MOVE-010 |
+| `waypoint_radius` | 2 | SIM-MOVE-010 |
+| `straggler_radius` / `straggler_fraction` / `straggler_slowdown` | 3 × sf / 0.25 / 0.5 | SIM-MOVE-012 |
+| `slot_arrive_radius` / `slot_leave_radius` | 0.3 / 0.6 | SIM-CORE-011 |
+| `sep_weight` / `sep_margin` / `sep_max_neighbours` | 1.5 / 0.2 / 8 | SIM-MOVE-022 |
+| `arrive_damping` | 0.5 | SIM-MOVE-021 |
+| `lookahead_ticks` | 4 | SIM-MOVE-023 |
+| `soldier_turn_rate` | 360 °/s | SIM-MOVE-024 |
+| `slope_penalty` / `slope_bonus` | 2.0 / 0.5 | SIM-MOVE-030 |
+| `slope_min_mult` / `slope_max_mult` | 0.4 / 1.2 | SIM-MOVE-030 |
+| `ford_defence_mult` | 0.7 | SIM-MOVE-032 |
+| `collision_iterations` | 2 | SIM-MOVE-041 |
+| `spatial_cell` / `anchor_cell` / `zone_cell` | 4 / 16 / 2 | TDD §5, §6.2 |
+
+**`formation.json5`** (§4)
+
+| Field | Default | Rule |
+|---|---|---|
+| `keep_slot_radius` | 1.5 | SIM-FORM-020 |
+| `assign_search_radius` / `swap_passes` | 30 / 2 | SIM-FORM-022 |
+| `reform_angle` / `turn_in_place_angle` | 10° / 120° | SIM-FORM-024 |
+| `integrity_radius` / `integrity_period_ticks` | 1.0 × sf / 5 | SIM-FORM-030 |
+| `integrity_morale_threshold` | 0.5 | SIM-MOR-021 |
+| `morph_speed_mult` | 0.5 | SIM-FORM-032 |
+| `group_gap` / `skirmish_offset` / `width_tolerance` | 6 / 20 / 0.1 | SIM-FORM-040..042 |
+
+**`combat.json5`** (§6)
+
+| Field | Default | Rule |
+|---|---|---|
+| `base_hit` / `hit_scale` | 0.5 / 0.5 | SIM-CMBT-011 |
+| `min_hit` / `max_hit` | 0.05 / 0.95 | SIM-CMBT-011 |
+| `min_damage` | 1 | SIM-CMBT-013 |
+| `engage_radius` / `retarget_period_ticks` / `reach_slack` | 3 / 4 / 0.5 | SIM-CMBT-002 |
+| `charge_window_ticks` / `charge_dmg_share` | 60 / 0.5 | SIM-CMBT-015 |
+| `charge_distance` / `pursue_repath_ticks` | 30 / 20 | SIM-CMBT-004 |
+| `charge_mass_mult` | 2.0 (*chosen*) | SIM-CMBT-015 |
+| `brace_integrity` | 0.7 | SIM-CMBT-015 |
+| `flank_dmg_mult` / `rear_dmg_mult` | 1.25 / 1.5 | SIM-CMBT-014 |
+| `flank_def_mult` / `rear_def_mult` | 0.8 / 0.6 | SIM-CMBT-014 |
+| `height_defence` / `height_range` / `height_ref` | 0.15 / 0.2 / 5 | SIM-CMBT-016, SIM-PROJ-002 |
+| `second_rank_reach_bonus` | 1.0 | SIM-CMBT-012 |
+| `exp_step` | 0.03 | SIM-CMBT-017 |
+| `pursuit_hit_mult` | 1.5 | SIM-MOR-034 |
+| `corpse_ticks` | 600 (*chosen*) | SIM-CORE-008 |
+| `attack_move_radius` | 40 (*chosen*) | SIM-CMBT-005 |
+| `projectile_cap` | 8192 | SIM-PROJ-008 |
+| `projectile_radius` | 0.3 | SIM-PROJ-006 |
+| `scatter_scale` | 0.15 | SIM-PROJ-004 |
+| `direct_apex` / `gravity` | 2 / 9.81 | SIM-PROJ-005 |
+| `shield_mult` | 0.5 | SIM-PROJ-006 |
+| `stat_hit_base` | 0.6 (*chosen*) | SIM-PROJ-008 |
+| `friendly_block_dist` | 15 | SIM-PROJ-009 |
+| `volley` | true | SIM-PROJ-003 |
+| `ranged_retarget_ticks` | 10 | SIM-PROJ-001 |
+
+**`morale.json5`** (§7)
+
+| Field | Default | Rule |
+|---|---|---|
+| `t_unsettled` / `t_shaken` / `t_broken` / `t_routing` | 70 / 50 / 30 / 15 | SIM-MOR-003 |
+| `hysteresis` | 5 | SIM-MOR-003 |
+| `rally_margin` / `rally_safe_radius` | 15 / 50 | SIM-MOR-031 |
+| `max_routs` / `shatter_strength` | 2 / 0.25 | SIM-MOR-032 |
+| `general_death_shock` | 20 | SIM-MOR-014 |
+| `rout_shock` / `rout_shock_radius` | 5 / 30 | SIM-MOR-033 |
+| `disengage_penalty` | 5 | SIM-MOR-025 |
+| `charged_penalty` | 8 (half from the front) | SIM-MOR-026 |
+| `casualty_rate_ref` / `casualty_total_ref` | 0.05 / 0.5 | SIM-MOR-010, 011 |
+| `fatigue_start` | 0.5 | SIM-MOR-012 |
+| `ally_radius` / `allies_ref` / `routing_ref` | 40 / 3 / 2 | SIM-MOR-015, 016 |
+| `outnumber_ref` | 2 | SIM-MOR-020 |
+| `engage_fatigue_ticks` | 2400 | SIM-MOR-022 |
+| `safe_radius` | 60 | SIM-MOR-024 |
+| `exp_bonus` | 0.02 (*chosen*) | SIM-MOR-001 |
+| `w.<factor>` | see below | SIM-MOR-002 |
+| `state_mults.<state>` | see below | SIM-MOR-004 |
+
+Factor weights `w` (points per second at full effect): casualty_rate −6, casualty_total −2 (per second level), fatigue −1.5, general_aura +1, allies_near +1, allies_routing −3, high_ground +0.5, fear −4, flanked −3, outnumbered −2, integrity −1.5, engaged_duration −1, winning +2, recovery +3.
+
+State multipliers `state_mults` (attack / defence / attack interval / speed): steady 1 / 1 / 1 / 1; unsettled 0.95 / 0.95 / 1.05 / 1; shaken 0.85 / 0.85 / 1.15 / 1; broken 0.7 / 0.7 / 1.3 / 1; routing 0 / 0.5 / 1 / 1.1 (routing soldiers never attack, so the interval is 1). Shattered uses the routing row.
+
+**`fatigue.json5`** (§8)
+
+| Field | Default | Rule |
+|---|---|---|
+| `rate_idle` | −0.010 | SIM-FAT-002 |
+| `rate_walk` / `rate_march` / `rate_run` | 0.004 / 0.002 / 0.020 | SIM-FAT-002 |
+| `rate_fighting` / `rate_routing` | 0.015 / 0.020 | SIM-FAT-002 |
+| `armour_rate` | 0.0002 (*chosen*) | SIM-FAT-002 |
+| `thresholds` | [0.25, 0.5, 0.75] | SIM-FAT-003 |
+| `speed_loss` / `attack_loss` / `defence_loss` / `interval_gain` | 0.3 / 0.3 / 0.2 / 0.4 | SIM-FAT-004 |
+
+**`general.json5`** (§9)
+
+| Field | Default | Rule |
+|---|---|---|
+| `aura_radius` / `aura_attack` | 60 / 0.05 | SIM-GEN-002 |
+| `aura_per_rank` | 5 (*chosen*) | SIM-GEN-002 |
+| `hp_mult` | 3 | SIM-GEN-001 |
+| `wounded_hp` | 0.3 | SIM-GEN-004 |
+
+**`visibility.json5`** (§11)
+
+| Field | Default | Rule |
+|---|---|---|
+| `period_ticks` | 10 | SIM-VIS-004 |
+| `conceal_radius` | 25 | SIM-VIS-003 |
+| `height_bonus` | 0.5 | SIM-VIS-001 |
+| `eye_height` / `los_sample` | 1.7 / 4 | SIM-VIS-002 |
+| `memory_ticks` | 400 | SIM-VIS-005 |
+
+**`battle_flow.json5`** (§12)
+
+| Field | Default | Rule |
+|---|---|---|
+| `time_limit_ticks` | 48000 | SIM-FLOW-012 |
+| `deploy_timeout_ticks` | 0 (none) | SIM-FLOW-011 |
+| `pursuit_ticks` | 2400 | SIM-FLOW-015 |
+| `fled_return_fraction` | 0.5 | SIM-FLOW-018 |
+| `timeout_winner` | `defender` | SIM-FLOW-013 |
+| `exp_per_kill` / `exp_survive` | 0.01 / 1 | SIM-FLOW-018 |
+| `loot_per_enemy_killed` | 10 (*chosen*) | SIM-FLOW-018 |
+
+The `ai.*` tunables (`army_period_ticks` 40, `regiment_period_ticks` 20 and the §13 distances) are not a rules file: they belong to the `AiProfile` content kind (T2-080).
 
 ### 15.2 Example unit types
 
@@ -453,6 +550,7 @@ Morale factor weights (`morale.w_*`, points per second at full effect): casualty
 | attack_interval_ticks / reach | 30 / 0.6 | 32 / 0.5 | 34 / 1.2 | 30 / 1.0 |
 | charge_bonus / anti_cavalry_bonus | 0.3 / 0 | 0.1 / 0 | 0.15 / 0.5 | 0.8 / 0 |
 | second_rank_attack / shield | false / true | false / false | true / true | false / false |
+| frontal_arc_deg / armour_penetration | 120 / 0 | 120 / 0 | 120 / 0 | 120 / 0 |
 | ranged | pilum: range 25, min 5, acc 0.6, speed 20, reload 120, ammo 2, dmg 40, pen 0.5, direct | javelin: range 40, min 5, acc 0.5, speed 20, reload 80, ammo 8, dmg 30, pen 0.3, direct | none | none |
 | morale_base / los_radius | 60 / 200 | 50 / 250 | 65 / 200 | 60 / 300 |
 | formations | line, column, loose | loose, line, column | phalanx, line, column | wedge, line, column |

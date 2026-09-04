@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/rules-fatigue.schema.json",
+  "title": "Iron Legion fatigue rules (content/rules/fatigue.json5)",
+  "description": "Engine tunables read by the fatigue system and the combat and movement multipliers it feeds (Simulation Spec 8 and 15.1). One merged object per enabled mod set; every field is required because the engine carries no numeric defaults.",
+  "x-schema-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rate_idle", "rate_walk", "rate_march", "rate_run", "rate_fighting", "rate_routing",
+    "armour_rate", "thresholds", "speed_loss", "attack_loss", "defence_loss", "interval_gain"
+  ],
+  "properties": {
+    "rate_idle": { "type": "number", "minimum": -1, "maximum": 1, "description": "Fatigue change per second while idle; negative recovers (SIM-FAT-002)." },
+    "rate_walk": { "type": "number", "minimum": -1, "maximum": 1, "description": "Fatigue per second while walking (SIM-FAT-002)." },
+    "rate_march": { "type": "number", "minimum": -1, "maximum": 1, "description": "Fatigue per second while marching (SIM-FAT-002)." },
+    "rate_run": { "type": "number", "minimum": -1, "maximum": 1, "description": "Fatigue per second while running (SIM-FAT-002)." },
+    "rate_fighting": { "type": "number", "minimum": -1, "maximum": 1, "description": "Fatigue per second while fighting (SIM-FAT-002)." },
+    "rate_routing": { "type": "number", "minimum": -1, "maximum": 1, "description": "Fatigue per second while routing (SIM-FAT-002)." },
+    "armour_rate": { "type": "number", "minimum": 0, "maximum": 1, "description": "Added to every positive rate per point of unit armour (SIM-FAT-002)." },
+    "thresholds": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "number", "minimum": 0, "maximum": 1 },
+      "description": "Upper bounds of Fresh, Active and Tired; Exhausted above the last (SIM-FAT-003)."
+    },
+    "speed_loss": { "type": "number", "minimum": 0, "maximum": 1, "description": "Speed multiplier loss at full fatigue (SIM-FAT-004)." },
+    "attack_loss": { "type": "number", "minimum": 0, "maximum": 1, "description": "Attack multiplier loss at full fatigue (SIM-FAT-004)." },
+    "defence_loss": { "type": "number", "minimum": 0, "maximum": 1, "description": "Defence multiplier loss at full fatigue (SIM-FAT-004)." },
+    "interval_gain": { "type": "number", "minimum": 0, "maximum": 5, "description": "Attack interval multiplier gain at full fatigue (SIM-FAT-004)." }
+  }
+}

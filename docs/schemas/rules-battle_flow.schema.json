@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/rules-battle_flow.schema.json",
+  "title": "Iron Legion battle-flow rules (content/rules/battle_flow.json5)",
+  "description": "Engine tunables for battle phases, timers and results (Simulation Spec 12 and 15.1). One merged object per enabled mod set; every field is required because the engine carries no numeric defaults.",
+  "x-schema-version": 1,
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["time_limit_ticks", "deploy_timeout_ticks", "pursuit_ticks", "fled_return_fraction", "timeout_winner", "exp_per_kill", "exp_survive", "loot_per_enemy_killed"],
+  "properties": {
+    "time_limit_ticks": { "type": "integer", "minimum": 1, "maximum": 10000000, "description": "Default battle timer when the setup gives none (SIM-FLOW-012)." },
+    "deploy_timeout_ticks": { "type": "integer", "minimum": 0, "maximum": 10000000, "description": "Deployment phase timeout; 0 means none (SIM-FLOW-011)." },
+    "pursuit_ticks": { "type": "integer", "minimum": 0, "maximum": 10000000, "description": "Length of the pursuit phase (SIM-FLOW-015)." },
+    "fled_return_fraction": { "type": "number", "minimum": 0, "maximum": 1, "description": "Fraction of fled soldiers that return to a losing side (SIM-FLOW-018)." },
+    "timeout_winner": { "enum": ["defender", "most_soldiers"], "description": "Who wins when the timer expires (SIM-FLOW-013)." },
+    "exp_per_kill": { "type": "number", "minimum": 0, "maximum": 100, "description": "Experience per kill credited to a regiment (SIM-FLOW-018)." },
+    "exp_survive": { "type": "number", "minimum": 0, "maximum": 100, "description": "Experience for surviving the battle (SIM-FLOW-018)." },
+    "loot_per_enemy_killed": { "type": "number", "minimum": 0, "maximum": 100000, "description": "Loot per enemy soldier killed, to the winner (SIM-FLOW-018)." }
+  }
+}

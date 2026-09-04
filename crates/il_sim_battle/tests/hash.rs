@@ -19,12 +19,13 @@ use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 /// again in T1-043 when soldiers started steering and in T1-044 when
 /// collisions started pushing; both again in T1-045 when the formation
 /// frame was corrected so a line spans perpendicular to its facing; and in
-/// T1-047 when the Phase 1 hash layout was fixed).
+/// T1-047 when the Phase 1 hash layout was fixed; and in T2-010 when regiments
+/// started spawning with the unit's ranged ammo).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x14c4_827d_8d2a_ae6a;
+const GOLDEN_FRESH: u64 = 0x7626_ba44_a975_d92a;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x2c69_ea93_03fb_b329;
+const GOLDEN_1000: u64 = 0x1490_3b15_bb38_35b2;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -149,7 +150,7 @@ fn every_hashed_field_changes_the_hash() {
         "ammo",
         Box::new(|w| {
             let e = regiment_entity(w, 1);
-            w.ecs_mut().get_mut::<Regiment>(e).unwrap().ammo = 2;
+            w.ecs_mut().get_mut::<Regiment>(e).unwrap().ammo += 5;
         }),
     ));
     // T1-047 layout: the rest of the order, the formation state, the path

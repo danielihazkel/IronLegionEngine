@@ -31,6 +31,14 @@ pub struct ZoneType {
     /// River cells under a polygon of this type are passable (SIM-MOVE-032).
     #[serde(default)]
     pub crossing: bool,
+    /// Melee defence multiplier for a defender standing in the zone
+    /// (SIM-CMBT-016).
+    #[serde(deserialize_with = "de_s", default = "d_one")]
+    pub defence_mult: S,
+    /// A ford: defenders standing in it also take
+    /// `movement.ford_defence_mult` (SIM-MOVE-032, SIM-CMBT-016).
+    #[serde(default)]
+    pub ford: bool,
     pub colour: Rgb,
     #[serde(default)]
     pub deprecated: Option<String>,
@@ -54,5 +62,7 @@ impl ContentKind for ZoneType {
         h.write(&self.formation_integrity_mult);
         h.write(&self.passable);
         h.write(&self.crossing);
+        h.write(&self.defence_mult);
+        h.write(&self.ford);
     }
 }

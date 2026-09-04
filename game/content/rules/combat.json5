@@ -1,0 +1,55 @@
+// Combat tunables: melee, charges, terrain defence, experience, pursuit and
+// projectiles (Simulation Spec 6 and 15.1; schema
+// docs/schemas/rules-combat.schema.json). Every field is required: the
+// engine carries no numeric defaults.
+{
+  // Hit roll (SIM-CMBT-011) and damage floor (SIM-CMBT-013)
+  base_hit: 0.5,
+  hit_scale: 0.5,
+  min_hit: 0.05,
+  max_hit: 0.95,
+  min_damage: 1,
+
+  // Targeting (SIM-CMBT-002)
+  engage_radius: 3,            // m
+  retarget_period_ticks: 4,
+  reach_slack: 0.5,            // m
+
+  // Charges (SIM-CMBT-004, SIM-CMBT-015)
+  charge_window_ticks: 60,
+  charge_dmg_share: 0.5,
+  charge_distance: 30,         // m
+  charge_mass_mult: 2.0,       // collision mass of charging soldiers
+  brace_integrity: 0.7,
+
+  // Arcs (SIM-CMBT-014)
+  flank_dmg_mult: 1.25,
+  rear_dmg_mult: 1.5,
+  flank_def_mult: 0.8,
+  rear_def_mult: 0.6,
+
+  // Height (SIM-CMBT-016, SIM-PROJ-002)
+  height_defence: 0.15,
+  height_range: 0.2,
+  height_ref: 5,               // m
+
+  // Second rank, experience, pursuit, corpses, attack-move
+  second_rank_reach_bonus: 1.0, // m (SIM-CMBT-012)
+  exp_step: 0.03,              // SIM-CMBT-017
+  pursuit_hit_mult: 1.5,       // SIM-MOR-034
+  pursue_repath_ticks: 20,     // SIM-CMBT-004
+  corpse_ticks: 600,           // 30 s, render-only (SIM-CORE-008)
+  attack_move_radius: 40,      // m (SIM-CMBT-005)
+
+  // Projectiles (SIM-PROJ-001..009)
+  projectile_cap: 8192,
+  projectile_radius: 0.3,      // m
+  scatter_scale: 0.15,
+  direct_apex: 2,              // m
+  gravity: 9.81,               // m/s^2
+  shield_mult: 0.5,
+  stat_hit_base: 0.6,
+  friendly_block_dist: 15,     // m
+  volley: true,
+  ranged_retarget_ticks: 10,
+}

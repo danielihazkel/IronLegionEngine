@@ -1,0 +1,13 @@
+// Battle-flow tunables: phases, timers, results (Simulation Spec 12 and
+// 15.1; schema docs/schemas/rules-battle_flow.schema.json). Every field is
+// required: the engine carries no numeric defaults.
+{
+  time_limit_ticks: 48000,     // 40 min (SIM-FLOW-012)
+  deploy_timeout_ticks: 0,     // 0 = no deployment timeout (SIM-FLOW-011)
+  pursuit_ticks: 2400,         // 2 min (SIM-FLOW-015)
+  fled_return_fraction: 0.5,   // SIM-FLOW-018
+  timeout_winner: "defender",  // or "most_soldiers" (SIM-FLOW-013)
+  exp_per_kill: 0.01,          // SIM-FLOW-018
+  exp_survive: 1,
+  loot_per_enemy_killed: 10,
+}

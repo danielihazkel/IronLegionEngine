@@ -1,0 +1,11 @@
+// Line-of-sight and fog-of-war tunables (Simulation Spec 11 and 15.1;
+// schema docs/schemas/rules-visibility.schema.json). Every field is
+// required: the engine carries no numeric defaults.
+{
+  period_ticks: 10,            // SIM-VIS-004
+  conceal_radius: 25,          // m (SIM-VIS-003)
+  height_bonus: 0.5,           // SIM-VIS-001
+  eye_height: 1.7,             // m (SIM-VIS-002)
+  los_sample: 4,               // m (SIM-VIS-002)
+  memory_ticks: 400,           // SIM-VIS-005, UI ghosts only
+}

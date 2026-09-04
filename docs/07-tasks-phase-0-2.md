@@ -385,6 +385,7 @@ flowchart LR
     T2080 --> T2081[T2-081 regiment AI]
     T2081 --> T2082[T2-082 army AI]
     T2071 --> T2090[T2-090 battle UI]
+    T2071 --> T2101[T2-101 replay recording]
     T2090 --> T2091[T2-091 menus + custom battle]
     T2071 --> T2100[T2-100 audio bus]
     T2082 --> T2110[T2-110 scenario tests]
@@ -393,9 +394,10 @@ flowchart LR
 
 ### SIM — combat
 
-- [ ] **T2-010 Combat, morale, fatigue, general, visibility, battle-flow rules and content** · M · Refs Simulation Spec §15.1, TDD §8.1 `CombatRules`, §8.3 `MoraleRules`, `FatigueRules`, CONTENT
+- [x] **T2-010 Combat, morale, fatigue, general, visibility, battle-flow rules and content** · M · Refs Simulation Spec §15.1, TDD §8.1 `CombatRules`, §8.3 `MoraleRules`, `FatigueRules`, CONTENT
   Add `CombatRules`, `MoraleRules`, `FatigueRules`, `GeneralRules`, `VisibilityRules`, `BattleFlowRules` to `Rules`; write `rules/combat.json5`, `morale.json5`, `fatigue.json5`, `general.json5`, `visibility.json5`, `battle_flow.json5` with the defaults; extend unit content with every combat field from §15.2, including `ranged` blocks and `frontal_arc_deg`.
   **Done when** `il_cli validate game/` is clean and every rule field is read by at least one system by the end of the phase (grep check).
+  Done 2026-09-04: eight rules structs in `il_data::rules` (every field required, `Rules::hash_content` covers all), six new `rules-*.schema.json`, `game/content/rules/{combat,morale,fatigue,general,visibility,battle_flow}.json5`; §15.1 rewritten as one table per file with the prose-only tunables added (*chosen* marks values no rule stated); zone types gained `defence_mult` and `ford`, units a top-level `armour_penetration`; regiments now spawn with `unit.ranged.ammo` (hash goldens re-baselined). The grep check is a T2-113 item.
 
 - [ ] **T2-020 Melee targeting and engagement** · M · Refs SIM-CMBT-001..004, TDD §8.1 `melee_target`
   `MeleeState`; staggered retargeting via the grid; `attackers` recount; `Fighting` FSM state; regiment `engaged` flag; `AttackRegiment` and real `AttackMove` orders with pursue re-path and charge distance switch to `run`.
