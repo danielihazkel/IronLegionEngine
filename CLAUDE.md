@@ -4,6 +4,7 @@ Rust 2D strategy engine: turn-based campaign, real-time battles of tens of thous
 
 ## Read first
 - `docs/README.md` is the map. The docs are the source of truth; if code and docs disagree, fix the docs in the same commit.
+- `docs/08-how-to-run.md` is how a person runs and operates the engine; keep it current when commands or keys change.
 - `docs/07-tasks-phase-0-2.md` is the active task list. Tick a box only when its **Done when** holds.
 - `docs/04-tdd.md` §18 is the determinism checklist; every sim change is reviewed against it.
 
