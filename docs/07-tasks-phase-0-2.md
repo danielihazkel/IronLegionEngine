@@ -404,9 +404,10 @@ flowchart LR
   **Done when** two opposing lines marched into contact produce a stable front with each soldier holding at most `reach + slack` from its target.
   Done 2026-09-04: `crates/il_sim_battle/src/combat/{gate,target,pursue}.rs`; `MeleeState`, `Attackers`, `Combat`, `Order.target_regiment`, the morale casualty ring; hash layout and `SNAPSHOT_VERSION = 3`; `tests/melee_target.rs` (front, 1 vs 8 threads, mid-clash restore, `AttackRegiment` validation and pursuit, `AttackMove` acquisition and resumption).
 
-- [ ] **T2-021 Melee resolution** · L · Refs SIM-CMBT-010..018, TDD §8.1 `hit_probability`, `melee_damage`, `attack_arc`
+- [x] **T2-021 Melee resolution** · L · Refs SIM-CMBT-010..018, TDD §8.1 `hit_probability`, `melee_damage`, `attack_arc`
   Attack cycles with staggered initial cooldown, hit roll via `hash_draw`, damage and armour, frontal arc classification, flank and rear multipliers, charge window and mass push (with T1-044's `charge_mass_mult`), anti-cavalry bracing, terrain defence and height, second-rank attack, experience multiplier, per-thread `AttackOutcome` buffers merged in attacker id order.
   **Done when** formula unit tests pass and the melee scenario bands in Simulation Spec §15.3 rows 1 to 4 hold over 50 seeds (using T2-110 harness).
+  Done 2026-09-04: `combat/formulas.rs` (pure functions with unit tests) and `combat/attack.rs` (Stage 10 `melee_attack` + `apply_outcomes`); the charge window, `Charge` event and mass push live in `melee_recount`; `tests/melee.rs`. The band run needs deaths, so it is the closing check of T2-022 (recorded there).
 
 - [ ] **T2-022 Death, kill credit, casualty rings, reform trigger** · M · Refs SIM-CORE-008, TDD §8.1 `resolve_deaths`, SIM-FORM-021
   Stage 15: mark `Dead` in id order, remove from regiment soldier lists and grid, update `deaths_5s` ring buffers, credit kills, emit `SoldierDied`, set `needs_reform`; corpse timer is render-only.

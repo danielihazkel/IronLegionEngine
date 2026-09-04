@@ -24,6 +24,13 @@ pub enum BattleEvent {
     /// A soldier of the regiment entered `Fighting` while none was
     /// (SIM-CMBT-003, T2-020).
     Engaged { regiment: RegimentId },
+    /// A running regiment made contact and opened its charge window
+    /// (SIM-CMBT-015, T2-021); `target` is the regiment its first fighter
+    /// struck.
+    Charge {
+        regiment: RegimentId,
+        target: RegimentId,
+    },
     /// Placeholder shape for Phase 2 (T2-022); keeps the variant list in
     /// the TDD order.
     SoldierDied {

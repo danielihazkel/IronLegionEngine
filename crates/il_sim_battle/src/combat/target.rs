@@ -11,8 +11,10 @@ use bevy_ecs::prelude::*;
 use il_core::{S, Scalar, SoldierId, Tick};
 use il_data::Layout;
 
+use crate::command::SpeedMode;
 use crate::components::{
-    Anchor, Attackers, Body, Combat, Fsm, MeleeState, Pos, Rank, Regiment, Soldier, SoldierState,
+    Anchor, Attackers, Body, Combat, Fsm, MeleeState, Order, Pos, Rank, Regiment, Soldier,
+    SoldierState,
 };
 use crate::events::BattleEvent;
 use crate::formation::slot_world;
@@ -273,18 +275,46 @@ fn recount(world: &mut World, emit: bool) {
         .iter()
         .map(|(_, e)| *e)
         .collect();
+    let (window, mass_mult) = {
+        let c = &world.resource::<Regs>().0.rules.combat;
+        (u32::from(c.charge_window_ticks), c.charge_mass_mult)
+    };
     for entity in regiment_entities {
-        let (rid, engaged) = {
+        // The first fighter's target names the charged regiment.
+        let (rid, engaged, struck, running, unit, soldiers) = {
             let Some(regiment) = world.get::<Regiment>(entity) else {
                 continue;
             };
             let ids = world.resource::<Ids>();
+            let mut struck = None;
             let engaged = regiment.soldiers.iter().any(|&sid| {
-                ids.soldier_entity(sid)
-                    .and_then(|e| world.get::<Fsm>(e))
-                    .is_some_and(|f| f.state == SoldierState::Fighting)
+                let Some(e) = ids.soldier_entity(sid) else {
+                    return false;
+                };
+                let fighting = world
+                    .get::<Fsm>(e)
+                    .is_some_and(|f| f.state == SoldierState::Fighting);
+                if fighting && struck.is_none() {
+                    struck = world
+                        .get::<MeleeState>(e)
+                        .and_then(|m| m.target)
+                        .and_then(|t| ids.soldier_entity(t))
+                        .and_then(|te| world.get::<Soldier>(te))
+                        .map(|s| s.regiment);
+                }
+                fighting
             });
-            (regiment.id, engaged)
+            let running = world
+                .get::<Order>(entity)
+                .is_some_and(|o| o.speed == SpeedMode::Run);
+            (
+                regiment.id,
+                engaged,
+                struck,
+                running,
+                regiment.unit,
+                regiment.soldiers.clone(),
+            )
         };
         let Some(mut combat) = world.get_mut::<Combat>(entity) else {
             continue;
@@ -294,12 +324,77 @@ fn recount(world: &mut World, emit: bool) {
         if engaged {
             combat.last_fighting = tick;
         }
-        if engaged && !was && emit {
+        // SIM-CMBT-015: the window closes on its last tick, and a running
+        // regiment that just made contact opens a new one.
+        let mut mass = None;
+        if combat.charge_until == tick {
+            mass = Some(S::ONE);
+        }
+        let charge = engaged && !was && running && tick.0 >= combat.charge_until.0 && window > 0;
+        if charge {
+            combat.charge_until = Tick(tick.0 + window);
+            mass = Some(mass_mult);
+        }
+        if let Some(mult) = mass {
+            let base = world.resource::<Regs>().0.units.get(unit).mass;
+            set_mass(world, &soldiers, base * mult);
+        }
+        if !emit {
+            continue;
+        }
+        if engaged && !was {
             world
                 .resource_mut::<Events>()
                 .0
                 .push(tick, BattleEvent::Engaged { regiment: rid });
         }
+        if charge && let Some(target) = struck {
+            world.resource_mut::<Events>().0.push(
+                tick,
+                BattleEvent::Charge {
+                    regiment: rid,
+                    target,
+                },
+            );
+        }
+    }
+}
+
+/// `Body.m` of every listed soldier (SIM-CMBT-015 charge push).
+fn set_mass(world: &mut World, soldiers: &[SoldierId], m: S) {
+    for &sid in soldiers {
+        if let Some(e) = world.resource::<Ids>().soldier_entity(sid)
+            && let Some(mut body) = world.get_mut::<Body>(e)
+        {
+            body.m = m;
+        }
+    }
+}
+
+/// Restore: `Body.m` is derived, so regiments inside a charge window get
+/// their multiplied mass back (TDD §4.6).
+pub fn rebuild_charge_mass(world: &mut World) {
+    let tick = world.resource::<Clock>().tick;
+    let mult = world.resource::<Regs>().0.rules.combat.charge_mass_mult;
+    let regiment_entities: Vec<Entity> = world
+        .resource::<Ids>()
+        .regiment_entities
+        .iter()
+        .map(|(_, e)| *e)
+        .collect();
+    for entity in regiment_entities {
+        let charging = world
+            .get::<Combat>(entity)
+            .is_some_and(|c| c.charge_until.0 > tick.0);
+        if !charging {
+            continue;
+        }
+        let (unit, soldiers) = {
+            let r = world.get::<Regiment>(entity).expect("regiment");
+            (r.unit, r.soldiers.clone())
+        };
+        let base = world.resource::<Regs>().0.units.get(unit).mass;
+        set_mass(world, &soldiers, base * mult);
     }
 }
 

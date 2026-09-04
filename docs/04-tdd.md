@@ -418,7 +418,7 @@ pub enum RejectReason { StaleTick { command_tick: Tick, current: Tick }, Unknown
 | `Pos` | `p: V2` | yes | yes (`PrevPos` written at Stage 17) |
 | `Vel` | `v: V2` | yes | — |
 | `Facing` | `theta: Angle<S>` | yes | yes (`PrevFacing`) |
-| `Body` | `r: S, m: S` | no (derived) | — |
+| `Body` | `r: S, m: S` (`m` is `unit.mass × charge_mass_mult` inside a charge window, restored by `rebuild_derived`; T2-021) | no (derived) | — |
 | `Health` | `hp: S` | yes | — |
 | `FatigueC` | `f: S` | yes | — |
 | `SlotRef` | `slot: Option<u16>` | yes | — |
@@ -436,7 +436,7 @@ Projectiles (Phase 2, T2-030): `Projectile { id, shooter_regiment, side, launch_
 
 ### 4.4 Resources
 
-As built (Phase 1): `Clock { tick }`, `Phase`, `Sides(Vec<SideState { player, faction, deployment_zone, deployment_confirmed, defeated }>)`, `MapRes(Arc<LoadedMap>)` (heightmap, zone raster, river flags, deployment polygons; built by `new`/`restore` from `map_id`, `BattleWorld::empty` holds a flat placeholder `engine:flat`), `SpatialGridRes(SpatialGrid<SoldierId>)`, `AnchorGridRes(SpatialGrid<RegimentId>)`, `NavGridRes(NavGrid)`, `PathfinderRes(AStar)`, `PathRequests(BTreeSet<RegimentId>)`, `MeleeGateRes { side, may_fight, near_enemy, extent }` (T2-020, per regiment in `Ids` order, rebuilt every Stage 9), `CommandInbox(Vec<Command>)`, `Rejected(Vec<(Command, RejectReason)>)`, `StepEvents(Vec<BattleEvent>)`, `LastHash(StateHash)`, `Rng { seed: u64, streams: [RngStream; StreamId::COUNT = 9] }`, `Ids { soldiers, regiments, projectiles: IdAllocator, soldier_entities: Vec<(SoldierId, Entity)>, regiment_entities: Vec<(RegimentId, Entity)> }` (the canonical ascending order every exclusive system iterates), `Regs(Arc<Registries>)` (rules are read as `Regs.0.rules`, so a hot-reload swap carries them; there is no separate `Rules` resource), `SetupRes(Option<BattleSetup>)`, `ThreadCount`. Later phases add `HpaGraph`, `FlowFields`, `Weather`, `Timer`, `PendingDamage: Vec<(Tick, SoldierId, S, Angle<S>)>` (SIM-PROJ-008) and the side's edge and flow-field handle.
+As built (Phase 1): `Clock { tick }`, `Phase`, `Sides(Vec<SideState { player, faction, deployment_zone, deployment_confirmed, defeated }>)`, `MapRes(Arc<LoadedMap>)` (heightmap, zone raster, river flags, deployment polygons; built by `new`/`restore` from `map_id`, `BattleWorld::empty` holds a flat placeholder `engine:flat`), `SpatialGridRes(SpatialGrid<SoldierId>)`, `AnchorGridRes(SpatialGrid<RegimentId>)`, `NavGridRes(NavGrid)`, `PathfinderRes(AStar)`, `PathRequests(BTreeSet<RegimentId>)`, `MeleeGateRes { side, may_fight, near_enemy, extent }` (T2-020, per regiment in `Ids` order, rebuilt every Stage 9), `Outcomes(Mutex<Vec<AttackOutcome>>)` and `Kills(Vec<(SoldierId, Option<SoldierId>)>)` (T2-021, transient within a tick: filled at Stage 10, the kills drained at Stage 15), `CommandInbox(Vec<Command>)`, `Rejected(Vec<(Command, RejectReason)>)`, `StepEvents(Vec<BattleEvent>)`, `LastHash(StateHash)`, `Rng { seed: u64, streams: [RngStream; StreamId::COUNT = 9] }`, `Ids { soldiers, regiments, projectiles: IdAllocator, soldier_entities: Vec<(SoldierId, Entity)>, regiment_entities: Vec<(RegimentId, Entity)> }` (the canonical ascending order every exclusive system iterates), `Regs(Arc<Registries>)` (rules are read as `Regs.0.rules`, so a hot-reload swap carries them; there is no separate `Rules` resource), `SetupRes(Option<BattleSetup>)`, `ThreadCount`. Later phases add `HpaGraph`, `FlowFields`, `Weather`, `Timer`, `PendingDamage: Vec<(Tick, SoldierId, S, Angle<S>)>` (SIM-PROJ-008) and the side's edge and flow-field handle.
 
 ### 4.5 Schedule
 
@@ -573,13 +573,23 @@ pub struct CombatRules { pub base_hit: S, pub hit_scale: S, pub min_hit: S, pub 
     pub second_rank_reach_bonus: S, pub exp_step: S, pub pursuit_hit_mult: S, pub pursue_repath_ticks: u16, pub corpse_ticks: u16, pub attack_move_radius: S,
     pub projectile_cap: u32, pub projectile_radius: S, pub scatter_scale: S, pub direct_apex: S, pub gravity: S, pub shield_mult: S, pub stat_hit_base: S, pub friendly_block_dist: S, pub volley: bool, pub ranged_retarget_ticks: u16 }
 
+// il_sim_battle::combat::formulas (T2-021), all pure:
 pub fn hit_probability(a: S, d: S, r: &CombatRules) -> S;                    // SIM-CMBT-011
 pub fn melee_damage(dmg: S, armour: S, pen: S, mults: S, r: &CombatRules) -> S; // SIM-CMBT-013
-pub fn attack_arc(defender_facing: Angle<S>, to_attacker: V2, frontal_arc: S) -> Arc;  // SIM-CMBT-014
+pub fn attack_arc(defender_facing: Angle<S>, to_attacker: V2, frontal_arc_deg: S) -> Arc;  // SIM-CMBT-014; Arc { Front, Flank, Rear }, FLANK_HALF_ARC_DEG = 150
+pub fn arc_mults(arc: Arc, r: &CombatRules) -> (S, S);                      // (damage, defence)
+pub fn fatigue_mults(f: S, r: &FatigueRules) -> FatigueMults;               // SIM-FAT-004
+pub fn morale_mults(state: MoraleState, r: &MoraleRules) -> &StateMults;    // SIM-MOR-004
+pub fn experience_mult(experience: u8, r: &CombatRules) -> S;               // SIM-CMBT-017
+pub fn charge_mults(charge_bonus: S, charging: bool, negated: bool, r: &CombatRules) -> (S, S);  // SIM-CMBT-015
+pub fn braced(anti_cavalry_bonus: S, integrity: S, order: OrderKind, engaged: bool, arc: Arc, r: &CombatRules) -> bool;
+pub fn terrain_defence_mult(zone_defence_mult: S, ford: bool, h_j: S, h_i: S, m: &MovementRules, r: &CombatRules) -> S;  // SIM-CMBT-016
+pub fn cooldown_ticks(base: u16, fatigue_interval: S, morale_interval: S, status: S) -> u16;  // SIM-CMBT-010
+pub fn status_mult() -> S; pub fn aura_attack_mult() -> S;                  // 1 until T2-050 / T2-043
 pub struct AttackOutcome { attacker: SoldierId, target: SoldierId, hit: bool, damage: S, arc: Arc }
 ```
 
-Systems as built (T2-020): `pursue_update` (Stage 3, exclusive; `combat::pursue`), `melee_gate` (Stage 9, exclusive; one pass over soldiers for each regiment's extent, then anchor-grid queries, into `MeleeGateRes`; SAD T-10), `melee_target` (Stage 9, staggered, par_iter over soldiers reading this tick's grid and the previous tick's `Attackers`, writes only its own `Fsm` and `MeleeState`; second-rank targeting through the slot ahead), `melee_recount` (Stage 9, exclusive: `Attackers` and `Combat.engaged`/`last_fighting` in ascending id, `Engaged` events). Planned: `melee_attack` (Stage 10, par_iter producing `AttackOutcome` into a per-thread buffer, then merged and sorted by attacker id, then applied to `Health`), `resolve_deaths` (Stage 15: soldiers with `hp ≤ 0` sorted by id → `Dead`, regiment soldier lists updated, `deaths_5s` ring, kill credit, events, `needs_reform`).
+Systems as built (T2-020): `pursue_update` (Stage 3, exclusive; `combat::pursue`), `melee_gate` (Stage 9, exclusive; one pass over soldiers for each regiment's extent, then anchor-grid queries, into `MeleeGateRes`; SAD T-10), `melee_target` (Stage 9, staggered, par_iter over soldiers reading this tick's grid and the previous tick's `Attackers`, writes only its own `Fsm` and `MeleeState`; second-rank targeting through the slot ahead), `melee_recount` (Stage 9, exclusive: `Attackers` and `Combat.engaged`/`last_fighting` in ascending id, `Engaged` events). `melee_attack` (Stage 10, par_iter over fighting soldiers: cooldown count-down, reach check, arc, bracing, the SIM-CMBT-011 product, one `hash_draw` per attack, damage per SIM-CMBT-013, outcome into the shared `Outcomes` buffer, cooldown per SIM-CMBT-010), `apply_outcomes` (Stage 10, exclusive: sort by attacker id, subtract hp, queue zero crossings into `Kills`). The charge window and charge mass are opened and closed by `melee_recount`. Planned: `melee_attack` (Stage 10, par_iter producing `AttackOutcome` into a per-thread buffer, then merged and sorted by attacker id, then applied to `Health`), `resolve_deaths` (Stage 15: soldiers with `hp ≤ 0` sorted by id → `Dead`, regiment soldier lists updated, `deaths_5s` ring, kill credit, events, `needs_reform`).
 
 Budget: targeting 4 ms, combat 4 ms (only engaged soldiers do work; typical 3–6k engaged at P3).
 

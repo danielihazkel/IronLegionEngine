@@ -51,7 +51,9 @@ pub struct PrevFacing {
     pub theta: Angle<S>,
 }
 
-/// Collision radius and mass, copied from the unit type (derived, not hashed).
+/// Collision radius and mass, copied from the unit type (derived, not
+/// hashed). `m` is `unit.mass × combat.charge_mass_mult` while the
+/// regiment's charge window is open (SIM-CMBT-015, T2-021).
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
 pub struct Body {
     pub r: S,

@@ -99,6 +99,8 @@ impl BattleWorld {
         world.insert_resource(PathfinderRes::default());
         world.insert_resource(PathRequests::default());
         world.insert_resource(MeleeGateRes::default());
+        world.insert_resource(crate::combat::Outcomes::default());
+        world.insert_resource(crate::combat::Kills::default());
         world.insert_resource(MapRes(Arc::new(flat_map)));
         // Dimensioned by the Stage 6 system once the map and rules are known.
         let flat = S::from_i32(FLAT_MAP_SIZE);

@@ -470,7 +470,8 @@ impl BattleWorld {
     /// - flow fields per side (T2-042),
     /// - formation slots from template, count and ranks, and `Rank` from
     ///   `SlotRef` (T1-041),
-    /// - attacker counts from the melee targets (T2-020).
+    /// - attacker counts from the melee targets (T2-020),
+    /// - the charge mass of regiments inside a charge window (T2-021).
     pub(crate) fn rebuild_derived(&mut self) {
         use bevy_ecs::system::RunSystemOnce;
         self.world
@@ -495,6 +496,7 @@ impl BattleWorld {
         queue.0.extend(requested);
         crate::formation::rebuild_formation_derived(&mut self.world);
         crate::combat::rebuild_attackers(&mut self.world);
+        crate::combat::rebuild_charge_mass(&mut self.world);
     }
 }
 
