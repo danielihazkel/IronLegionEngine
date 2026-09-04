@@ -4,7 +4,7 @@
 
 use bevy_ecs::prelude::*;
 use il_core::{
-    Angle, Hashable, RegimentId, S, Scalar, SoldierId, StateHasher, Tick, V2,
+    Angle, Hashable, RegimentId, S, Scalar, SoldierId, StateHasher, TICKS_PER_SECOND, Tick, V2,
     impl_hashable_fieldless_enum, impl_hashable_struct,
 };
 use il_data::{FormationTemplate, Handle, UnitCategory, UnitType};
@@ -104,6 +104,21 @@ pub struct Rank {
     pub file: u16,
 }
 
+/// SIM-CMBT-002 / SIM-CMBT-010: the soldier's melee target and the ticks
+/// left until its next attack (hashed, snapshotted; T2-020).
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct MeleeState {
+    pub target: Option<SoldierId>,
+    pub cooldown: u16,
+}
+
+/// Soldiers currently targeting this one (SIM-CMBT-002 tie-break).
+/// Derived: recounted at Stage 9 and on restore, not hashed.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Attackers {
+    pub n: u8,
+}
+
 // --------------------------------------------------------------- regiments
 
 #[derive(Component, Clone, Debug)]
@@ -124,6 +139,23 @@ pub struct Regiment {
 pub struct Anchor {
     pub pos: V2,
     pub facing: Angle<S>,
+}
+
+/// Regiment combat state (T2-020; SIM-CMBT-003, SIM-CMBT-015, SIM-CMBT-017).
+/// Hashed and snapshotted.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Combat {
+    /// Any soldier is `Fighting` (SIM-CMBT-003), as of the last Stage 9.
+    pub engaged: bool,
+    /// Last tick `engaged` was true; pursuit re-paths once this is
+    /// `retarget_period_ticks` old (plan decision 7).
+    pub last_fighting: Tick,
+    /// End of the charge window (SIM-CMBT-015); `Tick::ZERO` when none.
+    pub charge_until: Tick,
+    /// SIM-CMBT-017, `0..=9`.
+    pub experience: u8,
+    /// Kills credited to this regiment (T2-022).
+    pub kills: u32,
 }
 
 /// The regiment's formation (SIM-CORE-005, TDD §7). `slots` and
@@ -193,11 +225,36 @@ pub enum MoraleState {
 }
 impl_hashable_fieldless_enum!(MoraleState);
 
-/// Value and state only in Phase 0; factors and rings arrive in T2-041.
-#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+/// Ticks the casualty ring covers (SIM-MOR-010: five seconds).
+pub const DEATHS_RING: usize = 5 * TICKS_PER_SECOND as usize;
+
+/// SIM-MOR-001..004. The casualty ring and initial strength are written
+/// by death (T2-022); `rout_count` and `engaged_since` arrive with T2-041.
+#[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct Morale {
     pub m: S,
     pub state: MoraleState,
+    /// Deaths per tick over the last five seconds, indexed `tick % DEATHS_RING`.
+    pub deaths_5s: [u16; DEATHS_RING],
+    /// Soldiers at spawn (SIM-MOR-011, SIM-FLOW-018).
+    pub initial: u16,
+}
+
+impl Morale {
+    pub fn new(m: S, initial: u16) -> Self {
+        Self {
+            m,
+            state: MoraleState::Steady,
+            deaths_5s: [0; DEATHS_RING],
+            initial,
+        }
+    }
+}
+
+impl Default for Morale {
+    fn default() -> Self {
+        Self::new(S::ZERO, 0)
+    }
 }
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -215,7 +272,15 @@ impl_hashable_fieldless_enum!(OrderKind);
 impl OrderKind {
     /// Orders that take the regiment somewhere (need a path).
     pub fn moves(self) -> bool {
-        matches!(self, OrderKind::Move | OrderKind::AttackMove)
+        matches!(
+            self,
+            OrderKind::Move | OrderKind::AttackMove | OrderKind::AttackRegiment
+        )
+    }
+
+    /// Orders that chase a regiment (SIM-CMBT-004).
+    pub fn is_attack(self) -> bool {
+        matches!(self, OrderKind::AttackMove | OrderKind::AttackRegiment)
     }
 }
 
@@ -225,6 +290,9 @@ impl OrderKind {
 pub struct Order {
     pub kind: OrderKind,
     pub target: V2,
+    /// The regiment an attack order chases (SIM-CMBT-004/005); `None` for
+    /// every other kind and for an `AttackMove` that has not acquired one.
+    pub target_regiment: Option<RegimentId>,
     /// Facing to take on arrival, if the order gave one (SIM-MOVE-013).
     pub facing: Option<Angle<S>>,
     pub speed: SpeedMode,
@@ -272,10 +340,24 @@ impl_hashable_struct!(Health { hp });
 impl_hashable_struct!(FatigueC { f });
 impl_hashable_struct!(SlotRef { slot });
 impl_hashable_struct!(Anchor { pos, facing });
-impl_hashable_struct!(Morale { m, state });
+impl_hashable_struct!(Morale {
+    m,
+    state,
+    deaths_5s,
+    initial
+});
+impl_hashable_struct!(MeleeState { target, cooldown });
+impl_hashable_struct!(Combat {
+    engaged,
+    last_fighting,
+    charge_until,
+    experience,
+    kills
+});
 impl_hashable_struct!(Order {
     kind,
     target,
+    target_regiment,
     facing,
     speed,
     since

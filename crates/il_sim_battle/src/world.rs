@@ -16,9 +16,9 @@ use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, LoadedMap, MapError};
 use crate::nav::NavGrid;
 use crate::resources::{
-    AnchorGridRes, BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, NavGridRes,
-    PathRequests, PathfinderRes, Phase, Regs, Rejected, Rng, SetupRes, Sides, SpatialGridRes,
-    StepEvents, ThreadCount,
+    AnchorGridRes, BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, MeleeGateRes,
+    NavGridRes, PathRequests, PathfinderRes, Phase, Regs, Rejected, Rng, SetupRes, Sides,
+    SpatialGridRes, StepEvents, ThreadCount,
 };
 use crate::schedule::{NoopObserver, Stage, StageObserver, build_schedules};
 use crate::spatial::SpatialGrid;
@@ -98,6 +98,7 @@ impl BattleWorld {
         )));
         world.insert_resource(PathfinderRes::default());
         world.insert_resource(PathRequests::default());
+        world.insert_resource(MeleeGateRes::default());
         world.insert_resource(MapRes(Arc::new(flat_map)));
         // Dimensioned by the Stage 6 system once the map and rules are known.
         let flat = S::from_i32(FLAT_MAP_SIZE);

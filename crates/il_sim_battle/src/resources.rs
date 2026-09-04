@@ -98,6 +98,14 @@ impl Ids {
             .map(|i| self.regiment_entities[i].1)
     }
 
+    /// Index of a regiment in `regiment_entities` (the per-tick gate is
+    /// indexed the same way).
+    pub fn regiment_index(&self, id: RegimentId) -> Option<usize> {
+        self.regiment_entities
+            .binary_search_by_key(&id, |(rid, _)| *rid)
+            .ok()
+    }
+
     pub fn soldier_entity(&self, id: SoldierId) -> Option<Entity> {
         self.soldier_entities
             .binary_search_by_key(&id, |(sid, _)| *sid)
@@ -109,6 +117,18 @@ impl Ids {
 /// Per-tick event buffer drained at Stage 17.
 #[derive(Resource, Debug, Default)]
 pub struct Events(pub EventQueue<BattleEvent>);
+
+/// Stage 9 gate (T2-020, derived per tick): one entry per regiment in
+/// `Ids.regiment_entities` order. Soldiers of regiments that cannot fight
+/// or have no enemy within reach skip the per-soldier target search.
+#[derive(Resource, Debug, Default)]
+pub struct MeleeGateRes {
+    pub side: Vec<u8>,
+    pub may_fight: Vec<bool>,
+    pub near_enemy: Vec<bool>,
+    /// Farthest soldier from the anchor, metres.
+    pub extent: Vec<il_core::S>,
+}
 
 /// Content registries; sim code reads by handle only (SAD §3 principle 7).
 #[derive(Resource, Clone)]

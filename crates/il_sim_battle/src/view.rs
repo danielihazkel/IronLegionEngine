@@ -14,8 +14,8 @@ use il_core::{Angle, RegimentId, S, SoldierId, Tick, V2};
 use il_data::{FormationTemplate, Handle, Registries, UnitCategory, UnitType};
 
 use crate::components::{
-    Anchor, Facing, FormationState, Fsm, Health, Morale, MoraleState, Order, OrderKind, Path, Pos,
-    PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState,
+    Anchor, Combat, Facing, FormationState, Fsm, Health, MeleeState, Morale, MoraleState, Order,
+    OrderKind, Path, Pos, PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState,
 };
 use crate::map::LoadedMap;
 use crate::nav::NavGrid;
@@ -33,6 +33,7 @@ type SoldierData = (
     &'static Fsm,
     &'static Health,
     &'static SlotRef,
+    &'static MeleeState,
 );
 type RegimentData = (
     &'static Regiment,
@@ -40,6 +41,7 @@ type RegimentData = (
     &'static Order,
     &'static Morale,
     &'static FormationState,
+    &'static Combat,
 );
 
 /// Cached query states behind every `BattleView`.
@@ -77,6 +79,8 @@ pub struct SoldierRow {
     pub state: SoldierState,
     pub hp: S,
     pub slot: Option<u16>,
+    /// Melee target while `Fighting` (T2-020).
+    pub target: Option<SoldierId>,
 }
 
 /// One regiment as the presentation layer sees it.
@@ -96,6 +100,8 @@ pub struct RegimentRow {
     pub formation: Handle<FormationTemplate>,
     pub ranks: u8,
     pub files: u16,
+    /// SIM-CMBT-003 (T2-020).
+    pub engaged: bool,
 }
 
 /// Borrowed, read-only view over a `BattleWorld`.
@@ -107,7 +113,7 @@ pub struct BattleView<'w> {
 }
 
 fn soldier_row(
-    (s, pos, prev, facing, prev_facing, fsm, health, slot): (
+    (s, pos, prev, facing, prev_facing, fsm, health, slot, melee): (
         &Soldier,
         &Pos,
         &PrevPos,
@@ -116,6 +122,7 @@ fn soldier_row(
         &Fsm,
         &Health,
         &SlotRef,
+        &MeleeState,
     ),
 ) -> SoldierRow {
     SoldierRow {
@@ -130,11 +137,19 @@ fn soldier_row(
         state: fsm.state,
         hp: health.hp,
         slot: slot.slot,
+        target: melee.target,
     }
 }
 
 fn regiment_row(
-    (r, anchor, order, morale, formation): (&Regiment, &Anchor, &Order, &Morale, &FormationState),
+    (r, anchor, order, morale, formation, combat): (
+        &Regiment,
+        &Anchor,
+        &Order,
+        &Morale,
+        &FormationState,
+        &Combat,
+    ),
 ) -> RegimentRow {
     RegimentRow {
         id: r.id,
@@ -150,6 +165,7 @@ fn regiment_row(
         formation: formation.template,
         ranks: formation.ranks,
         files: formation.files,
+        engaged: combat.engaged,
     }
 }
 

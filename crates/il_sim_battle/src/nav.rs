@@ -44,7 +44,13 @@ pub fn serve_path_requests(world: &mut World) {
         else {
             continue;
         };
-        let (from, to) = (anchor.pos, order.target);
+        // SIM-CMBT-004: attack orders path to their target's anchor.
+        let to = order
+            .target_regiment
+            .and_then(|t| world.resource::<Ids>().regiment_entity(t))
+            .and_then(|e| world.get::<Anchor>(e))
+            .map_or(order.target, |a| a.pos);
+        let from = anchor.pos;
         if !order.kind.moves() {
             if let Some(mut path) = world.get_mut::<Path>(entity) {
                 path.requested = false;

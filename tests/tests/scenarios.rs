@@ -35,9 +35,8 @@ fn every_band_file_parses_as_a_scenario_with_a_bands_block() {
 }
 
 /// Every band file runs one seed for a few ticks without a rejected
-/// command. `AttackRegiment` returns `NotImplemented` until T2-020.
+/// command (every command it scripts exists since T2-020).
 #[test]
-#[ignore = "AttackRegiment is NotImplemented until T2-020"]
 fn band_files_run_without_rejected_commands() {
     let mut opts = options();
     opts.seeds = Some(1);

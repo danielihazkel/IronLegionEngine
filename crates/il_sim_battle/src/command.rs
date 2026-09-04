@@ -11,7 +11,8 @@ use il_data::ContentId;
 use serde::{Deserialize, Serialize};
 
 use crate::components::{
-    Anchor, FormationState, Morale, MoraleState, Order, OrderKind, Path, Pos, Regiment, SlotRef,
+    Anchor, Combat, FormationState, Morale, MoraleState, Order, OrderKind, Path, Pos, Regiment,
+    SlotRef,
 };
 use crate::events::BattleEvent;
 use crate::formation::{
@@ -330,6 +331,8 @@ pub enum RejectReason {
         regiment: RegimentId,
         template: ContentId,
     },
+    /// `AttackRegiment` names an own-side or empty regiment (T2-020).
+    InvalidTarget(RegimentId),
     /// The variant has no implementation yet; never silently dropped.
     NotImplemented,
 }
@@ -411,19 +414,65 @@ fn validate_and_apply(
             ..
         } => {
             for entity in entities {
+                // SIM-CMBT-003: an engaged regiment obeys the move but not
+                // the facing (the morale penalty arrives with T2-041).
+                let engaged = world.get::<Combat>(entity).is_some_and(|c| c.engaged);
                 issue_move(
                     world,
                     entity,
                     OrderKind::Move,
                     *target,
-                    *facing,
+                    if engaged { None } else { *facing },
                     *speed,
                     current,
                 );
             }
             Ok(())
         }
-        // Until enemies engage (Phase 2) an attack-move is a move.
+        // SIM-CMBT-004: chase a regiment. Every addressed regiment must be
+        // an enemy of the target, and the target must still have soldiers.
+        CommandKind::AttackRegiment { target, .. } => {
+            let target_entity = world
+                .resource::<Ids>()
+                .regiment_entity(*target)
+                .ok_or(RejectReason::UnknownRegiment(*target))?;
+            let (target_side, alive, target_pos) = {
+                let r = world
+                    .get::<Regiment>(target_entity)
+                    .ok_or(RejectReason::UnknownRegiment(*target))?;
+                let a = world.get::<Anchor>(target_entity).expect("anchor");
+                (r.side, !r.soldiers.is_empty(), a.pos)
+            };
+            if !alive {
+                return Err(RejectReason::InvalidTarget(*target));
+            }
+            for entity in &entities {
+                let side = world.get::<Regiment>(*entity).expect("validated").side;
+                if side == target_side {
+                    return Err(RejectReason::InvalidTarget(*target));
+                }
+            }
+            for entity in entities {
+                let speed = world
+                    .get::<Order>(entity)
+                    .map_or(SpeedMode::Walk, |o| o.speed);
+                issue_move(
+                    world,
+                    entity,
+                    OrderKind::AttackRegiment,
+                    target_pos,
+                    None,
+                    speed,
+                    current,
+                );
+                if let Some(mut order) = world.get_mut::<Order>(entity) {
+                    order.target_regiment = Some(*target);
+                }
+            }
+            Ok(())
+        }
+        // SIM-CMBT-005: an attack-move acquires its target on the way
+        // (`combat::pursue_update`).
         CommandKind::AttackMove { target, .. } => {
             for entity in entities {
                 let speed = world
@@ -602,11 +651,12 @@ fn validate_and_apply(
 
 /// `Halt`: the order ends where the regiment stands; a pending path
 /// request is dropped and no wheel target remains.
-fn halt(world: &mut World, entity: Entity) {
+pub(crate) fn halt(world: &mut World, entity: Entity) {
     let id = world.get::<Regiment>(entity).map(|r| r.id);
     if let Some(mut order) = world.get_mut::<Order>(entity) {
         order.kind = OrderKind::Idle;
         order.facing = None;
+        order.target_regiment = None;
     }
     if let Some(mut path) = world.get_mut::<Path>(entity) {
         *path = Path::default();
@@ -634,6 +684,7 @@ fn issue_move(
         *order = Order {
             kind,
             target,
+            target_regiment: None,
             facing,
             speed,
             since: tick,

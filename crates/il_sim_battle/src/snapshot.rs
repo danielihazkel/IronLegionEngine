@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::SpeedMode;
 use crate::components::{
-    Anchor, Body, Facing, FatigueC, FormationState, Fsm, Health, Morale, MoraleState, Order,
-    OrderKind, Path, Pos, PrevFacing, PrevPos, Rank, Regiment, SlotRef, Soldier, SoldierState, Vel,
-    Waypoint,
+    Anchor, Attackers, Body, Combat, DEATHS_RING, Facing, FatigueC, FormationState, Fsm, Health,
+    MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos, Rank,
+    Regiment, SlotRef, Soldier, SoldierState, Vel, Waypoint,
 };
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, MapError};
@@ -25,7 +25,9 @@ use crate::world::{BattleWorld, InstallMapError};
 
 /// Bumped whenever the encoding changes; `il_save` migrations key on it.
 /// 2: `map_id` required in the setup (T1-030).
-pub const SNAPSHOT_VERSION: u32 = 2;
+/// 3: combat state (T2-020): order target regiment, regiment `Combat`,
+///    morale casualty ring and initial strength, soldier `MeleeState`.
+pub const SNAPSHOT_VERSION: u32 = 3;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RegimentSnap {
@@ -54,6 +56,15 @@ pub struct RegimentSnap {
     pub prior_formation: Option<ContentId>,
     pub laid_out_facing: Angle<S>,
     pub ammo: u16,
+    pub order_target_regiment: Option<RegimentId>,
+    pub engaged: bool,
+    pub last_fighting: Tick,
+    pub charge_until: Tick,
+    pub experience: u8,
+    pub kills: u32,
+    /// `DEATHS_RING` entries.
+    pub deaths_5s: Vec<u16>,
+    pub initial: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -68,6 +79,8 @@ pub struct SoldierSnap {
     pub slot: Option<u16>,
     pub fsm_state: SoldierState,
     pub fsm_since: Tick,
+    pub melee_target: Option<SoldierId>,
+    pub melee_cooldown: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,6 +180,7 @@ impl BattleWorld {
                 let order = world.get::<Order>(*entity).expect("order");
                 let path = world.get::<Path>(*entity).expect("path");
                 let formation = world.get::<FormationState>(*entity).expect("formation");
+                let combat = world.get::<Combat>(*entity).expect("combat");
                 debug_assert_eq!(*id, r.id);
                 RegimentSnap {
                     id: r.id,
@@ -195,6 +209,14 @@ impl BattleWorld {
                         .map(|h| regs.formations.id_of(h).clone()),
                     laid_out_facing: formation.laid_out_facing,
                     ammo: r.ammo,
+                    order_target_regiment: order.target_regiment,
+                    engaged: combat.engaged,
+                    last_fighting: combat.last_fighting,
+                    charge_until: combat.charge_until,
+                    experience: combat.experience,
+                    kills: combat.kills,
+                    deaths_5s: morale.deaths_5s.to_vec(),
+                    initial: morale.initial,
                 }
             })
             .collect();
@@ -216,6 +238,8 @@ impl BattleWorld {
                     slot: world.get::<SlotRef>(*entity).expect("slot").slot,
                     fsm_state: world.get::<Fsm>(*entity).expect("fsm").state,
                     fsm_since: world.get::<Fsm>(*entity).expect("fsm").since,
+                    melee_target: world.get::<MeleeState>(*entity).expect("melee").target,
+                    melee_cooldown: world.get::<MeleeState>(*entity).expect("melee").cooldown,
                 }
             })
             .collect();
@@ -279,6 +303,11 @@ impl BattleWorld {
                 .formations
                 .lookup(&r.formation)
                 .ok_or_else(|| RestoreError::UnknownFormation(r.formation.clone()))?;
+            let deaths_5s: [u16; DEATHS_RING] = r
+                .deaths_5s
+                .as_slice()
+                .try_into()
+                .map_err(|_| RestoreError::Malformed("casualty ring length"))?;
             let prior_template = match &r.prior_formation {
                 Some(id) => Some(
                     regs.formations
@@ -305,10 +334,20 @@ impl BattleWorld {
                     Morale {
                         m: r.morale,
                         state: r.morale_state,
+                        deaths_5s,
+                        initial: r.initial,
+                    },
+                    Combat {
+                        engaged: r.engaged,
+                        last_fighting: r.last_fighting,
+                        charge_until: r.charge_until,
+                        experience: r.experience,
+                        kills: r.kills,
                     },
                     Order {
                         kind: r.order,
                         target: r.order_target,
+                        target_regiment: r.order_target_regiment,
                         facing: r.order_facing,
                         speed: r.order_speed,
                         since: r.order_since,
@@ -389,6 +428,11 @@ impl BattleWorld {
                         state: s.fsm_state,
                         since: s.fsm_since,
                     },
+                    MeleeState {
+                        target: s.melee_target,
+                        cooldown: s.melee_cooldown,
+                    },
+                    Attackers::default(),
                 ))
                 .id();
             w.world
@@ -425,7 +469,8 @@ impl BattleWorld {
     ///   paths themselves are stored),
     /// - flow fields per side (T2-042),
     /// - formation slots from template, count and ranks, and `Rank` from
-    ///   `SlotRef` (T1-041).
+    ///   `SlotRef` (T1-041),
+    /// - attacker counts from the melee targets (T2-020).
     pub(crate) fn rebuild_derived(&mut self) {
         use bevy_ecs::system::RunSystemOnce;
         self.world
@@ -449,6 +494,7 @@ impl BattleWorld {
         queue.0.clear();
         queue.0.extend(requested);
         crate::formation::rebuild_formation_derived(&mut self.world);
+        crate::combat::rebuild_attackers(&mut self.world);
     }
 }
 

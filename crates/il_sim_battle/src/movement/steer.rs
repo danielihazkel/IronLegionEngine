@@ -11,8 +11,10 @@ use bevy_ecs::prelude::*;
 use il_core::{Angle, S, Scalar, Tick, V2};
 use il_data::Registries;
 
+use crate::command::SpeedMode;
 use crate::components::{
-    Anchor, Body, Facing, FormationState, Fsm, Order, Pos, SlotRef, Soldier, SoldierState, Vel,
+    Anchor, Body, Facing, FormationState, Fsm, MeleeState, Order, Pos, Rank, SlotRef, Soldier,
+    SoldierState, Vel,
 };
 use crate::formation::slot_world;
 use crate::map::LoadedMap;
@@ -20,6 +22,7 @@ use crate::movement::regiment::{mode_speed, slope_mult, tick_dt, zone_move_mult}
 use crate::nav::NavGrid;
 use crate::resources::{Clock, Ids, MapRes, NavGridRes, Regs, SpatialGridRes};
 use crate::spatial::SpatialGrid;
+use il_data::Layout;
 
 /// SIM-MOVE-023: the rotations tried, in order, when the look-ahead segment
 /// crosses an impassable cell (degrees).
@@ -27,6 +30,35 @@ const AVOID_DEGREES: [i32; 10] = [15, -15, 30, -30, 45, -45, 60, -60, 90, -90];
 
 type RegimentRead<'w, 's> =
     Query<'w, 's, (&'static Anchor, &'static FormationState, &'static Order)>;
+
+/// The per-soldier query of `soldier_steer`.
+type SteerQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Soldier,
+        &'static Pos,
+        &'static Body,
+        &'static SlotRef,
+        &'static Rank,
+        &'static MeleeState,
+        &'static mut Vel,
+        &'static mut Facing,
+        &'static mut Fsm,
+    ),
+>;
+/// One item of `SteerQuery`.
+type SteerItem<'a> = (
+    &'a Soldier,
+    &'a Pos,
+    &'a Body,
+    &'a SlotRef,
+    &'a Rank,
+    &'a MeleeState,
+    Mut<'a, Vel>,
+    Mut<'a, Facing>,
+    Mut<'a, Fsm>,
+);
 
 /// One soldier's steering inputs and outputs, so the closure stays small.
 struct Steer<'a, 'w, 's> {
@@ -105,6 +137,77 @@ impl Steer<'_, '_, '_> {
         V2::ZERO
     }
 
+    /// T2-020 (SIM-CORE-011, plan decision 6): a fighting soldier seeks its
+    /// target's previous-tick position and stops at `r_i + r_j + reach`;
+    /// separation and avoidance still apply and the facing tracks the
+    /// target. Slot seeking is suspended. Without a target (cleared by a
+    /// death) it holds still until its next retarget tick.
+    #[allow(clippy::too_many_arguments)]
+    fn fight(
+        &self,
+        soldier: &Soldier,
+        p: V2,
+        body: &Body,
+        rank: &Rank,
+        melee: &MeleeState,
+        regiment: Option<(&Anchor, &FormationState, &Order)>,
+        vel: &mut Vel,
+        facing: &mut Facing,
+        scratch: &mut Vec<usize>,
+    ) {
+        let rules = &self.regs.rules.movement;
+        let combat = &self.regs.rules.combat;
+        let unit = self.regs.units.get(soldier.unit);
+        let mode = regiment.map_or(SpeedMode::Walk, |(_, _, o)| o.speed);
+        // SIM-CMBT-012: second-rank fighters stop a reach bonus further back.
+        let second_rank = rank.rank == 1
+            && regiment.is_some_and(|(_, state, _)| {
+                unit.second_rank_attack
+                    || self.regs.formations.get(state.template).layout == Layout::Phalanx
+            });
+        let reach = if second_rank {
+            unit.reach + combat.second_rank_reach_bonus
+        } else {
+            unit.reach
+        };
+        let target = melee.target.and_then(|t| {
+            let entries = self.grid.entries();
+            entries
+                .binary_search_by_key(&t, |e| e.id)
+                .ok()
+                .map(|i| &entries[i])
+        });
+        let mut wanted = None;
+        let mut v_max = mode_speed(unit, mode);
+        let v_des = match target {
+            Some(e) if e.pos != p => {
+                let r_j = self.bodies.get(e.entity).map_or(self.max_radius, |b| b.r);
+                let to = e.pos - p;
+                let dist = to.length();
+                let dir = to * (S::ONE / dist);
+                v_max = v_max
+                    * zone_move_mult(self.map, self.regs, p)
+                    * slope_mult(self.map, rules, p, dir);
+                wanted = Some(Angle::from_direction(dir));
+                let stop = body.r + r_j + reach;
+                seek_velocity(
+                    dir * (dist - stop).max(S::ZERO),
+                    v_max,
+                    self.dt,
+                    rules.arrive_damping,
+                )
+            }
+            _ => V2::ZERO,
+        };
+        let v_des = self.avoid(p, v_des);
+        let sep = self.separation(soldier.id, p, body.r, scratch);
+        vel.v = (v_des + sep).clamp_length(v_max);
+        if let Some(w) = wanted {
+            let max_turn = rules.soldier_turn_rate * S::PI / S::from_i32(180) * self.dt;
+            facing.theta = facing.theta.turn_toward(w, max_turn);
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn soldier(
         &self,
@@ -112,6 +215,8 @@ impl Steer<'_, '_, '_> {
         pos: &Pos,
         body: &Body,
         slot: &SlotRef,
+        rank: &Rank,
+        melee: &MeleeState,
         regiment: Option<(&Anchor, &FormationState, &Order)>,
         vel: &mut Vel,
         facing: &mut Facing,
@@ -120,6 +225,12 @@ impl Steer<'_, '_, '_> {
     ) {
         let rules = &self.regs.rules.movement;
         let p = pos.p;
+        if fsm.state == SoldierState::Fighting {
+            self.fight(
+                soldier, p, body, rank, melee, regiment, vel, facing, scratch,
+            );
+            return;
+        }
         // The slot to hold, if any.
         let target = regiment.and_then(|(anchor, state, order)| {
             let s = state.slots.get(usize::from(slot.slot?))?;
@@ -188,15 +299,7 @@ impl Steer<'_, '_, '_> {
 /// Stage 4 `soldier_steer`: writes `Vel`, `Facing` and `Fsm` per soldier.
 #[allow(clippy::too_many_arguments)]
 pub fn soldier_steer(
-    mut soldiers: Query<(
-        &Soldier,
-        &Pos,
-        &Body,
-        &SlotRef,
-        &mut Vel,
-        &mut Facing,
-        &mut Fsm,
-    )>,
+    mut soldiers: SteerQuery,
     regiments: RegimentRead,
     bodies: Query<&'static Body>,
     ids: Res<Ids>,
@@ -226,15 +329,9 @@ pub fn soldier_steer(
     let ids = &ids;
     let regiments = &regiments;
     let run = |scratch: &mut Vec<usize>,
-               (soldier, pos, body, slot, mut vel, mut facing, mut fsm): (
-        &Soldier,
-        &Pos,
-        &Body,
-        &SlotRef,
-        Mut<Vel>,
-        Mut<Facing>,
-        Mut<Fsm>,
-    )| {
+               (soldier, pos, body, slot, rank, melee, mut vel, mut facing, mut fsm): SteerItem<
+        '_,
+    >| {
         let regiment = ids
             .regiment_entity(soldier.regiment)
             .and_then(|e| regiments.get(e).ok());
@@ -243,6 +340,8 @@ pub fn soldier_steer(
             pos,
             body,
             slot,
+            rank,
+            melee,
             regiment,
             &mut vel,
             &mut facing,

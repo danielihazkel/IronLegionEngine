@@ -3,6 +3,7 @@
 //! Commands in, events out; one `step` is exactly one 20 Hz tick through the
 //! 18-stage schedule; the state hash and snapshot make every run verifiable.
 
+pub mod combat;
 pub mod command;
 pub mod components;
 pub mod events;

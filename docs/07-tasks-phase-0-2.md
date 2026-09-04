@@ -399,9 +399,10 @@ flowchart LR
   **Done when** `il_cli validate game/` is clean and every rule field is read by at least one system by the end of the phase (grep check).
   Done 2026-09-04: eight rules structs in `il_data::rules` (every field required, `Rules::hash_content` covers all), six new `rules-*.schema.json`, `game/content/rules/{combat,morale,fatigue,general,visibility,battle_flow}.json5`; §15.1 rewritten as one table per file with the prose-only tunables added (*chosen* marks values no rule stated); zone types gained `defence_mult` and `ford`, units a top-level `armour_penetration`; regiments now spawn with `unit.ranged.ammo` (hash goldens re-baselined). The grep check is a T2-113 item.
 
-- [ ] **T2-020 Melee targeting and engagement** · M · Refs SIM-CMBT-001..004, TDD §8.1 `melee_target`
+- [x] **T2-020 Melee targeting and engagement** · M · Refs SIM-CMBT-001..004, TDD §8.1 `melee_target`
   `MeleeState`; staggered retargeting via the grid; `attackers` recount; `Fighting` FSM state; regiment `engaged` flag; `AttackRegiment` and real `AttackMove` orders with pursue re-path and charge distance switch to `run`.
   **Done when** two opposing lines marched into contact produce a stable front with each soldier holding at most `reach + slack` from its target.
+  Done 2026-09-04: `crates/il_sim_battle/src/combat/{gate,target,pursue}.rs`; `MeleeState`, `Attackers`, `Combat`, `Order.target_regiment`, the morale casualty ring; hash layout and `SNAPSHOT_VERSION = 3`; `tests/melee_target.rs` (front, 1 vs 8 threads, mid-clash restore, `AttackRegiment` validation and pursuit, `AttackMove` acquisition and resumption).
 
 - [ ] **T2-021 Melee resolution** · L · Refs SIM-CMBT-010..018, TDD §8.1 `hit_probability`, `melee_damage`, `attack_arc`
   Attack cycles with staggered initial cooldown, hit roll via `hash_draw`, damage and armour, frontal arc classification, flank and rear multipliers, charge window and mass push (with T1-044's `charge_mass_mult`), anti-cavalry bracing, terrain defence and height, second-rank attack, experience multiplier, per-thread `AttackOutcome` buffers merged in attacker id order.

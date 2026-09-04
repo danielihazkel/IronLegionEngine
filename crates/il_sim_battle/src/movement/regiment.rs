@@ -13,7 +13,9 @@ use il_core::{Angle, S, Scalar, TICKS_PER_SECOND, Tick, V2};
 use il_data::{FormationTemplate, Handle, Layout, MovementRules, Registries, UnitType};
 
 use crate::command::SpeedMode;
-use crate::components::{Anchor, FormationState, Order, OrderKind, Path, Pos, Regiment, SlotRef};
+use crate::components::{
+    Anchor, Combat, FormationState, Order, OrderKind, Path, Pos, Regiment, SlotRef,
+};
 use crate::formation::{slot_world, spacing};
 use crate::map::LoadedMap;
 use crate::resources::{Clock, Ids, MapRes, Regs};
@@ -75,6 +77,16 @@ fn column_template(unit: &UnitType, regs: &Registries) -> Option<Handle<Formatio
 }
 
 type SoldierRead<'w, 's> = Query<'w, 's, (&'static Pos, &'static SlotRef)>;
+
+/// One regiment as `regiment_follow_path` sees it.
+type FollowItem<'a> = (
+    &'a Regiment,
+    &'a Combat,
+    Mut<'a, Anchor>,
+    Mut<'a, Order>,
+    Mut<'a, Path>,
+    Mut<'a, FormationState>,
+);
 
 /// SIM-MOVE-012: the fraction of soldiers farther than `straggler_radius
 /// × sf` from their slot.
@@ -143,11 +155,14 @@ fn follow_one(
         }
     }
     let Some(wp) = path.current().copied() else {
-        // SIM-MOVE-013: arrival.
+        // SIM-MOVE-013: arrival. An attack order that still has a target
+        // keeps chasing it (`pursue_update` re-paths on its next tick).
         if let Some(facing) = order.facing {
             anchor.facing = facing;
         }
-        order.kind = OrderKind::Idle;
+        if !(order.kind.is_attack() && order.target_regiment.is_some()) {
+            order.kind = OrderKind::Idle;
+        }
         if let Some(prior) = state.prior_template.take() {
             state.template = prior;
         }
@@ -218,6 +233,7 @@ fn follow_one(
 pub fn regiment_follow_path(
     mut regiments: Query<(
         &Regiment,
+        &Combat,
         &mut Anchor,
         &mut Order,
         &mut Path,
@@ -236,13 +252,12 @@ pub fn regiment_follow_path(
     let regs = &regs.0;
     let map = &map.0;
     let wheel_per_tick = deg_to_rad(regs.rules.movement.wheel_rate) * tick_dt();
-    let run = |(r, mut anchor, mut order, mut path, mut state): (
-        &Regiment,
-        Mut<Anchor>,
-        Mut<Order>,
-        Mut<Path>,
-        Mut<FormationState>,
-    )| {
+    let run = |(r, combat, mut anchor, mut order, mut path, mut state): FollowItem<'_>| {
+        // SIM-CMBT-003 (plan decision 7): the anchor of an engaged attacker
+        // holds while its soldiers fight; the path is kept.
+        if order.kind.is_attack() && combat.engaged {
+            return;
+        }
         if !order.kind.moves() {
             // SIM-FORM-024: a halted regiment wheels toward its ordered
             // facing while its soldiers track the moving slots.

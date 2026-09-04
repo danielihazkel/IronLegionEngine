@@ -4,12 +4,13 @@
 mod common;
 
 use il_core::Tick;
-use il_core::{Angle, S, Scalar, StateHash, StreamId, V2};
+use il_core::{Angle, RegimentId, S, Scalar, SoldierId, StateHash, StreamId, V2};
 use il_sim_battle::BattleWorld;
 use il_sim_battle::SpeedMode;
 use il_sim_battle::components::{
-    Anchor, Body, Facing, FatigueC, FormationState, Fsm, Health, Morale, MoraleState, Order,
-    OrderKind, Path, Pos, PrevPos, Regiment, SlotRef, SoldierState, Vel, Waypoint,
+    Anchor, Body, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState, Morale,
+    MoraleState, Order, OrderKind, Path, Pos, PrevPos, Regiment, SlotRef, SoldierState, Vel,
+    Waypoint,
 };
 use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 
@@ -20,12 +21,13 @@ use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 /// collisions started pushing; both again in T1-045 when the formation
 /// frame was corrected so a line spans perpendicular to its facing; and in
 /// T1-047 when the Phase 1 hash layout was fixed; and in T2-010 when regiments
-/// started spawning with the unit's ranged ammo).
+/// started spawning with the unit's ranged ammo; and in T2-020 when the combat
+/// fields joined the layout).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x7626_ba44_a975_d92a;
+const GOLDEN_FRESH: u64 = 0xc0b1_d6af_193f_554f;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x1490_3b15_bb38_35b2;
+const GOLDEN_1000: u64 = 0xadbb_5ccb_50f8_f6a6;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -294,6 +296,78 @@ fn every_hashed_field_changes_the_hash() {
         Box::new(|w| {
             let e = soldier_entity(w, 3);
             w.ecs_mut().get_mut::<Facing>(e).unwrap().theta = Angle::new(S::ONE);
+        }),
+    ));
+    // T2-020: melee state per soldier, combat state and casualty ring per
+    // regiment, the order's target regiment.
+    cases.push((
+        "melee target",
+        Box::new(|w| {
+            let e = soldier_entity(w, 3);
+            w.ecs_mut().get_mut::<MeleeState>(e).unwrap().target = Some(SoldierId(9));
+        }),
+    ));
+    cases.push((
+        "melee cooldown",
+        Box::new(|w| {
+            let e = soldier_entity(w, 3);
+            w.ecs_mut().get_mut::<MeleeState>(e).unwrap().cooldown = 7;
+        }),
+    ));
+    cases.push((
+        "order target regiment",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Order>(e).unwrap().target_regiment = Some(RegimentId(0));
+        }),
+    ));
+    cases.push((
+        "combat engaged",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Combat>(e).unwrap().engaged = true;
+        }),
+    ));
+    cases.push((
+        "combat last_fighting",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Combat>(e).unwrap().last_fighting = Tick(3);
+        }),
+    ));
+    cases.push((
+        "combat charge_until",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Combat>(e).unwrap().charge_until = Tick(60);
+        }),
+    ));
+    cases.push((
+        "combat experience",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Combat>(e).unwrap().experience = 2;
+        }),
+    ));
+    cases.push((
+        "combat kills",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Combat>(e).unwrap().kills = 5;
+        }),
+    ));
+    cases.push((
+        "casualty ring",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Morale>(e).unwrap().deaths_5s[3] = 1;
+        }),
+    ));
+    cases.push((
+        "initial strength",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Morale>(e).unwrap().initial = 7;
         }),
     ));
     // Globals: phase, RNG.

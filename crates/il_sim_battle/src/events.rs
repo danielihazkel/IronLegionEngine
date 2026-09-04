@@ -21,6 +21,9 @@ pub enum BattleEvent {
     ControlTransferred { from: PlayerId, to: PlayerId },
     /// No route to the order target; the order was dropped (SIM-MOVE-002).
     PathNotFound { regiment: RegimentId },
+    /// A soldier of the regiment entered `Fighting` while none was
+    /// (SIM-CMBT-003, T2-020).
+    Engaged { regiment: RegimentId },
     /// Placeholder shape for Phase 2 (T2-022); keeps the variant list in
     /// the TDD order.
     SoldierDied {

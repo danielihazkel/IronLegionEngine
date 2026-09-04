@@ -11,6 +11,7 @@
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 
+use crate::combat::{melee_gate, melee_recount, melee_target, pursue_update};
 use crate::command::apply_commands;
 use crate::formation::{formation_apply, formation_integrity, formation_layout};
 use crate::hash::flush_events_and_hash;
@@ -133,7 +134,6 @@ impl StageObserver for NoopObserver {
 // stage shows up in the profiler with its own timing.
 fn stage_ai() {}
 fn stage_visibility() {}
-fn stage_targeting() {}
 fn stage_combat() {}
 fn stage_projectiles() {}
 fn stage_abilities() {}
@@ -154,7 +154,7 @@ fn stage_schedule(stage: Stage) -> Schedule {
                 .in_set(stage),
         ),
         Stage::RegimentMovement => s.add_systems(
-            (serve_path_requests, regiment_follow_path)
+            (pursue_update, serve_path_requests, regiment_follow_path)
                 .chain()
                 .in_set(stage),
         ),
@@ -163,7 +163,11 @@ fn stage_schedule(stage: Stage) -> Schedule {
         Stage::SpatialGrid => s.add_systems(rebuild_spatial_grids.in_set(stage)),
         Stage::Collision => s.add_systems(collision_resolve.in_set(stage)),
         Stage::Visibility => s.add_systems(stage_visibility.in_set(stage)),
-        Stage::Targeting => s.add_systems(stage_targeting.in_set(stage)),
+        Stage::Targeting => s.add_systems(
+            (melee_gate, melee_target, melee_recount)
+                .chain()
+                .in_set(stage),
+        ),
         Stage::Combat => s.add_systems(stage_combat.in_set(stage)),
         Stage::Projectiles => s.add_systems(stage_projectiles.in_set(stage)),
         Stage::Abilities => s.add_systems(stage_abilities.in_set(stage)),
