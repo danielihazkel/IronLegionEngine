@@ -1,0 +1,35 @@
+// Simulation Spec §15.3 row 2: 160 hoplites (phalanx) hold; 160 hastati
+// attack them frontally. Hoplites win 70–90 % of seeds.
+//
+// RegimentIds: hoplites 0, hastati 1.
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "greece:greece", player: 0, deployment_zone: 0,
+      general: { unit_type: "greece:hoplite", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "greece:hoplite", count: 160, formation: "rome:phalanx", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "rome:hastati", count: 160, formation: "rome:line", position: [350, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    { tick: 1, player: 1, seq: 0, kind: { AttackRegiment: { regiments: [1], target: 0 } } },
+  ],
+  bands: {
+    seeds: 50,
+    seed_base: 2000,
+    tick_limit: 6000,
+    assertions: [
+      { name: "hoplites win", kind: "winner", side: 0, min_fraction: 0.70, max_fraction: 0.90 },
+    ],
+  },
+}

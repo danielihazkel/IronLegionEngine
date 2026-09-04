@@ -1,0 +1,31 @@
+# T2-110 (REQ-TEST-004): the Simulation Spec §15.3 outcome bands over 50
+# seeds each. Too slow for every push, so they run nightly and on demand;
+# the band files themselves are parsed by the normal test run.
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  bands:
+    name: scenario bands (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the pinned toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.98.0
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run the bands (50 seeds each)
+        run: cargo test --release -p il_tests --test scenarios -- --ignored --nocapture

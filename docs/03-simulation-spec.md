@@ -558,15 +558,15 @@ The `ai.*` tunables (`army_period_ticks` 40, `regiment_period_ticks` 20 and the 
 
 ### 15.3 Scenario tests
 
-Outcome bands over 50 seeds; a failing band means a formula or default needs review, not that the test is wrong.
+Outcome bands over 50 seeds; a failing band means a formula or default needs review, not that the test is wrong. Each band is a file under `tests/scenarios/bands/`: an ordinary scenario (`BattleSetup` plus scripted `commands`) with a `bands` block giving the seed count and base, a tick limit and the assertions; `il_cli bands` runs them and `tests/tests/scenarios.rs` drives it nightly (TDD §17, T2-110). Every seed stops at the tick limit or when a side has no living soldiers. Assertion kinds: `winner` (the side annihilates every other side or ends with the strictly higher surviving fraction), `casualties` (fraction lost at the end or a number of ticks after a regiment's first contact), `routed_before_loss` and `rout_within` (read the Routing morale state). An assertion holds when its per-seed boolean is true in the required fraction of seeds. Rout clauses are carried in the files with `active: false` until morale lands (T2-041); until then the melee clause alone decides the band.
 
-| Scenario | Expected |
-|---|---|
-| 120 hastati (line) vs 120 velites (loose), melee only, flat | Hastati win 90–100 % of seeds; velites rout before losing 50 %. |
-| 160 hoplites (phalanx) vs 160 hastati frontal | Hoplites win 70–90 %. |
-| 160 hoplites vs 60 Persian cavalry frontal charge | Hoplites win 85–100 %; cavalry loses ≥ 30 % on the charge. |
-| 60 Persian cavalry rear-charge 120 engaged hastati | Hastati rout within 30 s of the charge in ≥ 80 % of seeds. |
-| 120 velites fire 8 volleys at 120 hastati at 35 m, no approach | Hastati lose 15–35 soldiers. |
-| Statistical vs simulated projectile path, same volley | Mean casualties differ by ≤ 10 %. |
-| General killed at tick 600 in an even hastati vs hoplite fight | Side without general routs first in ≥ 75 % of seeds. |
-| Determinism | Every scenario above: identical hash on run 1 and run 2, and after snapshot/restore at tick 1,000. |
+| Scenario (file) | Melee clause (active) | Morale clause (T2-041) |
+|---|---|---|
+| 120 hastati (line) vs 120 velites (loose), melee only, flat (`melee_hastati_vs_velites`) | Hastati win 90–100 % of seeds. | Velites rout before losing 50 %, in ≥ 90 % of seeds. |
+| 160 hoplites (phalanx) vs 160 hastati frontal (`melee_hoplites_vs_hastati`) | Hoplites win 70–90 %. | — |
+| 160 hoplites vs 60 Persian cavalry frontal charge (`melee_hoplites_vs_cavalry`) | Hoplites win 85–100 %; cavalry has lost ≥ 30 % thirty seconds after its first contact, in ≥ 85 % of seeds (the seed fraction is an interpretation of "loses ≥ 30 % on the charge"). | — |
+| 60 Persian cavalry rear-charge 120 engaged hastati (`melee_cavalry_rear_charge`) | Interim: the charged side loses (side 1 wins) in ≥ 80 % of seeds. | Hastati rout within 30 s of the charge in ≥ 80 % of seeds. |
+| 120 velites fire 8 volleys at 120 hastati at 35 m, no approach | Hastati lose 15–35 soldiers (file arrives with T2-031). | — |
+| Statistical vs simulated projectile path, same volley | Mean casualties differ by ≤ 10 % (T2-032). | — |
+| General killed at tick 600 in an even hastati vs hoplite fight | Side without general routs first in ≥ 75 % of seeds (T2-043). | — |
+| Determinism | Every scenario above: identical hash on run 1 and run 2, and after snapshot/restore at tick 1,000 (T2-112 enrols the band files in the determinism test). | — |

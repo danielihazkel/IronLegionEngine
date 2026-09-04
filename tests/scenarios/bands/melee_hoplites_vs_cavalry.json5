@@ -1,0 +1,39 @@
+// Simulation Spec §15.3 row 3: 160 hoplites (phalanx) receive a frontal
+// charge from 60 Persian cavalry (wedge). Hoplites win 85–100 % of seeds
+// and the cavalry loses at least 30 % on the charge (read 30 s after its
+// first contact; the seed fraction 0.85 is an interpretation recorded in
+// §15.3).
+//
+// RegimentIds: hoplites 0, cavalry 1.
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "greece:greece", player: 0, deployment_zone: 0,
+      general: { unit_type: "greece:hoplite", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "greece:hoplite", count: 160, formation: "rome:phalanx", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "persia:persia", player: 1, deployment_zone: 1,
+      general: { unit_type: "persia:cavalry", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "persia:cavalry", count: 60, formation: "rome:wedge", position: [420, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    { tick: 1, player: 1, seq: 0, kind: { AttackRegiment: { regiments: [1], target: 0 } } },
+  ],
+  bands: {
+    seeds: 50,
+    seed_base: 3000,
+    tick_limit: 6000,
+    assertions: [
+      { name: "hoplites win", kind: "winner", side: 0, min_fraction: 0.85 },
+      { name: "cavalry bleeds on the charge", kind: "casualties", side: 1, min_lost: 0.30, within_ticks_of_contact: 600, contact_regiment: 1, min_fraction: 0.85 },
+    ],
+  },
+}

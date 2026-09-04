@@ -83,6 +83,7 @@ cargo run -p il_cli -- run tests/scenarios/idle_1000.json5 --ticks 10000 --hash-
 cargo run -p il_cli -- run tests/scenarios/move_reform_2000.json5 --ticks 10000 --hash-every 1000 --threads 8
 cargo run -p il_cli -- validate game/ --deny-warnings --verbose
 cargo run --release -p il_cli -- bench --soldiers 2000 --baseline benches/baseline.json
+cargo run --release -p il_cli -- bands tests/scenarios/bands --seeds 50 --jobs 8
 cargo run -p il_cli -- genmap
 cargo run -p il_cli -- genart
 ```
@@ -90,6 +91,7 @@ cargo run -p il_cli -- genart
 - `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
 - `validate` loads the mod roots you list and prints every diagnostic with file, line and column; exit code 1 on errors.
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers, `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release.
+- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; a file's rout clauses print `skip` until morale exists (T2-041).
 - `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
 
 Criterion micro-benches:
@@ -118,11 +120,12 @@ In `dev` builds the app watches every loaded mod folder. Edit a number in `game/
 ```
 cargo test --workspace                                   # everything, including the ten-thousand-tick determinism test (a few minutes)
 cargo test -p il_tests --test determinism                # just determinism
+cargo test --release -p il_tests --test scenarios -- --ignored --nocapture   # the 50-seed outcome bands (nightly; minutes)
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of both scenarios and the bench comparison.
+CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of both scenarios and the bench comparison; `nightly.yml` runs the outcome bands every night and on demand.
 
 ## 9. Where things are
 

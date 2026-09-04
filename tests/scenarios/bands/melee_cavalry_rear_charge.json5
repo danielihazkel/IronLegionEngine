@@ -1,0 +1,43 @@
+// Simulation Spec §15.3 row 4: 120 hastati engage 120 hoplites frontally;
+// 60 Persian cavalry charge the hastati from the rear once the lines are
+// locked. The hastati rout within 30 s of the charge in at least 80 % of
+// seeds (morale clause, active from T2-041). Until then the interim melee
+// clause is that side 1 wins at least 80 % of seeds.
+//
+// RegimentIds: hastati 0 (side 0); hoplites 1 and cavalry 2 (side 1). The
+// cavalry starts 100 m west of the hastati and is sent in at tick 800,
+// after the infantry has met (roughly tick 500).
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "persia:persia", player: 1, deployment_zone: 1,
+      general: { unit_type: "persia:cavalry", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "greece:hoplite", count: 120, formation: "rome:line", position: [340, 150], facing_deg: 180 },
+        { id: 3, unit_type: "persia:cavalry", count: 60, formation: "rome:wedge", position: [200, 150], facing_deg: 0 },
+      ],
+    },
+  ],
+  commands: [
+    { tick: 1,   player: 0, seq: 0, kind: { AttackRegiment: { regiments: [0], target: 1 } } },
+    { tick: 800, player: 1, seq: 0, kind: { AttackRegiment: { regiments: [2], target: 0 } } },
+  ],
+  bands: {
+    seeds: 50,
+    seed_base: 4000,
+    tick_limit: 6000,
+    assertions: [
+      { name: "rear-charged hastati lose", kind: "winner", side: 1, min_fraction: 0.80 },
+      { name: "hastati rout within 30 s of the charge", kind: "rout_within", side: 0, after: "contact", contact_regiment: 2, within_ticks: 600, min_fraction: 0.80, active: false },
+    ],
+  },
+}

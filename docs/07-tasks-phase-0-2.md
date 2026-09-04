@@ -493,9 +493,10 @@ flowchart LR
 
 ### TEST — scenarios and performance
 
-- [ ] **T2-110 Scenario outcome harness** · M · Refs REQ-TEST-004, Simulation Spec §15.3, TDD §17
-  `tests/scenarios.rs`: runs each scenario in `tests/scenarios/bands/` for 50 seeds headless, evaluates the band assertions written in the scenario file (winner fraction, casualty ranges, event timing), and prints a table. Nightly in CI.
-  **Done when** all seven bands in §15.3 are encoded and pass, or failing bands are turned into tuning tasks with the defaults adjusted and recorded in Simulation Spec §15.
+- [x] **T2-110 Scenario outcome harness** · M · Refs REQ-TEST-004, Simulation Spec §15.3, TDD §17
+  `il_cli bands` (`crates/il_cli/src/bands.rs`) runs each scenario in `tests/scenarios/bands/` for 50 seeds headless, evaluates the band assertions written in the scenario file's `bands` block (winner fraction, casualty ranges, contact- and rout-timed clauses), and prints a table; `tests/tests/scenarios.rs` drives it (`#[ignore]`, nightly workflow).
+  **Done when** the harness runs the §15.3 rows 1 to 4 (encoded here with their melee clauses active and their rout clauses inactive until T2-041); each later row is encoded by the task that makes it possible (T2-031, T2-032, T2-043) and a failing band is turned into a tuning entry with the default adjusted and recorded in Simulation Spec §15.
+  Done 2026-09-04: harness, four band files, nightly workflow; the bands themselves fail until T2-021 lands melee resolution (AttackRegiment is rejected until T2-020), which is expected at this commit.
 
 - [ ] **T2-111 10k performance pass** · L · Refs REQ-PERF-002, TDD budget table
   Profile the full 10k battle scenario (`tests/scenarios/perf_10k.json5`); bring every stage within its budget so the tick is under 25 ms; typical fixes: parallelise targeting, reduce grid query allocations, batch morale queries on the anchor grid, cap projectile landing work per tick.

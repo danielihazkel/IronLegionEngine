@@ -24,6 +24,8 @@ enum Command {
     Genmap(GenmapArgs),
     /// Load the given mod roots and print every diagnostic; exit 1 on errors.
     Validate(ValidateArgs),
+    /// Run the scenario outcome bands over many seeds and print the table (T2-110).
+    Bands(BandsArgs),
 }
 
 #[derive(Args)]
@@ -58,6 +60,31 @@ struct BenchArgs {
     /// Date stored with --record-baseline.
     #[arg(long)]
     recorded: Option<String>,
+}
+
+#[derive(Args)]
+struct BandsArgs {
+    /// Folder of band files (tests/scenarios/bands) or one file.
+    #[arg(default_value = "tests/scenarios/bands")]
+    dir: PathBuf,
+    /// Override every file's seed count.
+    #[arg(long)]
+    seeds: Option<u32>,
+    /// Cap every file's tick limit (smoke runs).
+    #[arg(long)]
+    max_ticks: Option<u32>,
+    /// Seeds run in parallel on this many threads (each world single-threaded).
+    #[arg(long, default_value_t = 4)]
+    jobs: usize,
+    /// Write the report as JSON.
+    #[arg(long)]
+    json: Option<PathBuf>,
+    /// Mod root with mod.json5 and content/.
+    #[arg(long, default_value = "game")]
+    content_root: PathBuf,
+    /// Extra mod folder to load after the game; repeatable.
+    #[arg(long = "mod")]
+    mods: Vec<PathBuf>,
 }
 
 #[derive(Args)]
@@ -178,6 +205,24 @@ fn main() -> anyhow::Result<()> {
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();
             il_cli::genmap::generate(&opts, &mut lock)
+        }
+        Command::Bands(a) => {
+            let opts = il_cli::bands::BandOptions {
+                dir: a.dir,
+                seeds: a.seeds,
+                max_ticks: a.max_ticks,
+                jobs: a.jobs,
+                json: a.json,
+                content_root: a.content_root,
+                mods: a.mods,
+            };
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            let report = il_cli::bands::run_bands(&opts, &mut lock)?;
+            if report.failed > 0 {
+                std::process::exit(1);
+            }
+            Ok(())
         }
         Command::Validate(a) => {
             let opts = il_cli::validate::ValidateOptions {

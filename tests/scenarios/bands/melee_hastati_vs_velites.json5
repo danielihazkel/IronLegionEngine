@@ -1,0 +1,38 @@
+// Simulation Spec §15.3 row 1: 120 hastati (line) vs 120 velites (loose),
+// melee only, flat ground. Hastati win 90–100 % of seeds; the velites rout
+// before losing 50 % (morale clause, active from T2-041).
+//
+// RegimentIds are allocated in setup order, side 0 first: hastati 0,
+// velites 1. Everything sits on open ground north of the river.
+{
+  map_id: "rome:test_field",
+  seed: 0,                       // replaced by bands.seed_base + i
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:velites", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "rome:velites", count: 120, formation: "rome:loose", position: [380, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    { tick: 1, player: 0, seq: 0, kind: { AttackMove: { regiments: [0], target: { x: 380, y: 150 } } } },
+  ],
+  bands: {
+    seeds: 50,
+    seed_base: 1000,
+    tick_limit: 6000,            // 5 min of sim time; stops early when a side is wiped out
+    assertions: [
+      { name: "hastati win", kind: "winner", side: 0, min_fraction: 0.90 },
+      { name: "velites rout early", kind: "routed_before_loss", side: 1, loss_fraction: 0.50, min_fraction: 0.90, active: false },
+    ],
+  },
+}

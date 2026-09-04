@@ -39,6 +39,17 @@ pub fn scenario_files() -> Vec<PathBuf> {
     files
 }
 
+/// Band scenarios (T2-110) live one level down and are not enrolled in
+/// the determinism test until T2-112.
+pub fn band_scenario_dir() -> PathBuf {
+    scenario_dir().join("bands")
+}
+
+/// Every `*.json5` band file, sorted by path.
+pub fn band_scenario_files() -> Vec<PathBuf> {
+    il_cli::bands::band_files(&band_scenario_dir()).unwrap_or_else(|e| panic!("{e:#}"))
+}
+
 pub fn load_scenario(path: &Path) -> Scenario {
     il_cli::load_scenario(path).unwrap_or_else(|e| panic!("{e:#}"))
 }
