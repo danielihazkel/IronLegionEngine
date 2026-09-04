@@ -12,15 +12,18 @@ use il_core::{Angle, IdAllocator, RegimentId, S, SoldierId, Tick, V2};
 use il_data::{ContentId, Registries};
 use serde::{Deserialize, Serialize};
 
-use crate::command::SpeedMode;
+use crate::command::{FireMode, SpeedMode};
 use crate::components::{
-    Anchor, Attackers, Body, Combat, DEATHS_RING, Facing, FatigueC, FormationState, Fsm, Health,
-    MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos, Rank,
-    Regiment, SlotRef, Soldier, SoldierState, Vel, Waypoint,
+    Anchor, Attackers, Body, Combat, DEATHS_RING, Facing, FatigueC, Fire, FormationState, Fsm,
+    Health, MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos,
+    RangedState, Rank, Regiment, SlotRef, Soldier, SoldierState, Vel, Waypoint,
 };
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, MapError};
-use crate::resources::{BattlePhase, Clock, Ids, Phase, Rng, SetupRes, SideState, Sides};
+use crate::resources::{
+    BattlePhase, Clock, Ids, Pending, PendingDamage, Phase, Projectile, Projectiles, Rng, SetupRes,
+    SideState, Sides,
+};
 use crate::world::{BattleWorld, InstallMapError};
 
 /// Bumped whenever the encoding changes; `il_save` migrations key on it.
@@ -29,7 +32,18 @@ use crate::world::{BattleWorld, InstallMapError};
 ///    morale casualty ring and initial strength, soldier `MeleeState`.
 /// 4: `files` stored (T2-022): it is hashed state that the live world only
 ///    refreshes at Stage 2, so a snapshot taken after deaths must carry it.
-pub const SNAPSHOT_VERSION: u32 = 4;
+/// 5: ranged state (T2-030): regiment `ammo` replaced by an optional
+///    `Fire`, soldiers carry an optional `RangedState`, the projectile list
+///    and the pending damage queue are stored.
+pub const SNAPSHOT_VERSION: u32 = 5;
+
+/// A ranged regiment's `Fire` component.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FireSnap {
+    pub mode: FireMode,
+    pub target: Option<RegimentId>,
+    pub cooldown: u16,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RegimentSnap {
@@ -58,7 +72,8 @@ pub struct RegimentSnap {
     pub needs_reform: bool,
     pub prior_formation: Option<ContentId>,
     pub laid_out_facing: Angle<S>,
-    pub ammo: u16,
+    /// Present exactly when the unit has a `ranged` block (T2-030).
+    pub fire: Option<FireSnap>,
     pub order_target_regiment: Option<RegimentId>,
     pub engaged: bool,
     pub last_fighting: Tick,
@@ -84,6 +99,9 @@ pub struct SoldierSnap {
     pub fsm_since: Tick,
     pub melee_target: Option<SoldierId>,
     pub melee_cooldown: u16,
+    /// `(ammo, cooldown)`, present exactly when the unit has a `ranged`
+    /// block (T2-030).
+    pub ranged: Option<(u16, u16)>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,10 +124,10 @@ pub struct Snapshot {
     pub regiments: Vec<RegimentSnap>,
     /// Ascending id.
     pub soldiers: Vec<SoldierSnap>,
-    /// Empty until T2-030.
-    pub projectiles: Vec<()>,
-    /// Empty until T2-031.
-    pub pending_damage: Vec<()>,
+    /// Ascending id (T2-030).
+    pub projectiles: Vec<Projectile>,
+    /// Queue order (T2-030; applied from T2-031).
+    pub pending_damage: Vec<Pending>,
     /// Battle-flow timer; unused until T2-070.
     pub timer: u32,
 }
@@ -184,6 +202,11 @@ impl BattleWorld {
                 let path = world.get::<Path>(*entity).expect("path");
                 let formation = world.get::<FormationState>(*entity).expect("formation");
                 let combat = world.get::<Combat>(*entity).expect("combat");
+                let fire = world.get::<Fire>(*entity).map(|f| FireSnap {
+                    mode: f.mode,
+                    target: f.target,
+                    cooldown: f.cooldown,
+                });
                 debug_assert_eq!(*id, r.id);
                 RegimentSnap {
                     id: r.id,
@@ -212,7 +235,7 @@ impl BattleWorld {
                         .prior_template
                         .map(|h| regs.formations.id_of(h).clone()),
                     laid_out_facing: formation.laid_out_facing,
-                    ammo: r.ammo,
+                    fire,
                     order_target_regiment: order.target_regiment,
                     engaged: combat.engaged,
                     last_fighting: combat.last_fighting,
@@ -244,6 +267,9 @@ impl BattleWorld {
                     fsm_since: world.get::<Fsm>(*entity).expect("fsm").since,
                     melee_target: world.get::<MeleeState>(*entity).expect("melee").target,
                     melee_cooldown: world.get::<MeleeState>(*entity).expect("melee").cooldown,
+                    ranged: world
+                        .get::<RangedState>(*entity)
+                        .map(|r| (r.ammo, r.cooldown)),
                 }
             })
             .collect();
@@ -266,8 +292,8 @@ impl BattleWorld {
             sides: world.resource::<Sides>().0.clone(),
             regiments,
             soldiers,
-            projectiles: Vec::new(),
-            pending_damage: Vec::new(),
+            projectiles: world.resource::<Projectiles>().0.clone(),
+            pending_damage: world.resource::<PendingDamage>().0.clone(),
             timer: 0,
         }
     }
@@ -329,7 +355,6 @@ impl BattleWorld {
                         setup_id: r.setup_id,
                         unit,
                         soldiers: Vec::new(),
-                        ammo: r.ammo,
                     },
                     Anchor {
                         pos: r.anchor_pos,
@@ -376,6 +401,13 @@ impl BattleWorld {
                     },
                 ))
                 .id();
+            if let Some(f) = &r.fire {
+                w.world.entity_mut(entity).insert(Fire {
+                    mode: f.mode,
+                    target: f.target,
+                    cooldown: f.cooldown,
+                });
+            }
             w.world
                 .resource_mut::<Ids>()
                 .regiment_entities
@@ -439,6 +471,11 @@ impl BattleWorld {
                     Attackers::default(),
                 ))
                 .id();
+            if let Some((ammo, cooldown)) = s.ranged {
+                w.world
+                    .entity_mut(entity)
+                    .insert(RangedState { ammo, cooldown });
+            }
             w.world
                 .resource_mut::<Ids>()
                 .soldier_entities
@@ -455,6 +492,21 @@ impl BattleWorld {
             ids.soldiers = IdAllocator::from_next(snapshot.ids.soldiers_next);
             ids.regiments = IdAllocator::from_next(snapshot.ids.regiments_next);
             ids.projectiles = IdAllocator::from_next(snapshot.ids.projectiles_next);
+        }
+        {
+            let mut prev: Option<il_core::ProjectileId> = None;
+            for p in &snapshot.projectiles {
+                if prev.is_some_and(|q| q >= p.id) {
+                    return Err(RestoreError::Malformed(
+                        "projectiles not in ascending id order",
+                    ));
+                }
+                prev = Some(p.id);
+            }
+            let mut projectiles = w.world.resource_mut::<Projectiles>();
+            projectiles.0.clear();
+            projectiles.0.extend(snapshot.projectiles.iter().copied());
+            w.world.resource_mut::<PendingDamage>().0 = snapshot.pending_damage.clone();
         }
 
         w.set_setup(snapshot.setup.clone());

@@ -1,0 +1,59 @@
+// persia:archer — Simulation Spec 15.2. Persian bowmen: the flagship's
+// indirect-fire unit (T2-030); every number is a first choice (*chosen*).
+{
+  id: "persia:archer",
+  name_key: "persia.units.archer.name",
+  category: "ranged",
+
+  soldier_radius: 0.4,
+  mass: 70,
+  hp: 80,
+
+  speed_walk: 1.6,
+  speed_run: 4.0,
+  speed_march: 1.6,
+
+  attack: 20,
+  defence: 18,
+  armour: 2,
+  armour_penetration: 0,
+  damage: 20,
+  attack_interval_ticks: 32,
+  reach: 0.5,
+  charge_bonus: 0.05,
+  anti_cavalry_bonus: 0,
+  second_rank_attack: false,
+  shield: false,
+  frontal_arc_deg: 120,
+
+  // Bows: lobbed over friends, long reach, many arrows. The 45° launch at
+  // 40 m/s reaches 163 m before the speed cap bites (SIM-PROJ-005).
+  ranged: {
+    range: 120,
+    min_range: 15,
+    accuracy: 0.35,
+    projectile_speed: 40,
+    reload_ticks: 100,
+    ammo: 20,
+    damage: 25,
+    armour_penetration: 0.2,
+    arc: "indirect",
+  },
+
+  morale_base: 45,
+  fatigue_rate_mult: 1.0,
+  los_radius: 250,
+
+  abilities: [],
+  formations: ["rome:loose", "rome:line", "rome:column"],
+
+  sprite_set: "rome:sprites_ranged",
+  sounds: {},
+
+  cost: 300,
+  upkeep: 45,
+  recruit_turns: 1,
+  regiment_size: 120,
+  tier: 1,
+  experience_tiers: [],
+}

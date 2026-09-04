@@ -17,8 +17,8 @@ use crate::map::{FLAT_MAP_ID, LoadedMap, MapError};
 use crate::nav::NavGrid;
 use crate::resources::{
     AnchorGridRes, BattlePhase, Clock, CommandInbox, Events, Ids, LastHash, MapRes, MeleeGateRes,
-    NavGridRes, PathRequests, PathfinderRes, Phase, Regs, Rejected, Rng, SetupRes, Sides,
-    SpatialGridRes, StepEvents, ThreadCount,
+    NavGridRes, PathRequests, PathfinderRes, PendingDamage, Phase, Projectiles, RangedGateRes,
+    Regs, Rejected, Rng, SetupRes, Sides, SpatialGridRes, StepEvents, ThreadCount,
 };
 use crate::schedule::{NoopObserver, Stage, StageObserver, build_schedules};
 use crate::spatial::SpatialGrid;
@@ -99,8 +99,14 @@ impl BattleWorld {
         world.insert_resource(PathfinderRes::default());
         world.insert_resource(PathRequests::default());
         world.insert_resource(MeleeGateRes::default());
+        world.insert_resource(RangedGateRes::default());
         world.insert_resource(crate::combat::Outcomes::default());
         world.insert_resource(crate::combat::Kills::default());
+        world.insert_resource(crate::combat::Shots::default());
+        // REQ-PERF-008: the projectile list is reserved once at the cap.
+        let cap = regs.rules.combat.projectile_cap as usize;
+        world.insert_resource(Projectiles(Vec::with_capacity(cap)));
+        world.insert_resource(PendingDamage::default());
         world.insert_resource(MapRes(Arc::new(flat_map)));
         // Dimensioned by the Stage 6 system once the map and rules are known.
         let flat = S::from_i32(FLAT_MAP_SIZE);
@@ -346,9 +352,9 @@ mod tests {
     /// Golden: the hash of an empty world at seed 42 after 0, 1 and 2 ticks.
     /// Changes whenever the hash layout or the RNG seeding changes.
     const GOLDEN: [u64; 3] = [
-        0x4226_7c65_56cc_0c67,
-        0x62a8_cc14_a409_afc1,
-        0xf654_3cbc_0c77_47e7,
+        0xdeac_805c_0c84_ca1d,
+        0xf69c_210c_8a41_938f,
+        0xaa91_46ef_cb96_0637,
     ];
 
     #[test]

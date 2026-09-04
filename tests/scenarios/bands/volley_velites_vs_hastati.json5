@@ -1,0 +1,37 @@
+// Simulation Spec §15.3 row 5: 120 velites (loose) throw their eight
+// javelin volleys at 120 hastati (line) standing 35 m away; nobody moves.
+// The hastati lose 15–35 soldiers (0.125–0.292 of 120) in at least 90 % of
+// seeds (T2-031). The hastati's pila reach 25 m and never fly.
+//
+// RegimentIds: velites 0, hastati 1. Both regiments fire at will by
+// default, so the file needs no commands.
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:velites", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "rome:velites", count: 120, formation: "rome:loose", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [335, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [],
+  bands: {
+    seeds: 50,
+    seed_base: 5000,
+    tick_limit: 1200,            // eight volleys take 561 ticks plus the last flight
+    assertions: [
+      // Casualties need landing (T2-031); until then the row is carried inactive.
+      { name: "hastati lose 15-35", kind: "casualties", side: 1, min_lost: 0.125, max_lost: 0.292, min_fraction: 0.90, active: false },
+    ],
+  },
+}

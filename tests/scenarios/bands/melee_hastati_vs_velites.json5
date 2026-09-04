@@ -24,7 +24,10 @@
     },
   ],
   commands: [
-    { tick: 1, player: 0, seq: 0, kind: { AttackMove: { regiments: [0], target: { x: 380, y: 150 } } } },
+    // Melee only: pila and javelins stay in hand (T2-030).
+    { tick: 1, player: 0, seq: 0, kind: { FireMode: { regiments: [0], mode: "Hold" } } },
+    { tick: 1, player: 1, seq: 0, kind: { FireMode: { regiments: [1], mode: "Hold" } } },
+    { tick: 1, player: 0, seq: 1, kind: { AttackMove: { regiments: [0], target: { x: 380, y: 150 } } } },
   ],
   bands: {
     seeds: 50,

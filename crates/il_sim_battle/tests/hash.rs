@@ -3,16 +3,19 @@
 
 mod common;
 
+use il_core::ProjectileId;
 use il_core::Tick;
 use il_core::{Angle, RegimentId, S, Scalar, SoldierId, StateHash, StreamId, V2};
-use il_sim_battle::BattleWorld;
-use il_sim_battle::SpeedMode;
+use il_data::ProjectileArc;
 use il_sim_battle::components::{
-    Anchor, Body, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState, Morale,
-    MoraleState, Order, OrderKind, Path, Pos, PrevPos, Regiment, SlotRef, SoldierState, Vel,
-    Waypoint,
+    Anchor, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health, MeleeState, Morale,
+    MoraleState, Order, OrderKind, Path, Pos, PrevPos, RangedState, Regiment, SlotRef,
+    SoldierState, Vel, Waypoint,
 };
-use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
+use il_sim_battle::resources::{
+    BattlePhase, Ids, Pending, PendingDamage, Phase, Projectile, Projectiles, Rng,
+};
+use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 
 /// Golden hash of the freshly spawned 2 x 500 hastati world at seed 42 on
 /// the test map (re-baselined in T1-030 when the regiments moved onto it and
@@ -21,13 +24,14 @@ use il_sim_battle::resources::{BattlePhase, Ids, Phase, Rng};
 /// collisions started pushing; both again in T1-045 when the formation
 /// frame was corrected so a line spans perpendicular to its facing; and in
 /// T1-047 when the Phase 1 hash layout was fixed; and in T2-010 when regiments
-/// started spawning with the unit's ranged ammo; and in T2-020 when the combat
-/// fields joined the layout).
+/// started spawning with the unit's ranged ammo; in T2-020 when the combat
+/// fields joined the layout; and in T2-030 when the regiment ammo gave way
+/// to the optional fire and ranged states and the pending damage prefix).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0xc0b1_d6af_193f_554f;
+const GOLDEN_FRESH: u64 = 0xae55_acb8_3fb9_7902;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0xadbb_5ccb_50f8_f6a6;
+const GOLDEN_1000: u64 = 0x8bd8_418e_1bb7_4d07;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -148,11 +152,34 @@ fn every_hashed_field_changes_the_hash() {
             w.ecs_mut().get_mut::<Order>(e).unwrap().kind = OrderKind::Move;
         }),
     ));
+    // T2-030: the regiment's fire state replaced `ammo` in the layout
+    // (hastati carry pila, so both components exist in this world).
     cases.push((
-        "ammo",
+        "fire mode",
         Box::new(|w| {
             let e = regiment_entity(w, 1);
-            w.ecs_mut().get_mut::<Regiment>(e).unwrap().ammo += 5;
+            w.ecs_mut().get_mut::<Fire>(e).unwrap().mode = FireMode::Hold;
+        }),
+    ));
+    cases.push((
+        "fire target",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Fire>(e).unwrap().target = Some(RegimentId(0));
+        }),
+    ));
+    cases.push((
+        "fire cooldown",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Fire>(e).unwrap().cooldown = 11;
+        }),
+    ));
+    cases.push((
+        "fire presence",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().entity_mut(e).remove::<Fire>();
         }),
     ));
     // T1-047 layout: the rest of the order, the formation state, the path
@@ -319,6 +346,63 @@ fn every_hashed_field_changes_the_hash() {
         Box::new(|w| {
             let e = regiment_entity(w, 1);
             w.ecs_mut().get_mut::<Order>(e).unwrap().target_regiment = Some(RegimentId(0));
+        }),
+    ));
+    // T2-030: per-soldier ranged state, the projectile list and the pending
+    // damage queue.
+    cases.push((
+        "ranged ammo",
+        Box::new(|w| {
+            let e = soldier_entity(w, 3);
+            w.ecs_mut().get_mut::<RangedState>(e).unwrap().ammo += 1;
+        }),
+    ));
+    cases.push((
+        "ranged cooldown",
+        Box::new(|w| {
+            let e = soldier_entity(w, 3);
+            w.ecs_mut().get_mut::<RangedState>(e).unwrap().cooldown = 4;
+        }),
+    ));
+    cases.push((
+        "ranged presence",
+        Box::new(|w| {
+            let e = soldier_entity(w, 3);
+            w.ecs_mut().entity_mut(e).remove::<RangedState>();
+        }),
+    ));
+    cases.push((
+        "projectile",
+        Box::new(|w| {
+            w.ecs_mut()
+                .resource_mut::<Projectiles>()
+                .0
+                .push(Projectile {
+                    id: ProjectileId(0),
+                    shooter: SoldierId(1),
+                    shooter_regiment: RegimentId(0),
+                    side: 0,
+                    launch_tick: Tick(1),
+                    land_tick: Tick(20),
+                    start: V2::from_f32_data(1.0, 1.0),
+                    end: V2::from_f32_data(30.0, 1.0),
+                    apex: S::from_i32(2),
+                    arc: ProjectileArc::Direct,
+                    damage: S::from_i32(30),
+                    pen: S::HALF,
+                });
+        }),
+    ));
+    cases.push((
+        "pending damage",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<PendingDamage>().0.push(Pending {
+                apply_tick: Tick(5),
+                target: SoldierId(2),
+                damage: S::from_i32(3),
+                shooter: SoldierId(30),
+                shooter_regiment: RegimentId(1),
+            });
         }),
     ));
     cases.push((

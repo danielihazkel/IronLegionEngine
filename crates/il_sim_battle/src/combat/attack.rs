@@ -11,7 +11,7 @@
 use std::sync::Mutex;
 
 use bevy_ecs::prelude::*;
-use il_core::{S, Scalar, SoldierId, StreamId, hash_draw};
+use il_core::{RegimentId, S, Scalar, SoldierId, StreamId, hash_draw};
 use il_data::{Layout, UnitCategory};
 
 use crate::combat::formulas::{
@@ -40,10 +40,20 @@ pub struct AttackOutcome {
 #[derive(Resource, Default)]
 pub struct Outcomes(pub Mutex<Vec<AttackOutcome>>);
 
-/// Soldiers whose hp crossed zero this tick, with their killer, in
-/// application order; drained by Stage 15 `resolve_deaths`. Transient.
+/// One soldier whose hp crossed zero this tick. `killer_regiment` is
+/// resolved when the kill is recorded so a shooter that fell while its
+/// projectile flew still credits its regiment (T2-030).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Kill {
+    pub victim: SoldierId,
+    pub killer: Option<SoldierId>,
+    pub killer_regiment: Option<RegimentId>,
+}
+
+/// The kills of this tick in application order; drained by Stage 15
+/// `resolve_deaths`. Transient.
 #[derive(Resource, Debug, Default)]
-pub struct Kills(pub Vec<(SoldierId, Option<SoldierId>)>);
+pub struct Kills(pub Vec<Kill>);
 
 type Attacker<'w, 's> = Query<
     'w,
@@ -317,7 +327,16 @@ pub fn apply_outcomes(world: &mut World) {
         let before = health.hp;
         health.hp = before - o.damage;
         if before > S::ZERO && health.hp <= S::ZERO {
-            kills.push((o.target, Some(o.attacker)));
+            let killer_regiment = world
+                .resource::<Ids>()
+                .soldier_entity(o.attacker)
+                .and_then(|ae| world.get::<Soldier>(ae))
+                .map(|s| s.regiment);
+            kills.push(Kill {
+                victim: o.target,
+                killer: Some(o.attacker),
+                killer_regiment,
+            });
         }
     }
     world.resource_mut::<Kills>().0.extend(kills);

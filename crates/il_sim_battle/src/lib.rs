@@ -42,5 +42,5 @@ pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spatial::{Entry as GridEntry, SpatialGrid};
 pub use spawn::SetupError;
-pub use view::{BattleView, RegimentRow, SoldierRow};
+pub use view::{BattleView, ProjectileRow, RegimentRow, SoldierRow};
 pub use world::{BattleWorld, StepOutput};

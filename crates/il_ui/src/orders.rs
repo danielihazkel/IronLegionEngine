@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use glam::Vec2;
 use il_core::{Angle, RegimentId, S, Scalar, V2};
 use il_data::{ContentId, GroupKind};
-use il_sim_battle::{BattleView, CommandKind, SpeedMode, ranks_for_width};
+use il_sim_battle::{BattleView, CommandKind, FireMode, SpeedMode, ranks_for_width};
 
 /// Drags shorter than this (metres) are clicks in disguise; no order.
 pub const MIN_DRAG_WIDTH_M: f32 = 1.0;
@@ -76,6 +76,9 @@ pub enum UiIntent {
     Formation(u8),
     /// The run toggle, applied to the selection's current orders too.
     SpeedMode(SpeedMode),
+    /// The fire toggle (T2-030): the selection's ranged regiments hold
+    /// fire, or fire at will again if the first of them was holding.
+    ToggleFire,
 }
 
 /// What conversion needs besides the intent.
@@ -138,6 +141,28 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
         }],
         UiIntent::Formation(n) => formation_commands(ctx, &regiments, *n),
         UiIntent::DragFormation(drag) => drag_commands(ctx, regiments, drag),
+        UiIntent::ToggleFire => {
+            let modes: Vec<(RegimentId, FireMode)> = regiments
+                .iter()
+                .filter_map(|id| {
+                    ctx.view
+                        .regiment(*id)
+                        .and_then(|r| r.fire.map(|f| (*id, f)))
+                })
+                .collect();
+            let Some((_, first)) = modes.first() else {
+                return Vec::new();
+            };
+            let mode = if *first == FireMode::Hold {
+                FireMode::FireAtWill
+            } else {
+                FireMode::Hold
+            };
+            vec![CommandKind::FireMode {
+                regiments: modes.into_iter().map(|(id, _)| id).collect(),
+                mode,
+            }]
+        }
     }
 }
 

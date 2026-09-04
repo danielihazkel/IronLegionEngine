@@ -45,7 +45,7 @@
     factions: { greece: { name: "Greek city-states" } },
   },
   persia: {
-    units: { cavalry: { name: "Persian cavalry" } },
+    units: { cavalry: { name: "Persian cavalry" }, archer: { name: "Persian archers" } },
     factions: { persia: { name: "Persia" } },
   },
   il: {

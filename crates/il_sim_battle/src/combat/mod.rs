@@ -10,20 +10,28 @@
 //! order; Stage 15 `resolve_deaths` removes the fallen. `formulas` holds
 //! the pure rule functions.
 
+//!
+//! Ranged (T2-030): Stage 9 `ranged_target` picks each shooting regiment's
+//! target on its stagger tick; Stage 10 `ranged_fire` computes the shots in
+//! parallel and `ranged_spawn` turns them into projectiles in shooter id
+//! order.
+
 pub mod attack;
 pub mod death;
 pub mod formulas;
 pub mod gate;
 pub mod pursue;
+pub mod ranged;
 pub mod target;
 
-pub use attack::{AttackOutcome, Kills, Outcomes, apply_outcomes, melee_attack};
+pub use attack::{AttackOutcome, Kill, Kills, Outcomes, apply_outcomes, melee_attack};
 pub use death::{resolve_deaths, ring_slot};
 pub use formulas::{
-    Arc, FatigueMults, arc_mults, attack_arc, braced, charge_mults, cooldown_ticks,
-    experience_mult, fatigue_mults, hit_probability, melee_damage, morale_mults,
-    terrain_defence_mult,
+    Arc, FatigueMults, apex_height, arc_mults, attack_arc, braced, charge_mults, cooldown_ticks,
+    experience_mult, fatigue_mults, flight_ticks, hit_probability, melee_damage, morale_mults,
+    range_mult, ranged_damage, scatter, terrain_defence_mult,
 };
 pub use gate::melee_gate;
 pub use pursue::pursue_update;
+pub use ranged::{Shot, Shots, ranged_fire, ranged_spawn, ranged_target, segment_hits_circle};
 pub use target::{melee_recount, melee_target, rebuild_attackers, rebuild_charge_mass};

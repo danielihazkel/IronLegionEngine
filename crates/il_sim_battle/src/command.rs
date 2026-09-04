@@ -11,8 +11,8 @@ use il_data::ContentId;
 use serde::{Deserialize, Serialize};
 
 use crate::components::{
-    Anchor, Combat, FormationState, Morale, MoraleState, Order, OrderKind, Path, Pos, Regiment,
-    SlotRef,
+    Anchor, Combat, Fire, FormationState, Morale, MoraleState, Order, OrderKind, Path, Pos,
+    Regiment, SlotRef,
 };
 use crate::events::BattleEvent;
 use crate::formation::{
@@ -331,8 +331,12 @@ pub enum RejectReason {
         regiment: RegimentId,
         template: ContentId,
     },
-    /// `AttackRegiment` names an own-side or empty regiment (T2-020).
+    /// `AttackRegiment` or `FireMode::Target` names an own-side or empty
+    /// regiment (T2-020, T2-030).
     InvalidTarget(RegimentId),
+    /// `FireMode` addressed a regiment whose unit has no `ranged` block
+    /// (T2-030).
+    NotRanged(RegimentId),
     /// The variant has no implementation yet; never silently dropped.
     NotImplemented,
 }
@@ -623,6 +627,45 @@ fn validate_and_apply(
                 set_formation(world, entity, handle, None, current);
             }
             deploy(world, entity, *position, *facing);
+            Ok(())
+        }
+        // SIM-PROJ-001: every addressed regiment must shoot; a `Target` must
+        // be an enemy with soldiers left. The target is re-acquired at the
+        // next Stage 9 under the new mode.
+        CommandKind::FireMode { mode, .. } => {
+            for entity in &entities {
+                if world.get::<Fire>(*entity).is_none() {
+                    let id = world.get::<Regiment>(*entity).expect("validated").id;
+                    return Err(RejectReason::NotRanged(id));
+                }
+            }
+            if let FireMode::Target(target) = mode {
+                let target_entity = world
+                    .resource::<Ids>()
+                    .regiment_entity(*target)
+                    .ok_or(RejectReason::UnknownRegiment(*target))?;
+                let (target_side, alive) = {
+                    let r = world
+                        .get::<Regiment>(target_entity)
+                        .ok_or(RejectReason::UnknownRegiment(*target))?;
+                    (r.side, !r.soldiers.is_empty())
+                };
+                if !alive {
+                    return Err(RejectReason::InvalidTarget(*target));
+                }
+                for entity in &entities {
+                    let side = world.get::<Regiment>(*entity).expect("validated").side;
+                    if side == target_side {
+                        return Err(RejectReason::InvalidTarget(*target));
+                    }
+                }
+            }
+            for entity in entities {
+                if let Some(mut fire) = world.get_mut::<Fire>(entity) {
+                    fire.mode = *mode;
+                    fire.target = None;
+                }
+            }
             Ok(())
         }
         CommandKind::TransferControl { from, to } => {

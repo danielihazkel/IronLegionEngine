@@ -316,6 +316,7 @@ Schema: [`schemas/unit-type.schema.json`](schemas/unit-type.schema.json). Satisf
 | `charge_bonus` | f | fraction | 0 | Attack multiplier bonus on first contact after a charge (0.3 = +30 %) |
 | `anti_cavalry_bonus` | f | fraction | 0 | Attack and defence multiplier bonus versus `cavalry` when braced (0.5 = +50 %) |
 | `second_rank_attack` | b | | false | Second rank may attack (spears, pikes) |
+| `shield` | b | | false | Carries a shield: a frontal projectile hit does `combat.shield_mult` of its damage (SIM-PROJ-006); part of the anti-cavalry brace |
 | `frontal_arc_deg` | f | degrees | 120 | Arc inside which attacks are frontal |
 | `ranged` | object | | none | Present only for units that shoot; see below |
 | `ranged.range` | f | wu | required | Maximum range |

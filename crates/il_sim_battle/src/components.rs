@@ -10,7 +10,7 @@ use il_core::{
 use il_data::{FormationTemplate, Handle, UnitCategory, UnitType};
 use serde::{Deserialize, Serialize};
 
-use crate::command::SpeedMode;
+use crate::command::{FireMode, SpeedMode};
 use crate::formation::Slot;
 
 // ---------------------------------------------------------------- soldiers
@@ -121,6 +121,16 @@ pub struct Attackers {
     pub n: u8,
 }
 
+/// SIM-PROJ-003: volleys left and ticks until this soldier may throw
+/// again. Present only on soldiers whose unit has a `ranged` block
+/// (hashed, snapshotted; T2-030). In volley mode the regiment's `Fire`
+/// cooldown is the one that counts and this one stays 0.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RangedState {
+    pub ammo: u16,
+    pub cooldown: u16,
+}
+
 // --------------------------------------------------------------- regiments
 
 #[derive(Component, Clone, Debug)]
@@ -133,8 +143,27 @@ pub struct Regiment {
     pub unit: Handle<UnitType>,
     /// Ascending ids of living soldiers.
     pub soldiers: Vec<SoldierId>,
-    /// Volleys left across the regiment; `0` for units without `ranged`.
-    pub ammo: u16,
+}
+
+/// SIM-PROJ-001 / SIM-PROJ-003: a ranged regiment's fire mode, the enemy
+/// regiment it shoots at (re-chosen every `ranged_retarget_ticks`) and the
+/// shared volley cooldown (`combat.volley`). Present only on regiments whose
+/// unit has a `ranged` block (hashed, snapshotted; T2-030).
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Fire {
+    pub mode: FireMode,
+    pub target: Option<RegimentId>,
+    pub cooldown: u16,
+}
+
+impl Default for Fire {
+    fn default() -> Self {
+        Self {
+            mode: FireMode::FireAtWill,
+            target: None,
+            cooldown: 0,
+        }
+    }
 }
 
 #[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
@@ -349,6 +378,12 @@ impl_hashable_struct!(Morale {
     initial
 });
 impl_hashable_struct!(MeleeState { target, cooldown });
+impl_hashable_struct!(RangedState { ammo, cooldown });
+impl_hashable_struct!(Fire {
+    mode,
+    target,
+    cooldown
+});
 impl_hashable_struct!(Combat {
     engaged,
     last_fighting,

@@ -487,6 +487,9 @@ impl App {
             self.run = !self.run;
             intents.push(UiIntent::SpeedMode(speed_mode(self.run)));
         }
+        if input.pressed(b, Action::ToggleFire) {
+            intents.push(UiIntent::ToggleFire);
+        }
         for n in 1..=FORMATION_HOTKEYS {
             if input.pressed(b, Action::Formation(n)) {
                 intents.push(UiIntent::Formation(n));

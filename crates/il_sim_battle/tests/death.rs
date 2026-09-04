@@ -10,7 +10,7 @@ mod common;
 
 use common::*;
 use il_core::{PlayerId, RegimentId, S, Scalar, SoldierId, StateHash, Tick};
-use il_sim_battle::combat::Kills;
+use il_sim_battle::combat::{Kill, Kills};
 use il_sim_battle::components::{Combat, FormationState, Health, MeleeState, Morale, Regiment};
 use il_sim_battle::resources::Ids;
 use il_sim_battle::{BattleEvent, BattleWorld, Command, CommandKind};
@@ -37,7 +37,11 @@ fn kill_first(w: &mut BattleWorld, regiment: u32, n: usize) -> Vec<SoldierId> {
     for v in &victims {
         let e = w.ecs().resource::<Ids>().soldier_entity(*v).unwrap();
         w.ecs_mut().get_mut::<Health>(e).unwrap().hp = S::ZERO;
-        w.ecs_mut().resource_mut::<Kills>().0.push((*v, None));
+        w.ecs_mut().resource_mut::<Kills>().0.push(Kill {
+            victim: *v,
+            killer: None,
+            killer_regiment: None,
+        });
     }
     victims
 }

@@ -5,21 +5,26 @@ use bevy_ecs::prelude::*;
 use il_core::{StateHash, StateHasher};
 
 use crate::components::{
-    Anchor, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState, Morale, Order, Path,
-    Pos, PrevFacing, PrevPos, Regiment, SlotRef, Vel,
+    Anchor, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health, MeleeState, Morale, Order,
+    Path, Pos, PrevFacing, PrevPos, RangedState, Regiment, SlotRef, Vel,
 };
-use crate::resources::{Clock, Events, Ids, LastHash, Phase, Rng, StepEvents};
+use crate::resources::{
+    Clock, Events, Ids, LastHash, PendingDamage, Phase, Projectiles, Rng, StepEvents,
+};
 
-/// Hashes exactly the fields SIM-DET-004 lists (as amended in T1-047 and
-/// T2-020), in that order: tick; phase; per regiment (ascending id) morale,
-/// morale state, soldier count, anchor, order (kind, target, target
-/// regiment, facing, speed, since), formation (template, ranks, files,
-/// integrity, morph_until, needs_reform, prior template, laid-out facing),
-/// path (waypoints with corridors, next, requested), ammo, combat (engaged,
+/// Hashes exactly the fields SIM-DET-004 lists (as amended in T1-047,
+/// T2-020 and T2-030), in that order: tick; phase; per regiment (ascending
+/// id) morale, morale state, soldier count, anchor, order (kind, target,
+/// target regiment, facing, speed, since), formation (template, ranks,
+/// files, integrity, morph_until, needs_reform, prior template, laid-out
+/// facing), path (waypoints with corridors, next, requested), fire state
+/// (present for ranged units: mode, target, cooldown), combat (engaged,
 /// last fighting, charge_until, experience, kills), casualty ring and
 /// initial strength; per soldier (ascending id) `p`, `v`, facing, `hp`,
-/// `fatigue`, FSM state, slot, melee (target, cooldown); per projectile
-/// (ascending id) `p`, `v`; RNG stream states.
+/// `fatigue`, FSM state, slot, melee (target, cooldown), ranged state
+/// (present for ranged units: ammo, cooldown); per projectile (ascending
+/// id) every launch field; pending damage in queue order; RNG stream
+/// states.
 pub fn compute_hash(world: &mut World) -> StateHash {
     let mut h = StateHasher::new();
     h.write(&world.resource::<Clock>().tick);
@@ -37,9 +42,10 @@ pub fn compute_hash(world: &mut World) -> StateHash {
         &FormationState,
         &Path,
         &Combat,
+        Option<&Fire>,
     )>();
     for entity in regiment_entities {
-        let (regiment, morale, anchor, order, formation, path, combat) = regiments
+        let (regiment, morale, anchor, order, formation, path, combat, fire) = regiments
             .get(world, entity)
             .expect("regiment entity in Ids has regiment components");
         h.write(&morale.m);
@@ -50,7 +56,7 @@ pub fn compute_hash(world: &mut World) -> StateHash {
         h.write(order);
         h.write(formation);
         h.write(path);
-        h.write(&regiment.ammo);
+        h.write(&fire.copied());
         h.write(combat);
         h.write(&morale.deaths_5s);
         h.write(&morale.initial);
@@ -65,9 +71,10 @@ pub fn compute_hash(world: &mut World) -> StateHash {
         &Fsm,
         &SlotRef,
         &MeleeState,
+        Option<&RangedState>,
     )>();
     for entity in soldier_entities {
-        let (pos, vel, facing, health, fatigue, fsm, slot, melee) = soldiers
+        let (pos, vel, facing, health, fatigue, fsm, slot, melee, ranged) = soldiers
             .get(world, entity)
             .expect("soldier entity in Ids has soldier components");
         h.write(&pos.p);
@@ -78,11 +85,14 @@ pub fn compute_hash(world: &mut World) -> StateHash {
         h.write(&fsm.state);
         h.write(&slot.slot);
         h.write(melee);
+        h.write(&ranged.copied());
     }
 
-    // Projectiles: none until Phase 2 (T2-030); the length prefix keeps the
-    // layout stable when they arrive.
-    h.write_u32(0);
+    // Projectiles ascend by id in the list (T2-030); the pending damage
+    // queue hashes in queue order (T2-031 applies it in `(tick, target)`
+    // order with the queue order breaking ties).
+    h.write(world.resource::<Projectiles>().0.as_slice());
+    h.write(world.resource::<PendingDamage>().0.as_slice());
 
     h.write(world.resource::<Rng>());
     h.finish()

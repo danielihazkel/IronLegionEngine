@@ -103,6 +103,9 @@ pub enum Action {
     OrderFlipFacing,
     OrderHalt,
     ToggleRun,
+    /// Flips the selected ranged regiments between fire-at-will and hold
+    /// (T2-030).
+    ToggleFire,
     /// The unit type's n-th formation template (1-based).
     Formation(u8),
     Pause,
@@ -138,6 +141,7 @@ const FIXED_ACTIONS: &[(&str, Action)] = &[
     ("order_flip_facing", Action::OrderFlipFacing),
     ("order_halt", Action::OrderHalt),
     ("toggle_run", Action::ToggleRun),
+    ("toggle_fire", Action::ToggleFire),
     ("pause", Action::Pause),
     ("speed_up", Action::SpeedUp),
     ("speed_down", Action::SpeedDown),

@@ -8,9 +8,9 @@ use il_core::{Angle, S, Scalar, Tick, V2};
 use il_data::{ContentId, Handle, Registries, UnitType};
 
 use crate::components::{
-    Anchor, Attackers, Body, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState,
-    Morale, Order, Path, Pos, PrevFacing, PrevPos, Rank, Regiment, SlotRef, Soldier, SoldierState,
-    Vel,
+    Anchor, Attackers, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health,
+    MeleeState, Morale, Order, Path, Pos, PrevFacing, PrevPos, RangedState, Rank, Regiment,
+    SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::formation::{effective_ranks, layout_slots, slot_world};
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
@@ -148,9 +148,8 @@ pub(crate) fn spawn_regiment(
     side: u8,
     setup: &RegimentSetup,
     unit: Handle<UnitType>,
-    ammo: u16,
 ) {
-    let (radius, mass, hp, morale_base, category, template, slots, ranks) = {
+    let (radius, mass, hp, morale_base, category, template, slots, ranks, ammo) = {
         let regs = world.resource::<Regs>();
         let u = regs.0.units.get(unit);
         let template = setup
@@ -171,6 +170,9 @@ pub(crate) fn spawn_regiment(
             template,
             slots,
             ranks,
+            // SIM-PROJ-003: volleys per soldier from the unit's ranged block;
+            // `None` for units that do not shoot.
+            u.ranged.as_ref().map(|rg| rg.ammo),
         )
     };
 
@@ -193,7 +195,6 @@ pub(crate) fn spawn_regiment(
                 setup_id: setup.id,
                 unit,
                 soldiers: Vec::with_capacity(usize::from(setup.count)),
-                ammo,
             },
             anchor,
             Morale::new(morale_base, setup.count),
@@ -206,6 +207,9 @@ pub(crate) fn spawn_regiment(
             FormationState::new(template, ranks, slots.clone(), facing),
         ))
         .id();
+    if ammo.is_some() {
+        world.entity_mut(regiment_entity).insert(Fire::default());
+    }
     world
         .resource_mut::<Ids>()
         .regiment_entities
@@ -247,6 +251,11 @@ pub(crate) fn spawn_regiment(
                 Attackers::default(),
             ))
             .id();
+        if let Some(ammo) = ammo {
+            world
+                .entity_mut(entity)
+                .insert(RangedState { ammo, cooldown: 0 });
+        }
         world
             .resource_mut::<Ids>()
             .soldier_entities
@@ -282,9 +291,7 @@ impl BattleWorld {
         for (side, s) in setup.sides.iter().enumerate() {
             for r in &s.regiments {
                 let unit = regs.units.lookup(&r.unit_type).expect("validated above");
-                // SIM-PROJ-003: ammo per soldier comes from the unit's ranged block.
-                let ammo = regs.units.get(unit).ranged.as_ref().map_or(0, |rg| rg.ammo);
-                spawn_regiment(&mut w.world, side as u8, r, unit, ammo);
+                spawn_regiment(&mut w.world, side as u8, r, unit);
             }
         }
         // Reinforcement groups are validated but spawn only in T2-070.

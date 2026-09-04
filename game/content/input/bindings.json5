@@ -43,6 +43,7 @@
     { action: "order_flip_facing", keys: ["Alt"] },
     { action: "order_halt", keys: ["H"] },
     { action: "toggle_run", keys: ["R"] },
+    { action: "toggle_fire", keys: ["F"] },
     { action: "formation_1", keys: ["F1"] },
     { action: "formation_2", keys: ["F2"] },
     { action: "formation_3", keys: ["F3"] },

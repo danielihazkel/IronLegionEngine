@@ -149,19 +149,10 @@ fn unimplemented_variants_are_rejected_not_dropped() {
     let mut w = common::world(10);
     let t = w.tick().next();
     let out = w.step(&[
-        cmd(
-            t,
-            0,
-            0,
-            CommandKind::FireMode {
-                regiments: vec![RegimentId(0)],
-                mode: il_sim_battle::FireMode::Hold,
-            },
-        ),
         cmd(t, 0, 1, CommandKind::ConfirmDeployment),
         cmd(t, 0, 2, CommandKind::Surrender),
     ]);
-    assert_eq!(out.rejected.len(), 3);
+    assert_eq!(out.rejected.len(), 2);
     assert!(
         out.rejected
             .iter()

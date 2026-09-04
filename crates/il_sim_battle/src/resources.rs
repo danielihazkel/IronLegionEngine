@@ -6,10 +6,10 @@ use std::sync::Arc;
 use bevy_ecs::prelude::*;
 use il_core::hash::{Hashable, StateHasher};
 use il_core::{
-    EventQueue, IdAllocator, PlayerId, ProjectileId, RegimentId, RngStream, SoldierId, StateHash,
-    StreamId, Tick, impl_hashable_fieldless_enum,
+    EventQueue, IdAllocator, PlayerId, ProjectileId, RegimentId, RngStream, S, Scalar, SoldierId,
+    StateHash, StreamId, Tick, V2, impl_hashable_fieldless_enum, impl_hashable_struct,
 };
-use il_data::{ContentId, Registries};
+use il_data::{ContentId, ProjectileArc, Registries};
 use serde::{Deserialize, Serialize};
 
 use crate::command::{Command, RejectReason};
@@ -129,6 +129,104 @@ pub struct MeleeGateRes {
     /// Farthest soldier from the anchor, metres.
     pub extent: Vec<il_core::S>,
 }
+
+/// Stage 9 ranged gate (T2-030, derived per tick): one entry per regiment
+/// in `Ids.regiment_entities` order, written by `ranged_target` and read by
+/// `ranged_fire`. `blockers` lists the friendly regiments whose extent
+/// circle lies within `friendly_block_dist` of a direct-fire regiment
+/// (SIM-PROJ-009); empty for indirect units and non-shooters.
+#[derive(Resource, Debug, Default)]
+pub struct RangedGateRes {
+    pub may_fire: Vec<bool>,
+    pub target: Vec<Option<RegimentId>>,
+    pub volley_ready: Vec<bool>,
+    pub blockers: Vec<Vec<RegimentId>>,
+}
+
+/// A projectile in flight (TDD §4.3, SIM-PROJ-005; T2-030). Everything is
+/// fixed at launch: the position at tick `t` is `start + (end − start) × u`
+/// and the height `apex × 4u(1 − u)` with `u = (t − launch) / (land −
+/// launch)`, so nothing is integrated and a restore needs no rebuild.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Projectile {
+    pub id: ProjectileId,
+    pub shooter: SoldierId,
+    pub shooter_regiment: RegimentId,
+    pub side: u8,
+    pub launch_tick: Tick,
+    pub land_tick: Tick,
+    pub start: V2,
+    pub end: V2,
+    pub apex: S,
+    pub arc: ProjectileArc,
+    pub damage: S,
+    pub pen: S,
+}
+
+impl_hashable_struct!(Projectile {
+    id,
+    shooter,
+    shooter_regiment,
+    side,
+    launch_tick,
+    land_tick,
+    start,
+    end,
+    apex,
+    arc,
+    damage,
+    pen
+});
+
+impl Projectile {
+    /// Flight fraction at `tick`, clamped to `[0, 1]`.
+    pub fn progress(&self, tick: Tick) -> S {
+        let total = self.land_tick.0.saturating_sub(self.launch_tick.0).max(1);
+        let done = tick.0.saturating_sub(self.launch_tick.0).min(total);
+        S::from_i32(done as i32) / S::from_i32(total as i32)
+    }
+
+    /// Ground-plane position at flight fraction `u`.
+    pub fn position_at(&self, u: S) -> V2 {
+        self.start.lerp(self.end, u)
+    }
+
+    /// Height above the ground at flight fraction `u` (SIM-PROJ-005).
+    pub fn height_at(&self, u: S) -> S {
+        self.apex * S::from_i32(4) * u * (S::ONE - u)
+    }
+}
+
+/// The live projectiles (REQ-PERF-008): one `Vec` reserved at
+/// `combat.projectile_cap` and never grown past it, kept ascending by id
+/// (new ids are appended, landed ones removed in place). Hashed and
+/// snapshotted as state.
+#[derive(Resource, Debug, Default)]
+pub struct Projectiles(pub Vec<Projectile>);
+
+/// Damage waiting for its tick (TDD §4.4 `PendingDamage`; SIM-PROJ-006,
+/// SIM-PROJ-008): a landed projectile's hit applies the same tick, a
+/// statistical volley's after its flight time. Queue order is state (ties
+/// on `(apply_tick, target)` apply in insertion order).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Pending {
+    pub apply_tick: Tick,
+    pub target: SoldierId,
+    pub damage: S,
+    pub shooter: SoldierId,
+    pub shooter_regiment: RegimentId,
+}
+
+impl_hashable_struct!(Pending {
+    apply_tick,
+    target,
+    damage,
+    shooter,
+    shooter_regiment
+});
+
+#[derive(Resource, Debug, Default)]
+pub struct PendingDamage(pub Vec<Pending>);
 
 /// Content registries; sim code reads by handle only (SAD §3 principle 7).
 #[derive(Resource, Clone)]

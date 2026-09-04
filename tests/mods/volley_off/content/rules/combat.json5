@@ -1,0 +1,4 @@
+// Rules files merge key by key (Modding SDK 3.4): only `volley` changes.
+{
+  volley: false,
+}

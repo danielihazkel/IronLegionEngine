@@ -3,8 +3,8 @@
 //! morale, status and aura multipliers are wired here so the systems that
 //! produce them (T2-040, T2-041, T2-050, T2-043) only have to feed values.
 
-use il_core::{Angle, S, Scalar, V2};
-use il_data::{CombatRules, FatigueRules, MoraleRules, MovementRules, StateMults};
+use il_core::{Angle, S, Scalar, TICKS_PER_SECOND, V2};
+use il_data::{CombatRules, FatigueRules, MoraleRules, MovementRules, ProjectileArc, StateMults};
 
 use crate::components::{MoraleState, OrderKind};
 use crate::movement::regiment::deg_to_rad;
@@ -168,9 +168,211 @@ pub fn cooldown_ticks(base: u16, fatigue_interval: S, morale_interval: S, status
     u16::try_from(ticks).unwrap_or(u16::MAX)
 }
 
+// ------------------------------------------------------------- ranged (T2-030)
+
+/// SIM-PROJ-002: `1 + height_range × clamp((h_shooter − h_target) /
+/// height_ref, −1, 1)`; shooting downhill reaches further.
+pub fn range_mult(h_shooter: S, h_target: S, height_range: S, height_ref: S) -> S {
+    let sat = if height_ref > S::ZERO {
+        ((h_shooter - h_target) / height_ref).clamp(-S::ONE, S::ONE)
+    } else {
+        S::ZERO
+    };
+    S::ONE + height_range * sat
+}
+
+/// SIM-PROJ-005: whole ticks of flight over distance `d`, at least 1. A
+/// direct arc flies at `speed`; an indirect arc launches at 45° with the
+/// speed that lands at `d` (`sqrt(d × g)`), capped at `speed`, so its flight
+/// time is `d × √2 / v`. Rounded up so the projectile never lands early.
+pub fn flight_ticks(arc: ProjectileArc, d: S, speed: S, gravity: S) -> u32 {
+    if d <= S::ZERO || speed <= S::ZERO {
+        return 1;
+    }
+    let seconds = match arc {
+        ProjectileArc::Direct => d / speed,
+        ProjectileArc::Indirect => {
+            let v = (d * gravity.max(S::ZERO)).sqrt().min(speed);
+            if v <= S::ZERO {
+                return 1;
+            }
+            d * S::from_i32(2).sqrt() / v
+        }
+    };
+    let ticks = seconds * S::from_i32(TICKS_PER_SECOND as i32);
+    let floor = ticks.floor_i32();
+    let whole = if S::from_i32(floor) < ticks {
+        floor + 1
+    } else {
+        floor
+    };
+    u32::try_from(whole.max(1)).unwrap_or(1)
+}
+
+/// SIM-PROJ-005: the arc's apex height, `combat.direct_apex` for a direct
+/// shot and `d / 4` for a 45° lob.
+pub fn apex_height(arc: ProjectileArc, d: S, r: &CombatRules) -> S {
+    match arc {
+        ProjectileArc::Direct => r.direct_apex,
+        ProjectileArc::Indirect => d / S::from_i32(4),
+    }
+}
+
+/// SIM-PROJ-004: the aim offset at angle `draw × 2π` and length `d × (1 −
+/// accuracy) × scatter_scale` (times the weather accuracy penalty, `1`
+/// until the weather rules of Phase 4).
+pub fn scatter(d: S, accuracy: S, scatter_scale: S, draw: S) -> V2 {
+    let angle = draw * S::TAU;
+    let length = d * (S::ONE - accuracy) * scatter_scale;
+    V2::new(angle.cos(), angle.sin()) * length
+}
+
+/// SIM-PROJ-006: `max(damage − armour × (1 − pen), min_damage)` times the
+/// arc's damage multiplier (SIM-CMBT-014), halved by `shield_mult` when a
+/// shielded soldier is hit from the front.
+pub fn ranged_damage(damage: S, armour: S, pen: S, arc: Arc, shield: bool, r: &CombatRules) -> S {
+    let base = (damage - armour * (S::ONE - pen)).max(r.min_damage);
+    let (dmg_mult, _) = arc_mults(arc, r);
+    let shield_mult = if shield && arc == Arc::Front {
+        r.shield_mult
+    } else {
+        S::ONE
+    };
+    base * dmg_mult * shield_mult
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn range_mult_clamps_symmetrically() {
+        let hr = S::from_f32_data(0.2);
+        let href = S::from_i32(5);
+        assert_eq!(range_mult(S::ZERO, S::ZERO, hr, href), S::ONE);
+        // 2.5 m above the target: half the reference height.
+        assert_eq!(
+            range_mult(S::from_f32_data(2.5), S::ZERO, hr, href),
+            S::from_f32_data(1.1)
+        );
+        // Far above or below saturates at ±height_range.
+        assert_eq!(
+            range_mult(S::from_i32(50), S::ZERO, hr, href),
+            S::from_f32_data(1.2)
+        );
+        assert_eq!(
+            range_mult(S::ZERO, S::from_i32(50), hr, href),
+            S::from_f32_data(0.8)
+        );
+        assert_eq!(range_mult(S::from_i32(3), S::ZERO, hr, S::ZERO), S::ONE);
+    }
+
+    #[test]
+    fn flight_time_goldens() {
+        let g = S::from_f32_data(9.81);
+        let speed = S::from_i32(20);
+        assert_eq!(
+            flight_ticks(ProjectileArc::Direct, S::from_i32(20), speed, g),
+            20
+        );
+        assert_eq!(
+            flight_ticks(ProjectileArc::Direct, S::from_i32(35), speed, g),
+            35
+        );
+        // 35.01 m rounds up to the next tick.
+        assert_eq!(
+            flight_ticks(ProjectileArc::Direct, S::from_f32_data(35.01), speed, g),
+            36
+        );
+        // 45° lob over 40 m: v = sqrt(392.4) = 19.81 < 20, T = 40√2 / 19.81 = 2.856 s.
+        assert_eq!(
+            flight_ticks(ProjectileArc::Indirect, S::from_i32(40), speed, g),
+            58
+        );
+        // Capped launch speed: 120 m at 20 m/s takes 120√2 / 20 = 8.485 s.
+        assert_eq!(
+            flight_ticks(ProjectileArc::Indirect, S::from_i32(120), speed, g),
+            170
+        );
+        // The archer's real numbers: 120 m at 40 m/s, v = sqrt(1177) = 34.3.
+        assert_eq!(
+            flight_ticks(
+                ProjectileArc::Indirect,
+                S::from_i32(120),
+                S::from_i32(40),
+                g
+            ),
+            99
+        );
+        assert_eq!(flight_ticks(ProjectileArc::Direct, S::ZERO, speed, g), 1);
+        assert_eq!(
+            flight_ticks(ProjectileArc::Direct, S::from_i32(5), S::ZERO, g),
+            1
+        );
+    }
+
+    #[test]
+    fn apex_and_scatter() {
+        let mut r = il_data::Rules::zeroed().combat;
+        r.direct_apex = S::from_i32(2);
+        assert_eq!(
+            apex_height(ProjectileArc::Direct, S::from_i32(40), &r),
+            S::from_i32(2)
+        );
+        assert_eq!(
+            apex_height(ProjectileArc::Indirect, S::from_i32(40), &r),
+            S::from_i32(10)
+        );
+        // 35 m at accuracy 0.5 and scale 0.15: a 2.625 m offset.
+        let off = scatter(S::from_i32(35), S::HALF, S::from_f32_data(0.15), S::ZERO);
+        assert!((off.length() - S::from_f32_data(2.625)).abs() < S::from_f32_data(1e-4));
+        assert!(off.x > S::ZERO && off.y.abs() < S::from_f32_data(1e-4));
+        // A quarter turn points along +y; perfect accuracy scatters nothing.
+        let up = scatter(
+            S::from_i32(35),
+            S::HALF,
+            S::from_f32_data(0.15),
+            S::from_f32_data(0.25),
+        );
+        assert!(up.y > S::from_i32(2) && up.x.abs() < S::from_f32_data(1e-4));
+        assert_eq!(
+            scatter(S::from_i32(35), S::ONE, S::from_f32_data(0.15), S::HALF),
+            V2::ZERO
+        );
+    }
+
+    #[test]
+    fn ranged_damage_floor_arc_and_shield() {
+        let mut r = il_data::Rules::zeroed().combat;
+        r.min_damage = S::ONE;
+        r.flank_dmg_mult = S::from_f32_data(1.25);
+        r.rear_dmg_mult = S::from_f32_data(1.5);
+        r.shield_mult = S::HALF;
+        let dmg = S::from_i32(30);
+        let armour = S::from_i32(8);
+        let pen = S::from_f32_data(0.3);
+        // 30 − 8 × 0.7 = 24.4 from the front, unshielded.
+        let front = ranged_damage(dmg, armour, pen, Arc::Front, false, &r);
+        assert!((front - S::from_f32_data(24.4)).abs() < S::from_f32_data(1e-4));
+        // A shield halves a frontal hit only.
+        assert_eq!(
+            ranged_damage(dmg, armour, pen, Arc::Front, true, &r),
+            front * S::HALF
+        );
+        assert_eq!(
+            ranged_damage(dmg, armour, pen, Arc::Flank, true, &r),
+            front * S::from_f32_data(1.25)
+        );
+        assert_eq!(
+            ranged_damage(dmg, armour, pen, Arc::Rear, false, &r),
+            front * S::from_f32_data(1.5)
+        );
+        // The floor applies before the multipliers.
+        assert_eq!(
+            ranged_damage(S::ONE, S::from_i32(100), S::ZERO, Arc::Rear, false, &r),
+            S::from_f32_data(1.5)
+        );
+    }
 
     fn sf(v: f32) -> S {
         S::from_f32_data(v)

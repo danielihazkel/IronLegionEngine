@@ -49,11 +49,12 @@ pub fn resolve_deaths(world: &mut World) {
     if dead.is_empty() {
         return;
     }
-    dead.sort_by_key(|(victim, _)| *victim);
-    dead.dedup_by_key(|(victim, _)| *victim);
-    let dead_ids: Vec<SoldierId> = dead.iter().map(|(victim, _)| *victim).collect();
+    dead.sort_by_key(|k| k.victim);
+    dead.dedup_by_key(|k| k.victim);
+    let dead_ids: Vec<SoldierId> = dead.iter().map(|k| k.victim).collect();
 
-    for (victim, killer) in &dead {
+    for kill in &dead {
+        let victim = &kill.victim;
         let Some(entity) = world.resource::<Ids>().soldier_entity(*victim) else {
             continue;
         };
@@ -67,7 +68,7 @@ pub fn resolve_deaths(world: &mut World) {
             BattleEvent::SoldierDied {
                 id: *victim,
                 regiment,
-                killer: *killer,
+                killer: kill.killer,
                 pos,
             },
         );
@@ -94,11 +95,9 @@ pub fn resolve_deaths(world: &mut World) {
                 m.deaths_5s[slot] = m.deaths_5s[slot].saturating_add(1);
             }
         }
-        // Kill credit goes to the killer's regiment even if the killer fell
-        // in the same tick (it is still in `Ids` at this point).
-        if let Some(killer) = killer
-            && let Some(ke) = world.resource::<Ids>().soldier_entity(*killer)
-            && let Some(kr) = world.get::<Soldier>(ke).map(|s| s.regiment)
+        // Kill credit goes to the killer's regiment, resolved when the kill
+        // was recorded, so a killer that fell earlier still counts.
+        if let Some(kr) = kill.killer_regiment
             && let Some(kre) = world.resource::<Ids>().regiment_entity(kr)
             && let Some(mut c) = world.get_mut::<Combat>(kre)
         {

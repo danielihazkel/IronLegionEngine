@@ -1,6 +1,6 @@
-# How to run and operate the engine (Phase 1)
+# How to run and operate the engine
 
-Everything here works on the code as it stands at the end of Phase 1: one rendered battlefield, ten regiments you can select and move, no combat yet. Commands are run from the repository root in PowerShell or Git Bash.
+Everything here works on the code as it stands (Phase 2 in progress): one rendered battlefield, regiments you can select and move, melee, and ranged fire. Commands are run from the repository root in PowerShell or Git Bash.
 
 ## 1. Build
 
@@ -23,7 +23,7 @@ cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --thread
 - `--show-keys` shows localisation keys instead of text, to spot a label that bypasses the locale.
 - `--content-root <folder>` points at a different game root (default `game`).
 
-`move_reform_2000.json5` starts with ten regiments north of the river and a scripted command stream: at one second everyone runs south over the bridge and the ford, later some change formation, wheel, form a battle line and march back. `idle_1000.json5` is a thousand soldiers standing still.
+`move_reform_2000.json5` starts with ten regiments north of the river and a scripted command stream: at one second everyone runs south over the bridge and the ford, later some change formation, wheel, form a battle line and march back. `idle_1000.json5` is a thousand soldiers standing still. The band files under `tests/scenarios/bands/` are small fights (§4a, §4b).
 
 The window title is the quick telemetry line: tick, soldiers drawn, sim milliseconds per tick, speed, selection size, commands recorded, zoom, rotation.
 
@@ -46,6 +46,7 @@ Every key comes from `game/content/input/bindings.json5`; a mod may rebind any o
 | Drag a formation line | right-drag: the line's width is the drag, the regiments face away from where they stand; hold `Alt` to face the other way |
 | Halt | `H` |
 | Run toggle for new orders | `R` (the HUD shows `running` or `walking`) |
+| Fire toggle for the selected ranged regiments | `F` (hold fire / fire at will; regiments start at fire at will) |
 | Formation templates of the selected unit type | `F1`..`F4` in the order the unit lists them (hastati: line, column, loose) |
 | Pause | `Space`, or the HUD button |
 | Speed | `Ctrl+=` / `Ctrl+-` or the numpad `+` / `-`, or the HUD buttons |
@@ -99,7 +100,7 @@ cargo run -p il_cli -- genart
 - `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
 - `validate` loads the mod roots you list and prints every diagnostic with file, line and column; exit code 1 on errors.
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers, `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release.
-- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; a file's rout clauses print `skip` until morale exists (T2-041).
+- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; a file's rout clauses print `skip` until morale exists (T2-041), and the volley file's casualty clause until projectiles land (T2-031).
 - `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
 
 Criterion micro-benches:

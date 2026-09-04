@@ -22,7 +22,9 @@
     },
   ],
   commands: [
-    { tick: 1, player: 1, seq: 0, kind: { AttackRegiment: { regiments: [1], target: 0 } } },
+    // Melee only: the pila stay in hand (T2-030).
+    { tick: 1, player: 1, seq: 0, kind: { FireMode: { regiments: [1], mode: "Hold" } } },
+    { tick: 1, player: 1, seq: 1, kind: { AttackRegiment: { regiments: [1], target: 0 } } },
   ],
   bands: {
     seeds: 50,

@@ -212,7 +212,7 @@
     "shield": {
       "type": "boolean",
       "default": false,
-      "description": "Carries a shield: halves ranged hit chance from the front (combat.shield_mult) and is part of the anti-cavalry brace."
+      "description": "Carries a shield: a frontal projectile hit does combat.shield_mult of its damage (SIM-PROJ-006) and the shield is part of the anti-cavalry brace."
     },
     "frontal_arc_deg": {
       "type": "number",

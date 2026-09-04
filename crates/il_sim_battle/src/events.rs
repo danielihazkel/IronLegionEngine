@@ -39,6 +39,16 @@ pub enum BattleEvent {
         killer: Option<SoldierId>,
         pos: V2,
     },
+    /// `count` soldiers of the regiment threw this tick (SIM-PROJ-003,
+    /// T2-030); the statistical path emits it too (REQ-CMBT-015).
+    VolleyFired { regiment: RegimentId, count: u16 },
+    /// Direct fire was refused this tick because `blocker`, a friendly
+    /// regiment, lay in the line of fire (SIM-PROJ-009); the mode is
+    /// unchanged and fire resumes when the line clears.
+    FireBlocked {
+        regiment: RegimentId,
+        blocker: RegimentId,
+    },
 }
 
 impl Event for BattleEvent {}

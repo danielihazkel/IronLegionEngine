@@ -10,17 +10,20 @@ use std::sync::Arc;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::query::QueryState;
-use il_core::{Angle, RegimentId, S, SoldierId, Tick, V2};
-use il_data::{FormationTemplate, Handle, Registries, UnitCategory, UnitType};
+use il_core::{Angle, ProjectileId, RegimentId, S, SoldierId, Tick, V2};
+use il_data::{FormationTemplate, Handle, ProjectileArc, Registries, UnitCategory, UnitType};
 
+use crate::command::FireMode;
 use crate::components::{
-    Anchor, Combat, Facing, FormationState, Fsm, Health, MeleeState, Morale, MoraleState, Order,
-    OrderKind, Path, Pos, PrevFacing, PrevPos, Regiment, SlotRef, Soldier, SoldierState,
+    Anchor, Combat, Facing, Fire, FormationState, Fsm, Health, MeleeState, Morale, MoraleState,
+    Order, OrderKind, Path, Pos, PrevFacing, PrevPos, RangedState, Regiment, SlotRef, Soldier,
+    SoldierState,
 };
 use crate::map::LoadedMap;
 use crate::nav::NavGrid;
 use crate::resources::{
-    AnchorGridRes, BattlePhase, Ids, MapRes, NavGridRes, Regs, SideState, Sides, SpatialGridRes,
+    AnchorGridRes, BattlePhase, Ids, MapRes, NavGridRes, Projectiles, Regs, SideState, Sides,
+    SpatialGridRes,
 };
 use crate::spatial::SpatialGrid;
 
@@ -34,6 +37,7 @@ type SoldierData = (
     &'static Health,
     &'static SlotRef,
     &'static MeleeState,
+    Option<&'static RangedState>,
 );
 type RegimentData = (
     &'static Regiment,
@@ -42,6 +46,7 @@ type RegimentData = (
     &'static Morale,
     &'static FormationState,
     &'static Combat,
+    Option<&'static Fire>,
 );
 
 /// Cached query states behind every `BattleView`.
@@ -81,6 +86,8 @@ pub struct SoldierRow {
     pub slot: Option<u16>,
     /// Melee target while `Fighting` (T2-020).
     pub target: Option<SoldierId>,
+    /// Volleys left; `None` for units without a `ranged` block (T2-030).
+    pub ammo: Option<u16>,
 }
 
 /// One regiment as the presentation layer sees it.
@@ -102,6 +109,24 @@ pub struct RegimentRow {
     pub files: u16,
     /// SIM-CMBT-003 (T2-020).
     pub engaged: bool,
+    /// Fire mode and current ranged target; `None` for units without a
+    /// `ranged` block (T2-030).
+    pub fire: Option<FireMode>,
+    pub fire_target: Option<RegimentId>,
+}
+
+/// One projectile in flight (T2-030); the renderer evaluates the arc
+/// itself from these launch values (`Projectile::position_at`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProjectileRow {
+    pub id: ProjectileId,
+    pub side: u8,
+    pub start: V2,
+    pub end: V2,
+    pub apex: S,
+    pub arc: ProjectileArc,
+    pub launch_tick: Tick,
+    pub land_tick: Tick,
 }
 
 /// Borrowed, read-only view over a `BattleWorld`.
@@ -112,18 +137,30 @@ pub struct BattleView<'w> {
     phase: BattlePhase,
 }
 
+type SoldierItem<'a> = (
+    &'a Soldier,
+    &'a Pos,
+    &'a PrevPos,
+    &'a Facing,
+    &'a PrevFacing,
+    &'a Fsm,
+    &'a Health,
+    &'a SlotRef,
+    &'a MeleeState,
+    Option<&'a RangedState>,
+);
+type RegimentItem<'a> = (
+    &'a Regiment,
+    &'a Anchor,
+    &'a Order,
+    &'a Morale,
+    &'a FormationState,
+    &'a Combat,
+    Option<&'a Fire>,
+);
+
 fn soldier_row(
-    (s, pos, prev, facing, prev_facing, fsm, health, slot, melee): (
-        &Soldier,
-        &Pos,
-        &PrevPos,
-        &Facing,
-        &PrevFacing,
-        &Fsm,
-        &Health,
-        &SlotRef,
-        &MeleeState,
-    ),
+    (s, pos, prev, facing, prev_facing, fsm, health, slot, melee, ranged): SoldierItem<'_>,
 ) -> SoldierRow {
     SoldierRow {
         id: s.id,
@@ -138,18 +175,12 @@ fn soldier_row(
         hp: health.hp,
         slot: slot.slot,
         target: melee.target,
+        ammo: ranged.map(|r| r.ammo),
     }
 }
 
 fn regiment_row(
-    (r, anchor, order, morale, formation, combat): (
-        &Regiment,
-        &Anchor,
-        &Order,
-        &Morale,
-        &FormationState,
-        &Combat,
-    ),
+    (r, anchor, order, morale, formation, combat, fire): RegimentItem<'_>,
 ) -> RegimentRow {
     RegimentRow {
         id: r.id,
@@ -166,6 +197,8 @@ fn regiment_row(
         ranks: formation.ranks,
         files: formation.files,
         engaged: combat.engaged,
+        fire: fire.map(|f| f.mode),
+        fire_target: fire.and_then(|f| f.target),
     }
 }
 
@@ -283,5 +316,47 @@ impl<'w> BattleView<'w> {
     pub fn path(&self, id: RegimentId) -> Option<&'w Path> {
         let entity = self.world.resource::<Ids>().regiment_entity(id)?;
         self.world.get::<Path>(entity)
+    }
+
+    /// Volleys left in the regiment: the most any of its soldiers still
+    /// carries (SIM-FLOW-018 `ammo_left`); `0` for units without `ranged`.
+    pub fn ammo(&self, id: RegimentId) -> u16 {
+        let ids = self.world.resource::<Ids>();
+        let Some(entity) = ids.regiment_entity(id) else {
+            return 0;
+        };
+        let Some(regiment) = self.world.get::<Regiment>(entity) else {
+            return 0;
+        };
+        regiment
+            .soldiers
+            .iter()
+            .filter_map(|sid| ids.soldier_entity(*sid))
+            .filter_map(|e| self.world.get::<RangedState>(e))
+            .map(|r| r.ammo)
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Every projectile in flight, ascending id (T2-030).
+    pub fn projectiles(&self) -> impl Iterator<Item = ProjectileRow> + 'w {
+        self.world
+            .resource::<Projectiles>()
+            .0
+            .iter()
+            .map(|p| ProjectileRow {
+                id: p.id,
+                side: p.side,
+                start: p.start,
+                end: p.end,
+                apex: p.apex,
+                arc: p.arc,
+                launch_tick: p.launch_tick,
+                land_tick: p.land_tick,
+            })
+    }
+
+    pub fn projectile_count(&self) -> usize {
+        self.world.resource::<Projectiles>().0.len()
     }
 }
