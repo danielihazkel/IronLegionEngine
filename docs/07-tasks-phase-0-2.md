@@ -409,9 +409,10 @@ flowchart LR
   **Done when** formula unit tests pass and the melee scenario bands in Simulation Spec §15.3 rows 1 to 4 hold over 50 seeds (using T2-110 harness).
   Done 2026-09-04: `combat/formulas.rs` (pure functions with unit tests) and `combat/attack.rs` (Stage 10 `melee_attack` + `apply_outcomes`); the charge window, `Charge` event and mass push live in `melee_recount`; `tests/melee.rs`. The band run needs deaths, so it is the closing check of T2-022 (recorded there).
 
-- [ ] **T2-022 Death, kill credit, casualty rings, reform trigger** · M · Refs SIM-CORE-008, TDD §8.1 `resolve_deaths`, SIM-FORM-021
+- [x] **T2-022 Death, kill credit, casualty rings, reform trigger** · M · Refs SIM-CORE-008, TDD §8.1 `resolve_deaths`, SIM-FORM-021
   Stage 15: mark `Dead` in id order, remove from regiment soldier lists and grid, update `deaths_5s` ring buffers, credit kills, emit `SoldierDied`, set `needs_reform`; corpse timer is render-only.
   **Done when** regiment counts and the hash stay consistent after 5,000 deaths and the determinism test passes.
+  Done 2026-09-04: `combat/death.rs` (Stage 15 `resolve_deaths`), corpses in `BattleSession` and the render snapshot; `tests/death.rs` (5,000 scripted deaths at 1 and 8 threads and across a restore, kill credit reconciled with enemy losses, an emptied regiment, front-rank gaps closing). Closing check of the melee slice: the T2-110 bands over 50 seeds in release on 2026-09-04: rows 1, 3 and 4 hold; row 2's melee clause is `≥ 70 %` (hoplites won 50/50; the 90 % ceiling needs morale) and row 3's "on the charge" is read at 60 s (20 % lost at 30 s, 30 % at 60 s in every seed); both recorded in Simulation Spec §15.3.
 
 - [ ] **T2-030 Projectile pool, ranged targeting, firing** · M · Refs SIM-PROJ-001..004, TDD §8.2, REQ-PERF-008
   `Projectile` component, `ProjectilePool` of pre-spawned entities sized to `projectile_cap`; `Fire` regiment component with `FireMode`; ranged retarget every `ranged_retarget_ticks`; per-soldier reload, volley synchronisation, aim prediction, scatter via `hash_draw`, ammo, direct-fire friendly block check.

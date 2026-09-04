@@ -44,6 +44,7 @@ fn input(
         camera,
         screen: SCREEN,
         selected,
+        corpses: &[],
     }
 }
 

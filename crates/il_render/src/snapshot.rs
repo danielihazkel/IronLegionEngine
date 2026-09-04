@@ -29,6 +29,19 @@ pub struct SoldierInst {
     pub side: u8,
     pub moving: bool,
     pub selected: bool,
+    /// A corpse (T2-022): drawn dark at ground depth, never animated.
+    pub corpse: bool,
+}
+
+/// A dead soldier the app remembers for `combat.corpse_ticks` after its
+/// `SoldierDied` event (SIM-CORE-008: render-only; the sim forgot it).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Corpse {
+    pub pos: [f32; 2],
+    pub side: u8,
+    pub sprite_set: u16,
+    pub facing8: u8,
+    pub died: Tick,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -78,6 +91,8 @@ pub struct SnapshotInput<'a> {
     /// Viewport size in pixels.
     pub screen: Vec2,
     pub selected: &'a BTreeSet<RegimentId>,
+    /// Corpses to draw (T2-022).
+    pub corpses: &'a [Corpse],
 }
 
 fn v2(p: il_core::V2) -> Vec2 {
@@ -132,6 +147,23 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
             side,
             moving: (cur - prev).length_squared() > 1e-8,
             selected,
+            corpse: false,
+        });
+    }
+    for c in input.corpses {
+        let p = Vec2::from(c.pos);
+        if p.x < min.x || p.y < min.y || p.x > max.x || p.y > max.y {
+            continue;
+        }
+        out.soldiers.push(SoldierInst {
+            pos: c.pos,
+            height: crate::terrain::ground_height(map, p),
+            facing8: c.facing8,
+            sprite_set: c.sprite_set,
+            side: c.side,
+            moving: false,
+            selected: false,
+            corpse: true,
         });
     }
     out.counts = EntityCounts {

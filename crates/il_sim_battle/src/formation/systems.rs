@@ -274,7 +274,7 @@ pub fn rebuild_formation_derived(world: &mut World) {
                 state.ranks,
             )
         };
-        let (slots, files) = {
+        let slots = {
             let regs = &world.resource::<Regs>().0;
             let mut slots = Vec::new();
             layout_slots(
@@ -284,8 +284,7 @@ pub fn rebuild_formation_derived(world: &mut World) {
                 regs.units.get(unit).soldier_radius,
                 &mut slots,
             );
-            let files = files_used(&slots);
-            (slots, files)
+            slots
         };
         let soldier_ids = world
             .get::<Regiment>(entity)
@@ -312,8 +311,9 @@ pub fn rebuild_formation_derived(world: &mut World) {
         let mut state = world
             .get_mut::<FormationState>(entity)
             .expect("formation state");
+        // `files` is hashed state refreshed only by Stage 2, so it keeps the
+        // stored value (a snapshot after deaths still carries the old width).
         state.slots = slots;
-        state.files = files;
         state.assignment = assignment;
         state.dirty = false;
     }

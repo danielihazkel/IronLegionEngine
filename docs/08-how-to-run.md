@@ -76,6 +76,14 @@ This is the in-window checkpoint that has not been signed off yet.
 
 Things that would be wrong: regiments overlapping, a regiment facing the opposite way from its neighbours, anyone stuck in the river or the forest polygon to the south-west.
 
+### 4a. The melee check (Phase 2, T2-022)
+
+```
+cargo run --release -p il_app -- tests/scenarios/bands/melee_hastati_vs_velites.json5
+```
+
+The hastati line attack-moves into the velites on its own (the file scripts it). Expect: the line advances, the two regiments lock together with a ragged front, soldiers fall and stay on the ground as darkened sprites for thirty seconds, and the weaker side thins out first. Nobody routs yet: morale arrives with T2-041.
+
 ## 5. Headless tools (`il_cli`)
 
 ```

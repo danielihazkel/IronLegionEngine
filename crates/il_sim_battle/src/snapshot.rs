@@ -27,7 +27,9 @@ use crate::world::{BattleWorld, InstallMapError};
 /// 2: `map_id` required in the setup (T1-030).
 /// 3: combat state (T2-020): order target regiment, regiment `Combat`,
 ///    morale casualty ring and initial strength, soldier `MeleeState`.
-pub const SNAPSHOT_VERSION: u32 = 3;
+/// 4: `files` stored (T2-022): it is hashed state that the live world only
+///    refreshes at Stage 2, so a snapshot taken after deaths must carry it.
+pub const SNAPSHOT_VERSION: u32 = 4;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RegimentSnap {
@@ -50,6 +52,7 @@ pub struct RegimentSnap {
     pub path_requested: bool,
     pub formation: ContentId,
     pub ranks: u8,
+    pub files: u16,
     pub integrity: S,
     pub morph_until: Tick,
     pub needs_reform: bool,
@@ -201,6 +204,7 @@ impl BattleWorld {
                     path_requested: path.requested,
                     formation: regs.formations.id_of(formation.template).clone(),
                     ranks: formation.ranks,
+                    files: formation.files,
                     integrity: formation.integrity,
                     morph_until: formation.morph_until,
                     needs_reform: formation.needs_reform,
@@ -360,7 +364,7 @@ impl BattleWorld {
                     FormationState {
                         template,
                         ranks: r.ranks,
-                        files: 0,
+                        files: r.files,
                         slots: Vec::new(),
                         assignment: Vec::new(),
                         integrity: r.integrity,

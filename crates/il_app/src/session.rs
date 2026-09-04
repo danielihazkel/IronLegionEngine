@@ -9,9 +9,11 @@
 
 use std::collections::VecDeque;
 
-use il_core::{PlayerId, TICK_SECONDS, Tick};
+use il_core::{PlayerId, Scalar, TICK_SECONDS, Tick};
+use il_render::Corpse;
 use il_sim_battle::{
-    BattleWorld, Command, CommandKind, NoopObserver, ScriptedCommands, StageObserver, StepOutput,
+    BattleEvent, BattleWorld, Command, CommandKind, NoopObserver, ScriptedCommands, StageObserver,
+    StepOutput,
 };
 use il_ui::EventLine;
 
@@ -41,6 +43,8 @@ pub struct BattleSession {
     command_log: Vec<Command>,
     /// The last `EVENT_RING` events and rejections, oldest first.
     events: VecDeque<EventLine>,
+    /// Fallen soldiers kept for `combat.corpse_ticks` (T2-022, SIM-CORE-008).
+    corpses: Vec<Corpse>,
 }
 
 impl BattleSession {
@@ -57,6 +61,7 @@ impl BattleSession {
             script,
             command_log: Vec::new(),
             events: VecDeque::with_capacity(EVENT_RING),
+            corpses: Vec::new(),
         }
     }
 
@@ -141,9 +146,27 @@ impl BattleSession {
         out
     }
 
-    /// Event routing stub (SAD §6.1): everything goes to the ring for now.
+    /// Event routing (SAD §6.1): every event goes to the developer ring;
+    /// `SoldierDied` also leaves a corpse (audio and the HUD subscribe in
+    /// their phases).
     fn route_events(&mut self, tick: Tick, out: &StepOutput) {
+        let corpse_ticks = u32::from(self.world.registries().rules.combat.corpse_ticks);
+        self.corpses
+            .retain(|c| tick.0.saturating_sub(c.died.0) < corpse_ticks);
         for e in &out.events {
+            if let BattleEvent::SoldierDied { regiment, pos, .. } = e
+                && corpse_ticks > 0
+                && let Some(row) = self.world.view().regiment(*regiment)
+            {
+                let regs = self.world.registries();
+                self.corpses.push(Corpse {
+                    pos: [pos.x.to_f32_render(), pos.y.to_f32_render()],
+                    side: row.side,
+                    sprite_set: regs.units.get(row.unit).sprite_set().index() as u16,
+                    facing8: row.anchor_facing.to_facing8(),
+                    died: tick,
+                });
+            }
             self.push_event(tick, format!("{e:?}"));
         }
         for (c, reason) in &out.rejected {
@@ -164,6 +187,11 @@ impl BattleSession {
     /// Routed events, oldest first.
     pub fn events(&self) -> &VecDeque<EventLine> {
         &self.events
+    }
+
+    /// Corpses still on the ground (T2-022).
+    pub fn corpses(&self) -> &[Corpse] {
+        &self.corpses
     }
 
     /// Interpolation factor for rendering: how far into the next tick wall
@@ -258,6 +286,76 @@ mod tests {
             s.advance(TICK);
         }
         assert_eq!(s.events().len(), EVENT_RING);
+    }
+
+    /// A session over the flagship content with one five-man regiment.
+    fn game_session() -> BattleSession {
+        use il_data::ContentId;
+        use il_sim_battle::{BattleSetup, GeneralSetup, RegimentSetup, SideSetup};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
+        let regs = il_cli::load_registries(&root).unwrap_or_else(|e| panic!("{e:#}"));
+        let cid = |s: &str| ContentId::new(s).unwrap();
+        let setup = BattleSetup {
+            map_id: cid("rome:test_field"),
+            seed: 1,
+            weather: Default::default(),
+            time_of_day: 12,
+            time_limit_ticks: 48_000,
+            reveal_deployment: false,
+            sides: vec![SideSetup {
+                faction: cid("rome:rome"),
+                player: PlayerId(0),
+                deployment_zone: 0,
+                general: GeneralSetup {
+                    unit_type: cid("rome:hastati"),
+                    rank: 1,
+                    name_key: String::new(),
+                },
+                regiments: vec![RegimentSetup {
+                    id: 1,
+                    unit_type: cid("rome:hastati"),
+                    count: 5,
+                    experience: 0,
+                    fatigue: 0.0,
+                    formation: None,
+                    position: Some([300.0, 150.0]),
+                    facing_deg: Some(0.0),
+                }],
+                reinforcements: vec![],
+            }],
+            victory: Default::default(),
+        };
+        let world = BattleWorld::new(&setup, regs).unwrap();
+        BattleSession::new(world, PlayerId(0), ScriptedCommands::default())
+    }
+
+    #[test]
+    fn a_death_leaves_a_corpse_that_expires() {
+        let mut s = game_session();
+        let regiment = s.world.regiment_ids().next().unwrap();
+        let corpse_ticks = u32::from(s.world.registries().rules.combat.corpse_ticks);
+        let out = StepOutput {
+            hash: s.world.hash(),
+            events: vec![BattleEvent::SoldierDied {
+                id: il_core::SoldierId(0),
+                regiment,
+                killer: None,
+                pos: il_core::V2::from_f32_data(300.0, 150.0),
+            }],
+            rejected: Vec::new(),
+        };
+        s.route_events(Tick(1), &out);
+        assert_eq!(s.corpses().len(), 1);
+        assert_eq!(s.corpses()[0].died, Tick(1));
+        let empty = StepOutput {
+            hash: s.world.hash(),
+            events: Vec::new(),
+            rejected: Vec::new(),
+        };
+        s.route_events(Tick(corpse_ticks), &empty);
+        assert_eq!(s.corpses().len(), 1, "still within corpse_ticks");
+        s.route_events(Tick(corpse_ticks + 1), &empty);
+        assert!(s.corpses().is_empty(), "corpse outlived corpse_ticks");
     }
 
     #[test]

@@ -8,9 +8,10 @@
 mod common;
 
 use common::*;
-use il_core::{PlayerId, RegimentId, S, Scalar, StateHash, Tick};
-use il_sim_battle::combat::Kills;
-use il_sim_battle::components::{Body, Combat, Health, Regiment, Soldier};
+use std::sync::Arc;
+
+use il_core::{PlayerId, RegimentId, S, Scalar, SoldierId, StateHash, Tick};
+use il_sim_battle::components::{Body, Combat, Health, Regiment};
 use il_sim_battle::resources::Ids;
 use il_sim_battle::{
     BattleEvent, BattleSetup, BattleWorld, Command, CommandKind, RegimentSetup, SpeedMode,
@@ -50,6 +51,20 @@ fn attack_regiment(tick: u32, player: u8, regiment: u32, target: u32) -> Command
 }
 
 fn run(world: &mut BattleWorld, commands: &[Command], until: u32) -> Vec<StateHash> {
+    run_collecting(world, commands, until, &mut Vec::new())
+}
+
+/// A death as seen from the events: victim, killer, victim's regiment, the
+/// killer's regiment (when the killer was still alive after the tick).
+type Death = (SoldierId, Option<SoldierId>, RegimentId, Option<RegimentId>);
+
+/// [`run`] that also collects every death.
+fn run_collecting(
+    world: &mut BattleWorld,
+    commands: &[Command],
+    until: u32,
+    deaths: &mut Vec<Death>,
+) -> Vec<StateHash> {
     let mut hashes = Vec::new();
     while world.tick().0 < until {
         let next = world.tick().next();
@@ -65,6 +80,19 @@ fn run(world: &mut BattleWorld, commands: &[Command], until: u32) -> Vec<StateHa
             next.0,
             out.rejected
         );
+        for e in &out.events {
+            if let BattleEvent::SoldierDied {
+                id,
+                regiment,
+                killer,
+                ..
+            } = e
+            {
+                let killer_regiment =
+                    killer.and_then(|k| world.view().soldier(k).map(|s| s.regiment));
+                deaths.push((*id, *killer, *regiment, killer_regiment));
+            }
+        }
         hashes.push(out.hash);
     }
     hashes
@@ -107,26 +135,24 @@ fn a_hastati_clash_wounds_both_sides_deterministically() {
             .hp;
 
     let mut w = BattleWorld::new(&setup, regs.clone()).unwrap();
-    let mut hashes = run(&mut w, &commands, 1_000);
+    let mut deaths = Vec::new();
+    let mut hashes = run_collecting(&mut w, &commands, 1_000, &mut deaths);
     let snap = w.snapshot();
-    hashes.extend(run(&mut w, &commands, 3_000));
+    hashes.extend(run_collecting(&mut w, &commands, 3_000, &mut deaths));
     assert!(hp_sum(&w, 0) < full0, "side 0 took no damage");
     assert!(hp_sum(&w, 1) < full0, "side 1 took no damage");
-    assert!(
-        !w.ecs().resource::<Kills>().0.is_empty(),
-        "nobody's hp crossed zero in 3,000 ticks"
-    );
-    for (victim, killer) in &w.ecs().resource::<Kills>().0 {
-        let ids = w.ecs().resource::<Ids>();
-        let v = ids.soldier_entity(*victim).unwrap();
-        let k = ids.soldier_entity(killer.unwrap()).unwrap();
-        assert!(w.ecs().get::<Health>(v).unwrap().hp <= S::ZERO);
-        assert_ne!(
-            w.ecs().get::<Soldier>(v).unwrap().regiment,
-            w.ecs().get::<Soldier>(k).unwrap().regiment,
-            "killed by an ally"
+    assert!(!deaths.is_empty(), "nobody died in 3,000 ticks");
+    for (victim, killer, regiment, killer_regiment) in &deaths {
+        assert!(killer.is_some(), "{victim:?} died without a killer");
+        assert!(
+            w.ecs().resource::<Ids>().soldier_entity(*victim).is_none(),
+            "{victim:?} still alive"
         );
+        if let Some(kr) = killer_regiment {
+            assert_ne!(kr, regiment, "{victim:?} killed by an ally");
+        }
     }
+    assert_eq!(w.soldier_count(), 240 - deaths.len());
 
     // Eight threads, and a restore from tick 1,000, reproduce the hashes.
     let mut w8 = BattleWorld::new(&setup, regs.clone()).unwrap();
@@ -146,10 +172,15 @@ fn a_hastati_clash_wounds_both_sides_deterministically() {
 fn a_rear_attack_hurts_more_than_a_frontal_one() {
     // The attacker always comes from x = 300 heading +x at regiment 1 on
     // x = 340; only the defender's facing differs: toward the attacker
-    // (frontal) or away from it (rear), so terrain plays no part.
+    // (frontal) or away from it (rear), so terrain plays no part. Soldiers
+    // cannot turn (`soldier_turn_rate` 0), so the arc holds for the whole
+    // fight instead of the few ticks a defender needs to face its attacker.
     let mut front_total = S::ZERO;
     let mut rear_total = S::ZERO;
-    let regs = regs();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
+    let mut stiff = il_data::Registries::load_root(&root).unwrap_or_else(|d| panic!("{d}"));
+    stiff.rules.movement.soldier_turn_rate = S::ZERO;
+    let regs = Arc::new(stiff);
     for seed in 1..=5u64 {
         for rear in [false, true] {
             let mut setup = two_hastati(60, 300.0, 0.0, 340.0, if rear { 0.0 } else { 180.0 });

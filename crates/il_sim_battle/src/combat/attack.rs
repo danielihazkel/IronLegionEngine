@@ -41,7 +41,7 @@ pub struct AttackOutcome {
 pub struct Outcomes(pub Mutex<Vec<AttackOutcome>>);
 
 /// Soldiers whose hp crossed zero this tick, with their killer, in
-/// application order; drained by Stage 15 (T2-022). Transient.
+/// application order; drained by Stage 15 `resolve_deaths`. Transient.
 #[derive(Resource, Debug, Default)]
 pub struct Kills(pub Vec<(SoldierId, Option<SoldierId>)>);
 

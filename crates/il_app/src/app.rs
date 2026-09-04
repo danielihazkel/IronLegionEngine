@@ -614,6 +614,7 @@ impl App {
             camera,
             screen,
             selected: &self.selection.regiments,
+            corpses: session.corpses(),
         };
         build_snapshot(&session.world.view(), &input, &mut self.snapshot);
         self.lines.clear();

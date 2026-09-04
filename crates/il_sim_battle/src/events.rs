@@ -31,8 +31,8 @@ pub enum BattleEvent {
         regiment: RegimentId,
         target: RegimentId,
     },
-    /// Placeholder shape for Phase 2 (T2-022); keeps the variant list in
-    /// the TDD order.
+    /// A soldier died at Stage 15 (T2-022); `pos` feeds the render-only
+    /// corpse (SIM-CORE-008).
     SoldierDied {
         id: SoldierId,
         regiment: RegimentId,
