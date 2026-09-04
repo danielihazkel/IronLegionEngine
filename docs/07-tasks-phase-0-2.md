@@ -424,9 +424,10 @@ flowchart LR
   **Done when** flight-time golden tests pass and the volley scenario band (Simulation Spec §15.3 row 5) holds.
   Done 2026-09-04: Stage 11 `projectile_stage` in `combat/ranged.rs` (`projectile_land`, `apply_pending_damage`, landed projectiles dropped), `ProjectileLanded` event, kill credit through the shooter's regiment; `RenderSnapshot.projectiles` and the lifted line segments in il_app; `tests/ranged.rs` gained the landing tests (nearest victim, shields from the front only, friendly fire under arrows, one death for a melee-plus-javelin kill, a dead shooter's credit, restore with the damage queue, 1,800 archers at 1 vs 8 threads). Row 5 holds 50/50 after tuning `scatter_scale` from 0.15 to 0.17 (recorded in §15.1 and §15.3).
 
-- [ ] **T2-032 Statistical fallback above the cap** · M · Refs SIM-PROJ-008, REQ-CMBT-015, SAD T-3
+- [x] **T2-032 Statistical fallback above the cap** · M · Refs SIM-PROJ-008, REQ-CMBT-015, SAD T-3
   When the pool is exhausted, resolve volleys statistically with the same `hash_draw` slots and delayed damage.
   **Done when** the "statistical vs simulated" band (row 6) holds within 10 % over 50 seeds.
+  Done 2026-09-04: `statistical_shot` in `combat/ranged.rs` (draw index 2, footprint density from the slot bounding box, nearest soldier of the target regiment, damage queued at the would-be landing tick), `footprint_area` / `stat_hit_probability` in `formulas.rs`; the harness gained per-file `bands.mods` and the cross-file `mean_loss_matches` clause; `tests/mods/projectile_cap_zero` and `projectile_cap_100`; `tests/scenarios/bands/volley_statistical.json5`; tests for the cap-zero path (queue, restore, 1 vs 8 threads) and the split volley at a cap of 100. Row 6 holds after tuning `stat_hit_base` from 0.6 to 0.36 (mean 27.1 lost against 27.1 simulated, 0.0 %; recorded in §15.1, §15.3 and SAD T-3).
 
 - [ ] **T2-040 Fatigue** · S · Refs SIM-FAT-001..005, TDD §8.3 `fatigue_mults`
   Stage 13 accumulation by activity and terrain, recovery, armour rate, continuous multipliers wired into speed, attack, defence, and interval; regiment mean every 10 ticks.
@@ -501,7 +502,7 @@ flowchart LR
 - [x] **T2-110 Scenario outcome harness** · M · Refs REQ-TEST-004, Simulation Spec §15.3, TDD §17
   `il_cli bands` (`crates/il_cli/src/bands.rs`) runs each scenario in `tests/scenarios/bands/` for 50 seeds headless, evaluates the band assertions written in the scenario file's `bands` block (winner fraction, casualty ranges, contact- and rout-timed clauses), and prints a table; `tests/tests/scenarios.rs` drives it (`#[ignore]`, nightly workflow).
   **Done when** the harness runs the §15.3 rows 1 to 4 (encoded here with their melee clauses active and their rout clauses inactive until T2-041); each later row is encoded by the task that makes it possible (T2-031, T2-032, T2-043) and a failing band is turned into a tuning entry with the default adjusted and recorded in Simulation Spec §15.
-  Done 2026-09-04: harness, four band files, nightly workflow; the bands themselves fail until T2-021 lands melee resolution (AttackRegiment is rejected until T2-020), which is expected at this commit.
+  Done 2026-09-04: harness, four band files, nightly workflow; the bands themselves fail until T2-021 lands melee resolution (AttackRegiment is rejected until T2-020), which is expected at this commit. Rows 5 and 6 were encoded by T2-031 and T2-032 (per-file `bands.mods` and the cross-file `mean_loss_matches` clause).
 
 - [ ] **T2-111 10k performance pass** · L · Refs REQ-PERF-002, TDD budget table
   Profile the full 10k battle scenario (`tests/scenarios/perf_10k.json5`); bring every stage within its budget so the tick is under 25 ms; typical fixes: parallelise targeting, reduce grid query allocations, batch morale queries on the anchor grid, cap projectile landing work per tick.

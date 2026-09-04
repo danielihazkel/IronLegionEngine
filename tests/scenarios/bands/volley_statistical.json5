@@ -1,0 +1,38 @@
+// Simulation Spec §15.3 row 6: the volley of row 5 resolved on the
+// statistical path (SIM-PROJ-008) instead of with simulated projectiles.
+// `mods` loads a rules override with `projectile_cap: 0` for this file
+// only; the same seeds as row 5 are run and the mean hastati casualties
+// must agree with `volley_velites_vs_hastati` within 10 % (T2-032).
+//
+// RegimentIds: velites 0, hastati 1.
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:velites", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "rome:velites", count: 120, formation: "rome:loose", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [335, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [],
+  bands: {
+    seeds: 50,
+    seed_base: 5000,
+    tick_limit: 1200,
+    mods: ["../../mods/projectile_cap_zero"],
+    assertions: [
+      { name: "hastati lose 15-35 (statistical)", kind: "casualties", side: 1, min_lost: 0.125, max_lost: 0.292, min_fraction: 0.90 },
+      { name: "matches the simulated path", kind: "mean_loss_matches", side: 1, reference: "volley_velites_vs_hastati", tolerance: 0.10 },
+    ],
+  },
+}

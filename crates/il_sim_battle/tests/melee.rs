@@ -123,6 +123,24 @@ fn two_hastati(count: u16, x0: f32, f0: f32, x1: f32, f1: f32) -> BattleSetup {
     setup
 }
 
+/// Hastati throw pila on the approach since T2-030 and pila land on anyone
+/// (T2-031): a melee test that forbids allied kills holds fire.
+fn hold_fire(w: &mut BattleWorld) {
+    let entities: Vec<_> = w
+        .ecs()
+        .resource::<Ids>()
+        .regiment_entities
+        .iter()
+        .map(|(_, e)| *e)
+        .collect();
+    for e in entities {
+        if let Some(mut fire) = w.ecs_mut().get_mut::<il_sim_battle::components::Fire>(e) {
+            fire.mode = il_sim_battle::FireMode::Hold;
+        }
+    }
+    w.recompute_hash();
+}
+
 #[test]
 fn a_hastati_clash_wounds_both_sides_deterministically() {
     let setup = two_hastati(120, 300.0, 0.0, 340.0, 180.0);
@@ -135,6 +153,7 @@ fn a_hastati_clash_wounds_both_sides_deterministically() {
             .hp;
 
     let mut w = BattleWorld::new(&setup, regs.clone()).unwrap();
+    hold_fire(&mut w);
     let mut deaths = Vec::new();
     let mut hashes = run_collecting(&mut w, &commands, 1_000, &mut deaths);
     let snap = w.snapshot();
@@ -156,6 +175,7 @@ fn a_hastati_clash_wounds_both_sides_deterministically() {
 
     // Eight threads, and a restore from tick 1,000, reproduce the hashes.
     let mut w8 = BattleWorld::new(&setup, regs.clone()).unwrap();
+    hold_fire(&mut w8);
     w8.set_threads(8);
     let hashes8 = run(&mut w8, &commands, 3_000);
     if let Some(i) = hashes.iter().zip(&hashes8).position(|(a, b)| a != b) {

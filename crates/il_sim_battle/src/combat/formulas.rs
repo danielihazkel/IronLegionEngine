@@ -227,6 +227,40 @@ pub fn scatter(d: S, accuracy: S, scatter_scale: S, draw: S) -> V2 {
     V2::new(angle.cos(), angle.sin()) * length
 }
 
+/// SIM-PROJ-008 (plan decision 11): the area of a regiment's footprint,
+/// the bounding box of its formation slots grown by the soldier radius on
+/// every side; `0` for a regiment without slots (the caller falls back to
+/// the extent circle).
+pub fn footprint_area(slots: &[crate::formation::Slot], radius: S) -> S {
+    let mut first = true;
+    let (mut x0, mut x1, mut y0, mut y1) = (S::ZERO, S::ZERO, S::ZERO, S::ZERO);
+    for s in slots {
+        if first {
+            (x0, x1, y0, y1) = (s.offset.x, s.offset.x, s.offset.y, s.offset.y);
+            first = false;
+        } else {
+            x0 = x0.min(s.offset.x);
+            x1 = x1.max(s.offset.x);
+            y0 = y0.min(s.offset.y);
+            y1 = y1.max(s.offset.y);
+        }
+    }
+    if first {
+        return S::ZERO;
+    }
+    let two_r = radius * S::from_i32(2);
+    (x1 - x0 + two_r) * (y1 - y0 + two_r)
+}
+
+/// SIM-PROJ-008: `stat_hit_base × clamp(soldiers / area, 0, 1)`.
+pub fn stat_hit_probability(soldiers: u32, area: S, r: &CombatRules) -> S {
+    if area <= S::ZERO {
+        return S::ZERO;
+    }
+    let density = (S::from_i32(soldiers as i32) / area).clamp(S::ZERO, S::ONE);
+    r.stat_hit_base * density
+}
+
 /// SIM-PROJ-006: `max(damage − armour × (1 − pen), min_damage)` times the
 /// arc's damage multiplier (SIM-CMBT-014), halved by `shield_mult` when a
 /// shielded soldier is hit from the front.
@@ -339,6 +373,40 @@ mod tests {
             scatter(S::from_i32(35), S::ONE, S::from_f32_data(0.15), S::HALF),
             V2::ZERO
         );
+    }
+
+    #[test]
+    fn footprint_and_statistical_hit_probability() {
+        use crate::formation::Slot;
+        let slot = |x: f32, y: f32| Slot {
+            offset: V2::from_f32_data(x, y),
+            facing_offset: Angle::ZERO,
+            rank: 0,
+            file: 0,
+            category: None,
+        };
+        let r = S::from_f32_data(0.4);
+        // A 3 x 2 grid at 1 m spacing: 2 m by 1 m, plus 0.8 m of radius on
+        // both axes: 2.8 x 1.8.
+        let slots = [
+            slot(0.0, 0.0),
+            slot(1.0, 0.0),
+            slot(2.0, 0.0),
+            slot(0.0, 1.0),
+            slot(1.0, 1.0),
+            slot(2.0, 1.0),
+        ];
+        let area = footprint_area(&slots, r);
+        assert!((area - S::from_f32_data(5.04)).abs() < S::from_f32_data(1e-4));
+        assert_eq!(footprint_area(&[], r), S::ZERO);
+        let mut c = il_data::Rules::zeroed().combat;
+        c.stat_hit_base = S::from_f32_data(0.6);
+        // Six soldiers on 5.04 m²: density clamps to 1.
+        assert_eq!(stat_hit_probability(6, area, &c), S::from_f32_data(0.6));
+        // Half density.
+        let p = stat_hit_probability(3, S::from_i32(6), &c);
+        assert!((p - S::from_f32_data(0.3)).abs() < S::from_f32_data(1e-6));
+        assert_eq!(stat_hit_probability(3, S::ZERO, &c), S::ZERO);
     }
 
     #[test]

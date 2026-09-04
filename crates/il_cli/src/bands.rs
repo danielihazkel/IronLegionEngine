@@ -71,6 +71,11 @@ pub struct Bands {
     /// Every seed stops here at the latest; it also stops as soon as any
     /// side has no living soldiers.
     pub tick_limit: u32,
+    /// Extra mod folders (relative to the band file) loaded after the game
+    /// and the `--mod` folders for this file only (T2-032: a rules
+    /// override such as `projectile_cap: 0`).
+    #[serde(default)]
+    pub mods: Vec<PathBuf>,
     pub assertions: Vec<Assertion>,
 }
 
@@ -130,6 +135,15 @@ pub enum AssertionKind {
         #[serde(default)]
         contact_regiment: Option<u32>,
         within_ticks: u32,
+    },
+    /// Cross-file (T2-032): the mean soldiers `side` lost over this file's
+    /// seeds is within `tolerance` (a fraction) of the mean in the band
+    /// file `reference` (its stem) of the same run. Evaluated once every
+    /// file has run; `min_fraction`/`max_fraction` are ignored.
+    MeanLossMatches {
+        side: u8,
+        reference: String,
+        tolerance: f32,
     },
 }
 
@@ -206,6 +220,8 @@ impl SeedOutcome {
     /// The per-seed boolean of `kind`.
     pub fn holds(&self, kind: &AssertionKind) -> anyhow::Result<bool> {
         Ok(match kind {
+            // Cross-file: settled by `run_bands`, never per seed.
+            AssertionKind::MeanLossMatches { .. } => true,
             AssertionKind::Winner { side } => {
                 let mine = self.fraction(*side, None);
                 mine > 0.0
@@ -287,8 +303,14 @@ pub struct AssertionResult {
     pub seeds: u32,
     pub min_fraction: f32,
     pub max_fraction: f32,
-    /// `pass`, `FAIL` or `skip`.
+    /// `pass`, `FAIL`, `skip` or (cross-file, before settling) `pending`.
     pub status: String,
+    /// Cross-file clauses print this instead of `held/seeds` (the measured
+    /// difference) and `detail_need` instead of the seed fraction.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail_need: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -313,6 +335,14 @@ pub struct BandReport {
 
 /// Parses a band file into its scenario and `bands` block.
 pub fn load_band_file(path: &Path) -> anyhow::Result<(Scenario, Bands)> {
+    let (scenario, mut bands) = parse_band_file(path)?;
+    // `mods` are written relative to the band file.
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    bands.mods = bands.mods.iter().map(|m| dir.join(m)).collect();
+    Ok((scenario, bands))
+}
+
+fn parse_band_file(path: &Path) -> anyhow::Result<(Scenario, Bands)> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("reading band file {}", path.display()))?;
     let value = parse_json5(&text, FileId(0))
@@ -465,13 +495,55 @@ pub fn run_file(
         .collect()
 }
 
-/// Evaluates the assertions of one file over its outcomes.
+/// Mean soldiers `side` lost per seed.
+pub fn mean_lost(outcomes: &[SeedOutcome], side: u8) -> f64 {
+    if outcomes.is_empty() {
+        return 0.0;
+    }
+    let s = usize::from(side);
+    outcomes
+        .iter()
+        .map(|o| {
+            f64::from(o.initial.get(s).copied().unwrap_or(0))
+                - f64::from(o.survivors.get(s).copied().unwrap_or(0))
+        })
+        .sum::<f64>()
+        / outcomes.len() as f64
+}
+
+/// The `mean_loss_matches` verdict: `|a − b| ≤ tolerance × b` (a reference
+/// mean of zero only matches a zero).
+pub fn mean_loss_within(file_mean: f64, reference_mean: f64, tolerance: f32) -> bool {
+    let tol = f64::from(tolerance);
+    if reference_mean == 0.0 {
+        file_mean == 0.0
+    } else {
+        (file_mean - reference_mean).abs() <= tol * reference_mean.abs()
+    }
+}
+
+/// Evaluates the per-seed assertions of one file over its outcomes; the
+/// cross-file `mean_loss_matches` clauses come back as `pending` and are
+/// settled by [`run_bands`] once every file has run.
 pub fn evaluate(bands: &Bands, outcomes: &[SeedOutcome]) -> anyhow::Result<Vec<AssertionResult>> {
     let seeds = outcomes.len() as u32;
     bands
         .assertions
         .iter()
         .map(|a| {
+            if matches!(a.kind, AssertionKind::MeanLossMatches { .. }) {
+                return Ok(AssertionResult {
+                    name: a.name.clone(),
+                    active: a.active,
+                    held: 0,
+                    seeds,
+                    min_fraction: a.min_fraction,
+                    max_fraction: a.max_fraction,
+                    status: if a.active { "pending" } else { "skip" }.to_string(),
+                    detail: String::new(),
+                    detail_need: String::new(),
+                });
+            }
             let mut held = 0u32;
             for o in outcomes {
                 if o.holds(&a.kind).with_context(|| a.name.clone())? {
@@ -500,12 +572,35 @@ pub fn evaluate(bands: &Bands, outcomes: &[SeedOutcome]) -> anyhow::Result<Vec<A
                 min_fraction: a.min_fraction,
                 max_fraction: a.max_fraction,
                 status: status.to_string(),
+                detail: String::new(),
+                detail_need: String::new(),
             })
         })
         .collect()
 }
 
+fn write_row(out: &mut dyn Write, file: &str, a: &AssertionResult) -> anyhow::Result<()> {
+    let held = if a.detail.is_empty() {
+        format!("{:>3}/{:<3}", a.held, a.seeds)
+    } else {
+        format!("{:>7}", a.detail)
+    };
+    writeln!(
+        out,
+        "{:<34} {:<40} {} {:<12} {}",
+        file,
+        a.name,
+        held,
+        need(a),
+        a.status
+    )?;
+    Ok(())
+}
+
 fn need(a: &AssertionResult) -> String {
+    if !a.detail.is_empty() {
+        return a.detail_need.clone();
+    }
     if a.max_fraction >= 1.0 {
         format!(">= {:.2}", a.min_fraction)
     } else {
@@ -516,40 +611,63 @@ fn need(a: &AssertionResult) -> String {
 /// Runs every band file under `opts.dir`, prints the table and returns the
 /// report. The caller decides the exit code from `report.failed`.
 pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<BandReport> {
-    let regs = crate::load_registries_with_mods(&opts.content_root, &opts.mods)?;
+    let base_regs = crate::load_registries_with_mods(&opts.content_root, &opts.mods)?;
     let mut report = BandReport::default();
     let header = format!(
         "{:<34} {:<40} {:>7} {:<12} {}",
         "scenario", "assertion", "held", "need", "result"
     );
     writeln!(out, "{header}")?;
+    // Cross-file clauses wait until every file has run: (file index,
+    // assertion index, side, reference stem, tolerance).
+    let mut deferred: Vec<(usize, usize, u8, String, f32)> = Vec::new();
+    let mut deferred_bands: Vec<Bands> = Vec::new();
     for path in band_files(&opts.dir)? {
         let file = path
             .file_name()
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default();
         let (scenario, bands) = load_band_file(&path)?;
+        let regs = if bands.mods.is_empty() {
+            base_regs.clone()
+        } else {
+            for m in &bands.mods {
+                if !m.join("mod.json5").is_file() {
+                    bail!(
+                        "{}: bands.mods entry {} has no mod.json5",
+                        path.display(),
+                        m.display()
+                    );
+                }
+            }
+            let mut mods = opts.mods.clone();
+            mods.extend(bands.mods.iter().cloned());
+            crate::load_registries_with_mods(&opts.content_root, &mods)
+                .with_context(|| format!("{}: bands.mods", path.display()))?
+        };
         let outcomes = run_file(&scenario, &bands, opts, &regs)?;
         let assertions = evaluate(&bands, &outcomes)?;
         let rejected: u32 = outcomes.iter().map(|o| o.rejected).sum();
         report.rejected += rejected;
-        for a in &assertions {
+        for (k, a) in assertions.iter().enumerate() {
+            if let AssertionKind::MeanLossMatches {
+                side,
+                reference,
+                tolerance,
+            } = &bands.assertions[k].kind
+                && a.status == "pending"
+            {
+                deferred.push((report.files.len(), k, *side, reference.clone(), *tolerance));
+                continue;
+            }
             match a.status.as_str() {
                 "pass" => report.passed += 1,
                 "FAIL" => report.failed += 1,
                 _ => report.skipped += 1,
             }
-            writeln!(
-                out,
-                "{:<34} {:<40} {:>3}/{:<3} {:<12} {}",
-                file,
-                a.name,
-                a.held,
-                a.seeds,
-                need(a),
-                a.status
-            )?;
+            write_row(out, &file, a)?;
         }
+        deferred_bands.push(bands.clone());
         let mean_end =
             outcomes.iter().map(|o| o.end_tick as f64).sum::<f64>() / outcomes.len().max(1) as f64;
         let survivors: Vec<String> = (0..outcomes.first().map_or(0, |o| o.initial.len()))
@@ -582,6 +700,55 @@ pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<Band
             outcomes,
             assertions,
         });
+    }
+    let _ = deferred_bands;
+    // Settle the cross-file clauses (T2-032).
+    for (fi, k, side, reference, tolerance) in deferred {
+        let stem = |name: &str| {
+            Path::new(name)
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        };
+        let reference_index = report
+            .files
+            .iter()
+            .position(|f| stem(&f.file) == reference)
+            .ok_or_else(|| {
+                anyhow!(
+                    "{}: mean_loss_matches names {reference}, which is not among the band files run",
+                    report.files[fi].file
+                )
+            })?;
+        let file_mean = mean_lost(&report.files[fi].outcomes, side);
+        let reference_mean = mean_lost(&report.files[reference_index].outcomes, side);
+        let ok = mean_loss_within(file_mean, reference_mean, tolerance);
+        let diff = if reference_mean == 0.0 {
+            0.0
+        } else {
+            (file_mean - reference_mean).abs() / reference_mean.abs() * 100.0
+        };
+        let file_name = report.files[fi].file.clone();
+        let a = &mut report.files[fi].assertions[k];
+        a.status = if ok { "pass" } else { "FAIL" }.to_string();
+        a.detail = format!("{diff:.1}%");
+        a.detail_need = format!(
+            "<= {:.0}% of {:.1}",
+            f64::from(tolerance) * 100.0,
+            reference_mean
+        );
+        if ok {
+            report.passed += 1;
+        } else {
+            report.failed += 1;
+        }
+        let a = a.clone();
+        write_row(out, &file_name, &a)?;
+        writeln!(
+            out,
+            "{:<34}   mean lost side {side}: {file_mean:.1} here, {reference_mean:.1} in {reference}",
+            ""
+        )?;
     }
     writeln!(
         out,
@@ -707,6 +874,7 @@ mod tests {
             seeds: 2,
             seed_base: 0,
             tick_limit: 100,
+            mods: Vec::new(),
             assertions: vec![
                 Assertion {
                     name: "win".into(),
@@ -737,16 +905,60 @@ mod tests {
     }
 
     #[test]
+    fn mean_loss_matches_compares_means_within_a_tolerance() {
+        let a = [
+            outcome(&[100, 100], &[60, 40]),
+            outcome(&[100, 100], &[60, 50]),
+        ];
+        let b = [outcome(&[100, 100], &[60, 45])];
+        assert_eq!(mean_lost(&a, 1), 55.0);
+        assert_eq!(mean_lost(&b, 1), 55.0);
+        assert!(mean_loss_within(55.0, 55.0, 0.0));
+        assert!(mean_loss_within(60.0, 55.0, 0.10));
+        assert!(!mean_loss_within(61.0, 55.0, 0.10));
+        assert!(mean_loss_within(0.0, 0.0, 0.10));
+        assert!(!mean_loss_within(1.0, 0.0, 0.10));
+        let bands = Bands {
+            seeds: 1,
+            seed_base: 0,
+            tick_limit: 100,
+            mods: Vec::new(),
+            assertions: vec![Assertion {
+                name: "same".into(),
+                kind: AssertionKind::MeanLossMatches {
+                    side: 1,
+                    reference: "other".into(),
+                    tolerance: 0.1,
+                },
+                min_fraction: 1.0,
+                max_fraction: 1.0,
+                active: true,
+            }],
+        };
+        let r = evaluate(&bands, &a).unwrap();
+        assert_eq!(r[0].status, "pending");
+    }
+
+    #[test]
     fn band_block_parses_from_json5() {
         let text = r#"{ map_id: "rome:test_field", seed: 0, sides: [], commands: [],
-          bands: { seeds: 3, seed_base: 10, tick_limit: 50, assertions: [
+          bands: { seeds: 3, seed_base: 10, tick_limit: 50, mods: ["../../mods/projectile_cap_zero"], assertions: [
             { name: "a", kind: "winner", side: 0, min_fraction: 0.9 },
             { name: "b", kind: "rout_within", side: 1, after: "contact", within_ticks: 600, active: false },
+            { name: "c", kind: "mean_loss_matches", side: 1, reference: "volley_velites_vs_hastati", tolerance: 0.10 },
           ] } }"#;
         let json = parse_json5(text, FileId(0)).unwrap().to_json();
         let bands: Bands = serde_json::from_value(json["bands"].clone()).unwrap();
-        assert_eq!(bands.assertions.len(), 2);
+        assert_eq!(bands.assertions.len(), 3);
         assert!(!bands.assertions[1].active);
+        assert_eq!(
+            bands.mods,
+            vec![PathBuf::from("../../mods/projectile_cap_zero")]
+        );
+        assert!(matches!(
+            &bands.assertions[2].kind,
+            AssertionKind::MeanLossMatches { side: 1, reference, .. } if reference == "volley_velites_vs_hastati"
+        ));
         assert!(matches!(
             bands.assertions[0].kind,
             AssertionKind::Winner { side: 0 }

@@ -71,3 +71,16 @@ fn volley_off_lets_soldiers_throw_on_their_own_clocks() {
         .count();
     assert!(dry >= 100, "{dry} soldiers threw all eight");
 }
+
+#[test]
+fn projectile_cap_zero_mod_overrides_only_the_cap() {
+    let game = il_tests::game_root();
+    let mod_dir = il_tests::workspace_root().join("tests/mods/projectile_cap_zero");
+    let regs = Registries::load_roots(&[game, mod_dir]).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(regs.rules.combat.projectile_cap, 0);
+    assert!(
+        regs.rules.combat.volley,
+        "untouched fields survive the merge"
+    );
+    assert_eq!(regs.mods.len(), 2);
+}

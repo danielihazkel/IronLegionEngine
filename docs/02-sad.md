@@ -374,7 +374,7 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 |---|---|---|---|---|
 | T-1 | `bevy_ecs` API churn between minor versions | Risk | il_sim_battle | Pin version per phase; upgrade only at phase boundaries. |
 | T-2 | Double-buffered interpolation components double position memory | Debt | il_render | Acceptable at 32k entities (a few MB); revisit if memory budget (REQ-PERF-007) is threatened. |
-| T-3 | Statistical projectile fallback must match simulated expected value | Risk | Simulation Spec §6 | Scenario tests compare casualty distributions between the two paths. |
+| T-3 | Statistical projectile fallback must match simulated expected value | Risk | Simulation Spec §6 | Scenario tests compare casualty distributions between the two paths: §15.3 row 6 holds the means within 10 % (0.0 % measured in T2-032 with `stat_hit_base` 0.36); the per-seed spread is not compared. |
 | T-4 | Hash cost per tick at 32k entities | Risk | il_core | Hash only components in the documented set; measure; allow hashing every N ticks in release with full hash in tests. |
 | T-5 | Sim on main thread until Phase 3 | Debt | il_app | `RenderSnapshot` (owned data, built after stepping) exists since T1-052, so moving to a render thread is plumbing only. |
 | T-6 | Game-specific Rust in `game/rules` | Debt | game | Each addition logged as an open question in the PRD for generalisation. |

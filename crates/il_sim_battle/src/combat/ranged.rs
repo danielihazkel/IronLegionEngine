@@ -24,13 +24,13 @@ use il_data::ProjectileArc;
 
 use crate::combat::attack::{Kill, Kills};
 use crate::combat::formulas::{
-    apex_height, attack_arc, cooldown_ticks, fatigue_mults, flight_ticks, range_mult,
-    ranged_damage, scatter,
+    apex_height, attack_arc, cooldown_ticks, fatigue_mults, flight_ticks, footprint_area,
+    range_mult, ranged_damage, scatter, stat_hit_probability,
 };
 use crate::command::FireMode;
 use crate::components::{
-    Anchor, Body, Facing, FatigueC, Fire, Fsm, Health, Morale, MoraleState, Pos, RangedState,
-    Regiment, Soldier, SoldierState, Vel,
+    Anchor, Body, Facing, FatigueC, Fire, FormationState, Fsm, Health, Morale, MoraleState, Pos,
+    RangedState, Regiment, Soldier, SoldierState, Vel,
 };
 use crate::events::BattleEvent;
 use crate::resources::{
@@ -537,12 +537,77 @@ struct VolleyStats {
     fatigue_interval: S,
 }
 
-/// Stage 10 `ranged_spawn` (SIM-PROJ-003, SIM-PROJ-008 cap check): the
-/// shots land in the projectile list in ascending shooter id with ids
-/// allocated in that order, ammo is spent, `VolleyFired` and `FireBlocked`
-/// are emitted per regiment, volley cooldowns reset to `reload_ticks ×`
-/// the largest fatigue interval multiplier of the volley and every regiment
-/// cooldown then counts down once (so the period is exactly `reload_ticks`).
+/// SIM-PROJ-008: one shot resolved without a projectile. The hit roll is
+/// draw index 2 of the shooter's `combat_ranged` slots against
+/// `stat_hit_base × density` of the target regiment's footprint; a hit
+/// strikes the target regiment's soldier nearest the scattered aim point
+/// (ties lowest id; plan decision 10: no friendly fire on this path) with
+/// the damage of SIM-PROJ-006 read from the victim's facing toward the
+/// shooter, queued for the tick the projectile would have landed.
+fn statistical_shot(world: &World, shot: &Shot, tick: Tick, seed: u64) -> Option<Pending> {
+    let ids = world.resource::<Ids>();
+    let regs = &world.resource::<Regs>().0;
+    let c = &regs.rules.combat;
+    let te = ids.regiment_entity(shot.target_regiment)?;
+    let regiment = world.get::<Regiment>(te)?;
+    if regiment.soldiers.is_empty() {
+        return None;
+    }
+    let radius = regs.units.get(regiment.unit).soldier_radius;
+    let area = {
+        let from_slots = world
+            .get::<FormationState>(te)
+            .map_or(S::ZERO, |f| footprint_area(&f.slots, radius));
+        if from_slots > S::ZERO {
+            from_slots
+        } else {
+            // No layout: the extent circle stands in for the footprint.
+            let extent = ids
+                .regiment_index(shot.target_regiment)
+                .and_then(|i| world.resource::<MeleeGateRes>().extent.get(i).copied())
+                .unwrap_or(radius);
+            S::PI * extent.max(radius) * extent.max(radius)
+        }
+    };
+    let p_hit = stat_hit_probability(regiment.soldiers.len() as u32, area, c);
+    if hash_draw::<S>(seed, tick, shot.shooter.0, 2) >= p_hit {
+        return None;
+    }
+    let mut best: Option<(S, SoldierId, Entity)> = None;
+    for &sid in &regiment.soldiers {
+        if let Some(e) = ids.soldier_entity(sid)
+            && let Some(pos) = world.get::<Pos>(e)
+        {
+            let d = pos.p.distance_sq(shot.end);
+            if best.is_none_or(|(bd, _, _)| d < bd) {
+                best = Some((d, sid, e));
+            }
+        }
+    }
+    let (_, victim, ve) = best?;
+    let soldier = world.get::<Soldier>(ve)?;
+    let facing = world.get::<Facing>(ve)?;
+    let p_v = world.get::<Pos>(ve)?.p;
+    let unit = regs.units.get(soldier.unit);
+    let arc = attack_arc(facing.theta, shot.start - p_v, unit.frontal_arc_deg);
+    let damage = ranged_damage(shot.damage, unit.armour, shot.pen, arc, unit.shield, c);
+    Some(Pending {
+        apply_tick: shot.land_tick,
+        target: victim,
+        damage,
+        shooter: shot.shooter,
+        shooter_regiment: shot.regiment,
+    })
+}
+
+/// Stage 10 `ranged_spawn` (SIM-PROJ-003, SIM-PROJ-008): the shots land in
+/// the projectile list in ascending shooter id with ids allocated in that
+/// order while the list is under `projectile_cap`, and resolve
+/// statistically past it (per shot, so a volley may split at the cap);
+/// ammo is spent, `VolleyFired` and `FireBlocked` are emitted per regiment,
+/// volley cooldowns reset to `reload_ticks ×` the largest fatigue interval
+/// multiplier of the volley and every regiment cooldown then counts down
+/// once (so the period is exactly `reload_ticks`).
 pub fn ranged_spawn(world: &mut World) {
     let tick = world.resource::<Clock>().tick;
     let mut shots = {
@@ -555,7 +620,9 @@ pub fn ranged_spawn(world: &mut World) {
         let c = &world.resource::<Regs>().0.rules.combat;
         (c.projectile_cap as usize, c.volley)
     };
+    let seed = world.resource::<Rng>().draw_seed(StreamId::CombatRanged);
     let mut stats: BTreeMap<RegimentId, VolleyStats> = BTreeMap::new();
+    let mut delayed: Vec<Pending> = Vec::new();
     for shot in &shots {
         let entry = stats.entry(shot.regiment).or_default();
         if let Some(b) = shot.blocked {
@@ -563,26 +630,25 @@ pub fn ranged_spawn(world: &mut World) {
             continue;
         }
         let live = world.resource::<Projectiles>().0.len();
-        if live >= cap {
-            // Over the cap the volley resolves statistically (T2-032);
-            // until then the throw is refused and the ammo kept.
-            continue;
+        if live < cap {
+            let id = world.resource_mut::<Ids>().projectiles.alloc();
+            world.resource_mut::<Projectiles>().0.push(Projectile {
+                id,
+                shooter: shot.shooter,
+                shooter_regiment: shot.regiment,
+                side: shot.side,
+                launch_tick: tick,
+                land_tick: shot.land_tick,
+                start: shot.start,
+                end: shot.end,
+                apex: shot.apex,
+                arc: shot.arc,
+                damage: shot.damage,
+                pen: shot.pen,
+            });
+        } else if let Some(p) = statistical_shot(world, shot, tick, seed) {
+            delayed.push(p);
         }
-        let id = world.resource_mut::<Ids>().projectiles.alloc();
-        world.resource_mut::<Projectiles>().0.push(Projectile {
-            id,
-            shooter: shot.shooter,
-            shooter_regiment: shot.regiment,
-            side: shot.side,
-            launch_tick: tick,
-            land_tick: shot.land_tick,
-            start: shot.start,
-            end: shot.end,
-            apex: shot.apex,
-            arc: shot.arc,
-            damage: shot.damage,
-            pen: shot.pen,
-        });
         if let Some(e) = world.resource::<Ids>().soldier_entity(shot.shooter)
             && let Some(mut r) = world.get_mut::<RangedState>(e)
         {
@@ -591,6 +657,7 @@ pub fn ranged_spawn(world: &mut World) {
         entry.count += 1;
         entry.fatigue_interval = entry.fatigue_interval.max(shot.fatigue_interval);
     }
+    world.resource_mut::<PendingDamage>().0.extend(delayed);
 
     for (rid, s) in &stats {
         let Some(entity) = world.resource::<Ids>().regiment_entity(*rid) else {

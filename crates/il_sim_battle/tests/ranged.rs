@@ -732,3 +732,87 @@ fn out_of_range_soldiers_keep_their_ammo() {
     let e = regiment_entity(&w, 0);
     assert_eq!(w.ecs().get::<Fire>(e).unwrap().target, Some(RegimentId(1)));
 }
+
+/// Registries with a rules-override mod from `tests/mods/`.
+fn regs_with_mod(name: &str) -> std::sync::Arc<il_data::Registries> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let roots = [root.join("game"), root.join("tests/mods").join(name)];
+    std::sync::Arc::new(il_data::Registries::load_roots(&roots).unwrap_or_else(|d| panic!("{d}")))
+}
+
+#[test]
+fn capped_at_zero_every_volley_resolves_statistically() {
+    let regs = regs_with_mod("projectile_cap_zero");
+    assert_eq!(regs.rules.combat.projectile_cap, 0);
+    let setup = volley_setup(335.0);
+    let mut w = BattleWorld::new(&setup, regs.clone()).unwrap();
+    let mut log = Log::default();
+    run(&mut w, &[], 170, &mut log);
+    // Three volleys, no projectile ever, the damage waiting for its tick.
+    assert_eq!(
+        log.volleys.iter().filter(|v| v.1 == 0).count(),
+        3,
+        "{:?}",
+        log.volleys
+    );
+    assert_eq!(log.max_live, 0);
+    assert_eq!(log.landed, (0, 0), "no landing events on this path");
+    let queue = w.ecs().resource::<PendingDamage>().0.clone();
+    assert!(!queue.is_empty(), "the third volley's hits are queued");
+    // Thrown at tick 161 with 35 to 42 ticks of flight (the wings shoot
+    // the farthest).
+    let ticks: Vec<u32> = queue.iter().map(|p| p.apply_tick.0).collect();
+    assert!(ticks.iter().all(|t| (196..=205).contains(t)), "{ticks:?}");
+    assert!(queue.iter().all(|p| p.shooter_regiment == RegimentId(0)));
+    assert!(ammo_of(&w, 0).iter().all(|a| *a == 5));
+
+    // Restore with the queue in flight, then both continue identically.
+    let snap = w.snapshot();
+    assert_eq!(snap.pending_damage.len(), queue.len());
+    let mut restored = BattleWorld::restore(&snap, regs.clone()).unwrap();
+    assert_eq!(restored.hash(), w.hash());
+    restored.set_threads(8);
+    let mut log_r = Log::default();
+    run(&mut w, &[], 1000, &mut log);
+    run(&mut restored, &[], 1000, &mut log_r);
+    assert_eq!(log.hashes[170..], log_r.hashes[..]);
+    let left = w.view().regiment(RegimentId(1)).unwrap().soldier_count;
+    assert!(left < 120, "hastati fall to statistical hits: {left}");
+    assert!(!log.deaths.is_empty() && log.deaths.iter().all(|d| d.1.is_some()));
+    assert!(w.ecs().resource::<PendingDamage>().0.is_empty());
+
+    // The same seeds at 1 and 8 threads agree from the start.
+    let mut w8 = BattleWorld::new(&setup, regs).unwrap();
+    w8.set_threads(8);
+    let mut log8 = Log::default();
+    run(&mut w8, &[], 300, &mut log8);
+    assert_eq!(log.hashes[..300], log8.hashes[..]);
+}
+
+#[test]
+fn a_volley_splits_at_the_cap_in_shooter_order() {
+    let regs = regs_with_mod("projectile_cap_100");
+    let mut w = BattleWorld::new(&volley_setup(335.0), regs).unwrap();
+    let mut log = Log::default();
+    run(&mut w, &[], 1, &mut log);
+    assert_eq!(log.volleys, vec![(1, 0, 120)]);
+    let projectiles: Vec<_> = w.view().projectiles().collect();
+    assert_eq!(projectiles.len(), 100);
+    // The first hundred shooters by id got projectiles; the rest went
+    // statistical (ammo spent either way).
+    let velites = w
+        .ecs()
+        .get::<Regiment>(regiment_entity(&w, 0))
+        .unwrap()
+        .soldiers
+        .clone();
+    let shooters: Vec<SoldierId> = w
+        .ecs()
+        .resource::<Projectiles>()
+        .0
+        .iter()
+        .map(|p| p.shooter)
+        .collect();
+    assert_eq!(shooters, velites[..100].to_vec());
+    assert!(ammo_of(&w, 0).iter().all(|a| *a == 7));
+}

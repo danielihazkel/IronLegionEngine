@@ -144,6 +144,16 @@ fn kill_credit_reconciles_with_the_enemy_losses() {
     let mut setup = two_sides(120);
     setup.sides[1].regiments[0].position = Some([340.0, 150.0]);
     let mut w = BattleWorld::new(&setup, regs()).unwrap();
+    // Hastati throw pila on the approach since T2-030, and pila land on
+    // anyone (friendly fire, T2-031): a melee reconciliation holds fire.
+    for rid in [0, 1] {
+        let e = regiment_entity(&w, rid);
+        w.ecs_mut()
+            .get_mut::<il_sim_battle::components::Fire>(e)
+            .unwrap()
+            .mode = il_sim_battle::FireMode::Hold;
+    }
+    w.recompute_hash();
     let attack = Command {
         tick: Tick(1),
         player: PlayerId(0),

@@ -1,0 +1,9 @@
+// T2-032 test mod: a cap of 100 splits a 120-strong volley between the
+// simulated and the statistical path (SIM-PROJ-008).
+{
+  id: "projectile_cap_100",
+  name_key: "projectile_cap_100.mod.name",
+  version: "0.1.0",
+  engine_version: "*",
+  dependencies: [{ id: "rome", version: ">=0.1.0" }],
+}

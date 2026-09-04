@@ -48,7 +48,7 @@
   direct_apex: 2,              // m
   gravity: 9.81,               // m/s^2
   shield_mult: 0.5,
-  stat_hit_base: 0.6,
+  stat_hit_base: 0.36,       // tuned on the §15.3 row 6 band (T2-032)
   friendly_block_dist: 15,     // m
   volley: true,
   ranged_retarget_ticks: 10,
