@@ -11,6 +11,7 @@ use bevy_ecs::prelude::*;
 use il_core::{S, Scalar, SoldierId, Tick};
 use il_data::Layout;
 
+use crate::combat::formulas::{Arc, attack_arc};
 use crate::command::SpeedMode;
 use crate::components::{
     Anchor, Attackers, Body, Combat, Fsm, MeleeState, Order, Pos, Rank, Regiment, Soldier,
@@ -18,7 +19,9 @@ use crate::components::{
 };
 use crate::events::BattleEvent;
 use crate::formation::slot_world;
-use crate::resources::{Clock, Events, Ids, MeleeGateRes, Regs, SpatialGridRes};
+use crate::resources::{
+    Clock, Events, Ids, MeleeGateRes, MoraleShocks, Regs, Shock, ShockKind, SpatialGridRes,
+};
 
 type OtherSoldiers<'w, 's> = Query<'w, 's, (&'static Soldier, &'static Body)>;
 type RegimentRead<'w, 's> =
@@ -356,6 +359,29 @@ fn recount(world: &mut World, emit: bool) {
                     target,
                 },
             );
+            // SIM-MOR-026 (T2-041): the charged regiment takes a shock, half
+            // of it through its frontal arc (charger anchor seen from the
+            // target anchor's facing).
+            let charger = world.get::<Anchor>(entity).map(|a| a.pos);
+            if let Some(charger) = charger
+                && let Some(te) = world.resource::<Ids>().regiment_entity(target)
+                && let (Some(anchor), Some(unit)) = (
+                    world.get::<Anchor>(te).copied(),
+                    world.get::<Regiment>(te).map(|r| r.unit),
+                )
+            {
+                let arc_deg = world.resource::<Regs>().0.units.get(unit).frontal_arc_deg;
+                let arc = attack_arc(anchor.facing, charger - anchor.pos, arc_deg);
+                let kind = if arc == Arc::Front {
+                    ShockKind::ChargedFront
+                } else {
+                    ShockKind::ChargedFlank
+                };
+                world.resource_mut::<MoraleShocks>().0.push(Shock {
+                    regiment: target,
+                    kind,
+                });
+            }
         }
     }
 }

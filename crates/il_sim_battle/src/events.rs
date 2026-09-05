@@ -5,6 +5,7 @@ use il_core::{Event, PlayerId, RegimentId, SoldierId, V2};
 use serde::{Deserialize, Serialize};
 
 use crate::command::RejectReason;
+use crate::components::MoraleState;
 use crate::resources::BattlePhase;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -56,6 +57,13 @@ pub enum BattleEvent {
     FireBlocked {
         regiment: RegimentId,
         blocker: RegimentId,
+    },
+    /// The regiment's morale state changed at Stage 14 (SIM-MOR-003,
+    /// T2-041); `to == Routing` is the rout (SIM-MOR-030).
+    MoraleChanged {
+        regiment: RegimentId,
+        from: MoraleState,
+        to: MoraleState,
     },
 }
 

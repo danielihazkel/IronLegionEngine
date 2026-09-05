@@ -9,12 +9,13 @@ use il_data::{ContentId, Handle, Registries, UnitType};
 
 use crate::components::{
     Anchor, Attackers, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health,
-    MeleeState, Morale, Order, Path, Pos, PrevFacing, PrevPos, RangedState, Rank, Regiment,
-    RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
+    MeleeState, Morale, MoraleState, Order, Path, Pos, PrevFacing, PrevPos, RangedState, Rank,
+    Regiment, RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::formation::{effective_ranks, layout_slots, slot_world};
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
 use crate::map::MapError;
+use crate::morale::morale_state;
 use crate::resources::{BattlePhase, Ids, Regs, SideState, Sides};
 use crate::world::{BattleWorld, InstallMapError};
 
@@ -197,7 +198,18 @@ pub(crate) fn spawn_regiment(
                 soldiers: Vec::with_capacity(usize::from(setup.count)),
             },
             anchor,
-            Morale::new(morale_base, setup.count),
+            // SIM-MOR-001: `morale_base × (1 + exp_bonus × experience)`, and
+            // the state that morale falls into (SIM-MOR-003; hastati start
+            // Unsettled at 60), so the first tick raises no event.
+            {
+                let rules = &world.resource::<Regs>().0.rules.morale;
+                let m = (morale_base
+                    * (S::ONE + rules.exp_bonus * S::from_i32(i32::from(setup.experience.min(9)))))
+                .clamp(S::ZERO, S::from_i32(100));
+                let mut morale = Morale::new(m, setup.count);
+                morale.state = morale_state(m, MoraleState::Steady, rules);
+                morale
+            },
             // SIM-FAT-005: the mean starts at the roster fatigue.
             RegimentFatigue { mean: fatigue },
             Combat {

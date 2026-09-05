@@ -64,6 +64,7 @@ Developer keys (`dev` feature, on by default):
 | `F7` | regiment paths |
 | `F8` | regiment anchors |
 | `F9` | spatial grid cells |
+| `F10` | morale: a ring per regiment coloured by state (green steady, yellow unsettled, orange shaken, red-orange broken, red routing, grey shattered), one extra ring per fatigue state above fresh, and a morale bar (T2-041) |
 
 ## 4. The M4 check: drag ten regiments into a line
 

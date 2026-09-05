@@ -347,6 +347,7 @@ impl App {
                 (Action::DebugPaths, &mut flags.paths),
                 (Action::DebugAnchors, &mut flags.anchors),
                 (Action::DebugSpatial, &mut flags.spatial_cells),
+                (Action::DebugMorale, &mut flags.morale),
             ] {
                 if input.pressed(b, action) {
                     *flag = !*flag;
@@ -930,6 +931,7 @@ fn debug_suffix(flags: DebugFlags) -> String {
         (flags.paths, "paths"),
         (flags.anchors, "anchors"),
         (flags.spatial_cells, "cells"),
+        (flags.morale, "morale"),
     ];
     let on: Vec<&str> = names.iter().filter(|(f, _)| *f).map(|(_, n)| *n).collect();
     if on.is_empty() {

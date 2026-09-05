@@ -19,8 +19,8 @@ use crate::formation::{
     RegimentInfo, arrange_group, effective_ranks, set_facing, slot_world, spacing,
 };
 use crate::resources::{
-    BattlePhase, Clock, CommandInbox, Events, Ids, MapRes, PathRequests, Phase, Regs, Rejected,
-    Sides,
+    BattlePhase, Clock, CommandInbox, Events, Ids, MapRes, MoraleShocks, PathRequests, Phase, Regs,
+    Rejected, Shock, ShockKind, Sides,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -419,8 +419,12 @@ fn validate_and_apply(
         } => {
             for entity in entities {
                 // SIM-CMBT-003: an engaged regiment obeys the move but not
-                // the facing (the morale penalty arrives with T2-041).
+                // the facing; SIM-MOR-025 (T2-041): it pays the disengage
+                // shock at Stage 14 of this tick.
                 let engaged = world.get::<Combat>(entity).is_some_and(|c| c.engaged);
+                if engaged {
+                    queue_disengage(world, entity);
+                }
                 issue_move(
                     world,
                     entity,
@@ -457,6 +461,15 @@ fn validate_and_apply(
                 }
             }
             for entity in entities {
+                // SIM-MOR-025: switching targets while engaged is a
+                // disengagement too.
+                let switching = world.get::<Combat>(entity).is_some_and(|c| c.engaged)
+                    && world
+                        .get::<Order>(entity)
+                        .is_some_and(|o| o.target_regiment != Some(*target));
+                if switching {
+                    queue_disengage(world, entity);
+                }
                 let speed = world
                     .get::<Order>(entity)
                     .map_or(SpeedMode::Walk, |o| o.speed);
@@ -479,6 +492,9 @@ fn validate_and_apply(
         // (`combat::pursue_update`).
         CommandKind::AttackMove { target, .. } => {
             for entity in entities {
+                if world.get::<Combat>(entity).is_some_and(|c| c.engaged) {
+                    queue_disengage(world, entity);
+                }
                 let speed = world
                     .get::<Order>(entity)
                     .map_or(SpeedMode::Walk, |o| o.speed);
@@ -706,6 +722,17 @@ pub(crate) fn halt(world: &mut World, entity: Entity) {
     }
     if let Some(id) = id {
         world.resource_mut::<PathRequests>().0.remove(&id);
+    }
+}
+
+/// SIM-MOR-025 (T2-041): an engaged regiment ordered away queues the
+/// disengage shock for Stage 14 of this tick.
+fn queue_disengage(world: &mut World, entity: Entity) {
+    if let Some(regiment) = world.get::<Regiment>(entity).map(|r| r.id) {
+        world.resource_mut::<MoraleShocks>().0.push(Shock {
+            regiment,
+            kind: ShockKind::Disengage,
+        });
     }
 }
 

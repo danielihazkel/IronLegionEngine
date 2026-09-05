@@ -18,7 +18,7 @@ use crate::combat::{
 use crate::command::apply_commands;
 use crate::formation::{formation_apply, formation_integrity, formation_layout};
 use crate::hash::flush_events_and_hash;
-use crate::morale::{fatigue_tick, regiment_fatigue_mean};
+use crate::morale::{fatigue_tick, morale_tick, regiment_fatigue_mean};
 use crate::movement::{collision_resolve, integrate, regiment_follow_path, soldier_steer};
 use crate::nav::serve_path_requests;
 use crate::spatial::rebuild_spatial_grids;
@@ -140,7 +140,6 @@ impl StageObserver for NoopObserver {
 fn stage_ai() {}
 fn stage_visibility() {}
 fn stage_abilities() {}
-fn stage_morale() {}
 fn stage_battle_flow() {}
 
 fn stage_schedule(stage: Stage) -> Schedule {
@@ -179,7 +178,7 @@ fn stage_schedule(stage: Stage) -> Schedule {
         Stage::Fatigue => {
             s.add_systems((fatigue_tick, regiment_fatigue_mean).chain().in_set(stage))
         }
-        Stage::Morale => s.add_systems(stage_morale.in_set(stage)),
+        Stage::Morale => s.add_systems(morale_tick.in_set(stage)),
         Stage::Death => s.add_systems(resolve_deaths.in_set(stage)),
         Stage::BattleFlow => s.add_systems(stage_battle_flow.in_set(stage)),
         Stage::EventsAndHash => s.add_systems(flush_events_and_hash.in_set(stage)),

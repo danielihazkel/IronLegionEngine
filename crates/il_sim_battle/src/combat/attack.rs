@@ -313,14 +313,23 @@ pub fn apply_outcomes(world: &mut World) {
         return;
     }
     outcomes.sort_by_key(|o| o.attacker);
+    let tick = world.resource::<Clock>().tick;
     let mut kills = Vec::new();
     for o in &outcomes {
-        if !o.hit {
-            continue;
-        }
         let Some(e) = world.resource::<Ids>().soldier_entity(o.target) else {
             continue;
         };
+        // SIM-MOR-019 (T2-041): the target's regiment remembers the arc of
+        // every attack, hit or miss, for the `flanked` factor.
+        if let Some(rid) = world.get::<Soldier>(e).map(|s| s.regiment)
+            && let Some(re) = world.resource::<Ids>().regiment_entity(rid)
+            && let Some(mut morale) = world.get_mut::<Morale>(re)
+        {
+            morale.arc_hit[o.arc as usize] = tick;
+        }
+        if !o.hit {
+            continue;
+        }
         let Some(mut health) = world.get_mut::<Health>(e) else {
             continue;
         };

@@ -73,7 +73,9 @@ fn attack_regiment(tick: u32, player: u8, regiments: &[u32], target: u32) -> Com
 }
 
 /// Steps `world` to `until`, feeding `commands` by tick, returning the
-/// per-tick hashes; every command must be accepted.
+/// per-tick hashes; every command must be accepted. Morale is pinned at
+/// 100 after every tick (T2-041): these tests are about the front, and a
+/// broken regiment stops fighting.
 fn run(world: &mut BattleWorld, commands: &[Command], until: u32) -> Vec<StateHash> {
     let mut hashes = Vec::new();
     while world.tick().0 < until {
@@ -90,7 +92,22 @@ fn run(world: &mut BattleWorld, commands: &[Command], until: u32) -> Vec<StateHa
             next.0,
             out.rejected
         );
-        hashes.push(out.hash);
+        let entities: Vec<_> = world
+            .ecs()
+            .resource::<Ids>()
+            .regiment_entities
+            .iter()
+            .map(|(_, e)| *e)
+            .collect();
+        for e in entities {
+            if let Some(mut m) = world
+                .ecs_mut()
+                .get_mut::<il_sim_battle::components::Morale>(e)
+            {
+                m.m = S::from_i32(100);
+            }
+        }
+        hashes.push(world.recompute_hash());
     }
     hashes
 }

@@ -399,7 +399,7 @@ pub enum BattleEvent {
     FireBlocked { regiment: RegimentId, blocker: RegimentId } /* SIM-PROJ-009, T2-030 */,
     Charge { regiment: RegimentId, target: RegimentId }, Engaged { regiment: RegimentId },
     MoraleState { regiment: RegimentId, from: MoraleState, to: MoraleState },
-    Rallied { regiment: RegimentId }, Shattered { regiment: RegimentId }, GeneralDied { army: ArmyId },
+    Rallied { regiment: RegimentId }, Shattered { regiment: RegimentId }, GeneralDied { side: u8, soldier: SoldierId },  // T2-042/043; `MoraleState` is `MoraleChanged` as built (T2-041)
     AbilityUsed { regiment: RegimentId, ability: Handle<Ability> }, PhaseChanged { from: BattlePhase, to: BattlePhase },
     CommandRejected { command_seq: u16, player: PlayerId, reason: RejectReason }, ReinforcementsArrived { side: u8 },
     Ended { result: Box<BattleResult> },
@@ -617,8 +617,13 @@ pub struct StateMults { pub attack: S, pub defence: S, pub interval: S, pub spee
 pub struct StateMultsTable { pub steady: StateMults, pub unsettled: StateMults, pub shaken: StateMults, pub broken: StateMults, pub routing: StateMults }
 impl StateMultsTable { pub fn for_state(&self, discriminant: u8) -> &StateMults; }  // MoraleState as u8; Shattered (5) reads the routing row
 pub struct MoraleWeights { pub casualty_rate: S, pub casualty_total: S, pub fatigue: S, pub general_aura: S, pub allies_near: S, pub allies_routing: S, pub high_ground: S, pub fear: S, pub flanked: S, pub outnumbered: S, pub integrity: S, pub engaged_duration: S, pub winning: S, pub recovery: S }
-pub fn morale_factors(ctx: &RegimentContext) -> [S; 14];        // x_f per SIM-MOR-010..024, order = MoraleWeights field order
-pub fn morale_state(m: S, current: MoraleState, r: &MoraleRules) -> MoraleState;  // SIM-MOR-003 hysteresis
+// il_sim_battle::morale::factors (T2-041; `MoraleInputs`, not the AI's `RegimentContext`)
+pub struct MoraleInputs { count: u16, initial: u16, own_deaths_5s: u32, enemy_deaths_5s: u32, fatigue_mean: S, in_aura: bool, allies_steady: u32, allies_routing: u32,
+    height_delta: Option<S>, fear: bool, hit_flank: bool, hit_rear: bool, surrounded: bool, enemies_near: u32, own_near: u32, integrity: S, engaged_ticks: Option<u32>, enemy_within_safe: bool, state: MoraleState }
+pub fn morale_factors(i: &MoraleInputs, m: &MoraleRules, c: &CombatRules, f: &FormationRules) -> [S; FACTORS];  // activations per SIM-MOR-010..024, MoraleWeights order; sign in the weight
+pub fn morale_delta(x: &[S; FACTORS], w: &MoraleWeights, dt: S) -> S;              // SIM-MOR-002
+pub fn shock_amount(kind: ShockKind, state: MoraleState, r: &MoraleRules) -> S;     // SIM-MOR-014/025/026/033
+pub fn morale_state(m: S, current: MoraleState, r: &MoraleRules) -> MoraleState;  // SIM-MOR-003 hysteresis; Routing/Shattered returned unchanged
 
 pub struct FatigueRules { pub rate_idle: S, pub rate_walk: S, pub rate_march: S, pub rate_run: S, pub rate_fighting: S, pub rate_routing: S, pub armour_rate: S,
     pub thresholds: [S; 3], pub speed_loss: S, pub attack_loss: S, pub defence_loss: S, pub interval_gain: S }
@@ -644,7 +649,7 @@ pub struct StatusEffect { pub source: Handle<Ability>, pub remaining: u16, pub s
 pub fn status_mults(statuses: &[StatusEffect], regs: &Registries) -> StatMults;  // SIM-ABIL-005
 ```
 
-Systems: `ability_tick` (Stage 12: cooldowns, energy regen, status expiry, per-tick effects, in regiment id order), `fatigue_tick` (Stage 13, par_iter over soldiers; reads the regiment's `Order`, `Path` and `Combat` through `movement::anchor_moves` for the activity and the zone's `fatigue_mult` at the soldier's position; writes only its own `FatigueC`), `regiment_fatigue_mean` (Stage 13, exclusive, every 10 ticks, ascending id), `morale_tick` (Stage 14: per regiment sequential in id order; uses the anchor grid for allies/enemies; applies one-time shocks queued by combat/death systems in a `MoraleShocks` resource; transitions and rout/rally/shatter per SIM-MOR-030..033).
+Systems: `ability_tick` (Stage 12: cooldowns, energy regen, status expiry, per-tick effects, in regiment id order), `fatigue_tick` (Stage 13, par_iter over soldiers; reads the regiment's `Order`, `Path` and `Combat` through `movement::anchor_moves` for the activity and the zone's `fatigue_mult` at the soldier's position; writes only its own `FatigueC`), `regiment_fatigue_mean` (Stage 13, exclusive, every 10 ticks, ascending id), `morale_tick` (Stage 14, exclusive: gathers every regiment's `MoraleInputs` from the pre-stage state (anchor grid for allies, a scan for the nearest enemy anchor, soldier grid for `outnumbered`), then per regiment in id order applies the queued `MoraleShocks` (queue order), the factor delta and the hysteresis transition, emits `MoraleChanged` and maintains `engaged_since`; rout/rally/shatter per SIM-MOR-030..033 arrive with T2-042). Shock producers: Stage 0 (`Disengage`), Stage 9 `melee_recount` (`ChargedFront`/`ChargedFlank` on the `Charge` tick), Stage 15 (`GeneralDeath`, T2-043) and Stage 14 itself (`Rout`, T2-042); Stage 10 `apply_outcomes` stamps `Morale.arc_hit[arc]` for every melee attack.
 
 Budget: morale 1 ms (200 regiments × grid queries), fatigue 0.5 ms, abilities 0.5 ms.
 

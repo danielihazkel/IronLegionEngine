@@ -20,11 +20,18 @@ pub struct DebugFlags {
     pub paths: bool,
     pub anchors: bool,
     pub spatial_cells: bool,
+    /// Morale state and fatigue state per regiment (T2-041).
+    pub morale: bool,
 }
 
 impl DebugFlags {
     pub fn any(self) -> bool {
-        self.nav_grid || self.slots || self.paths || self.anchors || self.spatial_cells
+        self.nav_grid
+            || self.slots
+            || self.paths
+            || self.anchors
+            || self.spatial_cells
+            || self.morale
     }
 }
 
@@ -34,6 +41,16 @@ const GRID: [u8; 4] = [255, 255, 255, 40];
 const PATH: [u8; 4] = [255, 230, 80, 220];
 const NARROW: [u8; 4] = [255, 90, 200, 240];
 const ANCHOR: [u8; 4] = [255, 255, 255, 230];
+/// Morale overlay colours by state: steady, unsettled, shaken, broken,
+/// routing, shattered.
+const MORALE: [[u8; 4]; 6] = [
+    [80, 220, 80, 230],
+    [200, 220, 60, 230],
+    [240, 170, 40, 230],
+    [240, 90, 40, 230],
+    [230, 40, 40, 230],
+    [140, 140, 140, 230],
+];
 
 /// Cells beyond this count are not drawn (a zoomed-out view would
 /// otherwise draw the whole map's grid).
@@ -124,6 +141,25 @@ pub fn build_debug_lines(
             let dir = v2(r.anchor_facing.direction());
             lines.segment(proj(a), proj(a + dir * 4.0), ANCHOR);
             lines.circle(proj(a), 6.0, 8, tint);
+        }
+        if flags.morale && on_screen {
+            // A ring coloured by morale state; one extra ring per fatigue
+            // state above Fresh (SIM-MOR-003, SIM-FAT-003).
+            let colour = MORALE[(r.morale_state as usize).min(MORALE.len() - 1)];
+            let rules = &view.regs().rules.fatigue;
+            let rings = 1 + il_sim_battle::morale::fatigue_state(r.fatigue_mean, rules) as usize;
+            for k in 0..rings {
+                lines.circle(proj(a), 16.0 + 4.0 * k as f32, 16, colour);
+            }
+            // Morale as a bar: full at 100.
+            let m = r.morale.to_f32_render() / 100.0;
+            let base = proj(a) + Vec2::new(-20.0, -24.0);
+            lines.segment(base, base + Vec2::new(40.0, 0.0), GRID);
+            lines.segment(
+                base,
+                base + Vec2::new(40.0 * m.clamp(0.0, 1.0), 0.0),
+                colour,
+            );
         }
         if flags.slots
             && on_screen

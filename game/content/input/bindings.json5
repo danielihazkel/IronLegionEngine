@@ -59,5 +59,6 @@
     { action: "debug_paths", keys: ["F7"] },
     { action: "debug_anchors", keys: ["F8"] },
     { action: "debug_spatial", keys: ["F9"] },
+    { action: "debug_morale", keys: ["F10"] },
   ],
 }

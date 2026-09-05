@@ -62,7 +62,7 @@ Conventions:
 | SIM-CMD-001 | A Command is `{ tick, player, seq, kind }`. Commands are applied at Stage 0 of `tick`, sorted by `(player, seq)`. Commands for past ticks are rejected with an Event (never silently reordered). | REQ-SIM-003, REQ-NET-001 |
 | SIM-CMD-002 | Command kinds (battle): `Move { regiments, target, facing, speed_mode }`, `AttackRegiment { regiments, target_regiment }`, `AttackMove { regiments, target }`, `Halt { regiments }`, `SetFormation { regiments, template, ranks }`, `SetFacing { regiments, facing }`, `SetSpeedMode { regiments, mode }`, `GroupFormation { regiments, group_template, anchor, facing, width }`, `FireMode { regiments, mode }` (fire_at_will / hold / target), `UseAbility { regiment, ability, target }`, `Withdraw { regiments }`, `Deploy { regiment, position, facing, template }`, `ConfirmDeployment`, `Pause`, `SetSpeed { mult }`, `Surrender`, `TransferControl { from, to }` (hands every regiment of `from` to `to`; `to = 255` means engine AI; used for drop-to-AI in multiplayer and for "let the AI command this side" in single-player). | REQ-INP-006, REQ-SIM-030..033, REQ-NET-008 |
 | SIM-CMD-003 | A Command referencing a Regiment not owned by `player` is rejected with an Event. AI players own their factions' regiments; `PlayerId(255)` is the engine AI and may own regiments transferred to it. | REQ-NET-001 |
-| SIM-CMD-004 | A Command referencing a Routing or Shattered regiment is rejected except `Withdraw` (ignored) and none others; Routing regiments cannot be ordered (SIM-MOR-020). | REQ-MOR-004 |
+| SIM-CMD-004 | A Command referencing a Routing or Shattered regiment is rejected except `Withdraw` (ignored) and none others; Routing regiments cannot be ordered (SIM-MOR-030). | REQ-MOR-004 |
 | SIM-CMD-005 | AI decisions are emitted as Commands for tick `t + 1` during Stage 1 of tick `t`, tagged with the AI player id, and pass through the same validation. | REQ-AI-005 |
 
 ## 4. Formations
@@ -215,35 +215,35 @@ Conventions:
 
 | Rule | Statement | Satisfies |
 |---|---|---|
-| SIM-MOR-001 | Regiment morale `M ∈ [0, 100]`, initialised to `unit.morale_base × (1 + morale.exp_bonus × experience) + general_aura_bonus`, clamped. | REQ-MOR-001 |
-| SIM-MOR-002 | Each tick: `M ← clamp(M + Σ_f w_f × x_f × dt_s, 0, 100)` where `dt_s = 0.05` and factors `f` are in §7.2 with weights `morale.w_<factor>` (points per second at full effect). | REQ-MOR-003 |
-| SIM-MOR-003 | States by thresholds with hysteresis `morale.hysteresis` (default 5): Steady `M > t_unsettled`; Unsettled `t_shaken < M ≤ t_unsettled`; Shaken `t_broken < M ≤ t_shaken`; Broken `t_routing < M ≤ t_broken`; Routing `M ≤ t_routing`. Defaults 70 / 50 / 30 / 15. A state is left upward only when `M` exceeds the threshold plus hysteresis. | REQ-MOR-002 |
+| SIM-MOR-001 | Regiment morale `M ∈ [0, 100]`, initialised to `unit.morale_base × (1 + morale.exp_bonus × experience)`, clamped; the general's aura acts only through the per-second factor (SIM-MOR-013). The starting state is the band `M` falls into (SIM-MOR-003): hastati at 60 spawn Unsettled and recover to Steady in the first seconds when no enemy stands within `safe_radius`. | REQ-MOR-001 |
+| SIM-MOR-002 | Each tick: `M ← clamp(M + Σ_f w_f × x_f × dt_s, 0, 100)` where `dt_s = 0.05` and factors `f` are in §7.2 with weights `morale.w_<factor>` (points per second at full effect). As built (T2-041): Stage 14 gathers every regiment's factor inputs (`MoraleInputs`) from the state as it stood at the start of the stage, then applies, in ascending regiment id, first the queued one-time shocks (`MoraleShocks`, queue order) and then the factor delta, and finally the SIM-MOR-003 transition. Regiments with no soldiers are skipped. The casualty ring Stage 15 writes is read one tick later (the schedule order stays). | REQ-MOR-003 |
+| SIM-MOR-003 | States by thresholds with hysteresis `morale.hysteresis` (default 5): Steady `M > t_unsettled`; Unsettled `t_shaken < M ≤ t_unsettled`; Shaken `t_broken < M ≤ t_shaken`; Broken `t_routing < M ≤ t_broken`; Routing `M ≤ t_routing`. Defaults 70 / 50 / 30 / 15. A state is left upward only when `M` exceeds the threshold plus hysteresis, one state per tick; downward a regiment drops straight to the band `M` falls into. Routing is entered by this rule (SIM-MOR-030 applies) but left only by rally (SIM-MOR-031) or shatter (SIM-MOR-032), never by threshold; Shattered is entered only by SIM-MOR-032. | REQ-MOR-002 |
 | SIM-MOR-004 | Morale multipliers per state (data table `morale.state_mults`): attack, defence, attack interval, speed. Defaults: Steady 1/1/1/1; Unsettled 0.95/0.95/1.05/1; Shaken 0.85/0.85/1.15/1; Broken 0.7/0.7/1.3/1; Routing 0/0.5/—/1.1. | REQ-CMBT-007 |
 
 ### 7.2 Factors
 
-Each factor's `x_f` is in [−1, 1] (negative drains morale); `w_f` defaults in §15.
+Each factor's `x_f` is its activation in [0, 1]; the sign lives in the weight `w_f` (§15.1: draining factors carry negative weights, `casualty_rate` −6, `recovery` +3), so `w_f × x_f` is the signed rate. Exceptions: `high_ground` is bipolar in [−1, 1] and `flanked` reaches 2 when surrounded (SIM-MOR-019). `sat(x)` clamps to [0, 1]; a reference that is not positive makes its factor 0. (The formulas below were written with negated activations before T2-041, which double-signed them against the weights.)
 
 | Rule | Factor | `x_f` |
 |---|---|---|
-| SIM-MOR-010 | `casualty_rate` | `−sat(deaths_last_5s / (count × morale.casualty_rate_ref))`, ref 0.05 (5 % in 5 s = full drain). |
-| SIM-MOR-011 | `casualty_total` | `−sat((initial − count) / initial / morale.casualty_total_ref)`, ref 0.5. Applied as a level, not rate: contributes `w × x` once per second. |
-| SIM-MOR-012 | `fatigue` | `−sat((F_mean − morale.fatigue_start) / (1 − morale.fatigue_start))`, start 0.5. |
-| SIM-MOR-013 | `general_aura` | `+1` if the regiment anchor is within the general's aura radius, else 0. |
-| SIM-MOR-014 | `general_dead` | One-time shock: `M −= morale.general_death_shock` (default 20) to all regiments of the army on the tick the general dies; `−morale.general_death_shock × 0.5` for regiments already Shaken or worse. |
+| SIM-MOR-010 | `casualty_rate` | `sat(deaths_last_5s / (count × morale.casualty_rate_ref))`, ref 0.05 (5 % in 5 s = full drain). |
+| SIM-MOR-011 | `casualty_total` | `sat((initial − count) / initial / morale.casualty_total_ref)`, ref 0.5 (a level, applied per tick like every other factor; soldiers that fled count as lost). |
+| SIM-MOR-012 | `fatigue` | `sat((F_mean − morale.fatigue_start) / (1 − morale.fatigue_start))`, start 0.5. |
+| SIM-MOR-013 | `general_aura` | `+1` if the regiment anchor is within the general's aura radius (the Stage 9 gate's `in_aura` flag, SIM-GEN-002), else 0; 0 until T2-043. |
+| SIM-MOR-014 | `general_dead` | One-time shock: `M −= morale.general_death_shock` (default 20) to all regiments of the side (armies arrive in Phase 4), queued at Stage 15 and applied at the next tick's Stage 14; `−morale.general_death_shock × 0.5` for regiments already Shaken or worse at that moment. |
 | SIM-MOR-015 | `allies_near` | `+sat(n_allied_steady_within_R / morale.allies_ref)` with `R = morale.ally_radius` (40 m), ref 3. |
-| SIM-MOR-016 | `allies_routing` | `−sat(n_allied_routing_within_R / morale.routing_ref)`, ref 2. Includes Shattered regiments leaving. |
-| SIM-MOR-017 | `high_ground` | `+sat((h_anchor − h_nearest_enemy_anchor) / combat.height_ref)`; negative if lower. |
-| SIM-MOR-018 | `fear` | `−1` while any active `fear` status effect; else 0. |
-| SIM-MOR-019 | `flanked` | `−0.5` if attacked from the flank arc in the last second; `−1` if from the rear; `−1` additionally if enemies engage from ≥ 3 arcs (surrounded). |
-| SIM-MOR-020 | `outnumbered` | `−sat((enemy_soldiers_within_R / own_soldiers_within_R − 1) / morale.outnumber_ref)`, R 30 m, ref 2. |
-| SIM-MOR-021 | `integrity` | `−sat((formation.integrity_morale_threshold − I) / formation.integrity_morale_threshold)`. |
-| SIM-MOR-022 | `engaged_duration` | `−sat(ticks_engaged / morale.engage_fatigue_ticks)`, default 2,400 (2 min). |
-| SIM-MOR-023 | `winning` | `+sat((enemy_deaths_5s − own_deaths_5s) / (count × morale.casualty_rate_ref))`, clamped at 0 below (losing is covered by casualty_rate). |
+| SIM-MOR-016 | `allies_routing` | `sat(n_allied_routing_within_R / morale.routing_ref)`, ref 2. Includes Shattered regiments still leaving (with soldiers on the field). Both ally counts use the anchor grid and the states as they stood at the start of Stage 14. |
+| SIM-MOR-017 | `high_ground` | `+sat((h_anchor − h_nearest_enemy_anchor) / combat.height_ref)`; negative if lower (clamped to [−1, 1]). The nearest enemy anchor is found by a scan of every enemy regiment with soldiers (ties to the lower id); no enemy gives 0. |
+| SIM-MOR-018 | `fear` | `1` while any active `fear` status effect; else 0 (always 0 until T2-050). |
+| SIM-MOR-019 | `flanked` | `0.5` if attacked from the flank arc in the last second; `1` if from the rear (the rear supersedes the flank); `1` more if attacked through all three arcs (front, flank, rear) in the last second (surrounded), so the range is [0, 2]. "Attacked" is every melee attack, hit or miss: Stage 10 stamps the target regiment's `arc_hit[arc]` with the tick. |
+| SIM-MOR-020 | `outnumbered` | `sat((enemy_soldiers_within_R / own_soldiers_within_R − 1) / morale.outnumber_ref)`, `R = morale.outnumber_radius` (30 m) around the anchor, ref 2; "own" counts every allied soldier within `R`, the regiment's own included; no enemy within `R` gives 0, no ally with any enemy gives 1. |
+| SIM-MOR-021 | `integrity` | `sat((formation.integrity_morale_threshold − I) / formation.integrity_morale_threshold)`. |
+| SIM-MOR-022 | `engaged_duration` | `sat(ticks_engaged / morale.engage_fatigue_ticks)`, default 2,400 (2 min). |
+| SIM-MOR-023 | `winning` | `+sat((enemy_deaths_5s − own_deaths_5s) / (count × morale.casualty_rate_ref))`, clamped at 0 below (losing is covered by casualty_rate); `enemy_deaths_5s` sums the casualty rings of the enemy regiments whose anchor lies within `morale.safe_radius` (*chosen*). |
 | SIM-MOR-024 | `recovery` | `+1` when not engaged, no enemy within `morale.safe_radius` (60 m), and not Routing. |
-| SIM-MOR-025 | `disengage` | One-time `−morale.disengage_penalty` (5) when an engaged regiment is ordered away. |
-| SIM-MOR-026 | `charged` | One-time `−morale.charged_penalty` (8) when receiving a charge from the flank or rear; `−4` from the front. |
-| SIM-MOR-027 | `ability` | Status effects may add or subtract per-second morale via `effect.morale_per_s`. |
+| SIM-MOR-025 | `disengage` | One-time `−morale.disengage_penalty` (5) when an engaged regiment is ordered away: a `Move` or `AttackMove`, or an `AttackRegiment` at another target, queued at Stage 0 and applied at Stage 14 of the same tick. |
+| SIM-MOR-026 | `charged` | One-time `−morale.charged_penalty` (8) when receiving a charge from the flank or rear; half of it from the front. The arc is the charging regiment's anchor seen from the charged anchor's facing (SIM-CMBT-014), queued on the `Charge` tick (Stage 9) and applied at Stage 14 of the same tick. |
+| SIM-MOR-027 | `ability` | Status effects may add or subtract per-second morale via `effect.morale_per_s` (an additive term outside the fourteen weighted factors; 0 until T2-050). |
 
 ### 7.3 Routing, rally, shatter
 
