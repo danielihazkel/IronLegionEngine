@@ -15,9 +15,9 @@ use il_data::{FormationTemplate, Handle, ProjectileArc, Registries, UnitCategory
 
 use crate::command::FireMode;
 use crate::components::{
-    Anchor, Combat, Facing, Fire, FormationState, Fsm, Health, MeleeState, Morale, MoraleState,
-    Order, OrderKind, Path, Pos, PrevFacing, PrevPos, RangedState, Regiment, SlotRef, Soldier,
-    SoldierState,
+    Anchor, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health, MeleeState, Morale,
+    MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos, RangedState, Regiment,
+    RegimentFatigue, SlotRef, Soldier, SoldierState,
 };
 use crate::map::LoadedMap;
 use crate::nav::NavGrid;
@@ -38,6 +38,7 @@ type SoldierData = (
     &'static SlotRef,
     &'static MeleeState,
     Option<&'static RangedState>,
+    &'static FatigueC,
 );
 type RegimentData = (
     &'static Regiment,
@@ -47,6 +48,7 @@ type RegimentData = (
     &'static FormationState,
     &'static Combat,
     Option<&'static Fire>,
+    &'static RegimentFatigue,
 );
 
 /// Cached query states behind every `BattleView`.
@@ -88,6 +90,8 @@ pub struct SoldierRow {
     pub target: Option<SoldierId>,
     /// Volleys left; `None` for units without a `ranged` block (T2-030).
     pub ammo: Option<u16>,
+    /// SIM-FAT-001, in `[0, 1]` (T2-040).
+    pub fatigue: S,
 }
 
 /// One regiment as the presentation layer sees it.
@@ -113,6 +117,13 @@ pub struct RegimentRow {
     /// `ranged` block (T2-030).
     pub fire: Option<FireMode>,
     pub fire_target: Option<RegimentId>,
+    /// SIM-FAT-005: mean soldier fatigue as of the last ten-tick refresh
+    /// (T2-040).
+    pub fatigue_mean: S,
+    /// Soldiers that fled the field (SIM-MOR-032; written from T2-042).
+    pub fled: u16,
+    /// Times the regiment routed (SIM-MOR-031; written from T2-042).
+    pub rout_count: u8,
 }
 
 /// One projectile in flight (T2-030); the renderer evaluates the arc
@@ -148,6 +159,7 @@ type SoldierItem<'a> = (
     &'a SlotRef,
     &'a MeleeState,
     Option<&'a RangedState>,
+    &'a FatigueC,
 );
 type RegimentItem<'a> = (
     &'a Regiment,
@@ -157,10 +169,11 @@ type RegimentItem<'a> = (
     &'a FormationState,
     &'a Combat,
     Option<&'a Fire>,
+    &'a RegimentFatigue,
 );
 
 fn soldier_row(
-    (s, pos, prev, facing, prev_facing, fsm, health, slot, melee, ranged): SoldierItem<'_>,
+    (s, pos, prev, facing, prev_facing, fsm, health, slot, melee, ranged, fatigue): SoldierItem<'_>,
 ) -> SoldierRow {
     SoldierRow {
         id: s.id,
@@ -176,11 +189,12 @@ fn soldier_row(
         slot: slot.slot,
         target: melee.target,
         ammo: ranged.map(|r| r.ammo),
+        fatigue: fatigue.f,
     }
 }
 
 fn regiment_row(
-    (r, anchor, order, morale, formation, combat, fire): RegimentItem<'_>,
+    (r, anchor, order, morale, formation, combat, fire, fatigue): RegimentItem<'_>,
 ) -> RegimentRow {
     RegimentRow {
         id: r.id,
@@ -199,6 +213,9 @@ fn regiment_row(
         engaged: combat.engaged,
         fire: fire.map(|f| f.mode),
         fire_target: fire.and_then(|f| f.target),
+        fatigue_mean: fatigue.mean,
+        fled: combat.fled,
+        rout_count: morale.rout_count,
     }
 }
 

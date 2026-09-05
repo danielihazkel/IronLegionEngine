@@ -10,7 +10,7 @@ use il_data::{ContentId, Handle, Registries, UnitType};
 use crate::components::{
     Anchor, Attackers, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health,
     MeleeState, Morale, Order, Path, Pos, PrevFacing, PrevPos, RangedState, Rank, Regiment,
-    SlotRef, Soldier, SoldierState, Vel,
+    RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::formation::{effective_ranks, layout_slots, slot_world};
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
@@ -198,6 +198,8 @@ pub(crate) fn spawn_regiment(
             },
             anchor,
             Morale::new(morale_base, setup.count),
+            // SIM-FAT-005: the mean starts at the roster fatigue.
+            RegimentFatigue { mean: fatigue },
             Combat {
                 experience: setup.experience.min(9),
                 ..Combat::default()
@@ -286,6 +288,11 @@ impl BattleWorld {
                 deployment_zone: s.deployment_zone,
                 deployment_confirmed: true,
                 defeated: false,
+                // T2-042 picks the edge from the deployment polygon.
+                escape_edge: il_data::MapEdge::West,
+                general: None,
+                general_regiment: None,
+                general_dead: false,
             })
             .collect();
         for (side, s) in setup.sides.iter().enumerate() {

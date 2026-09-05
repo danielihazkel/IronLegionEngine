@@ -22,7 +22,8 @@ use il_render::{
     Renderer, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_debug_lines, build_snapshot,
     deployment_outlines, ground_height, scene_from_snapshot,
 };
-use il_sim_battle::components::OrderKind;
+use il_sim_battle::components::{MoraleState, OrderKind};
+use il_sim_battle::morale::{FatigueState, fatigue_state};
 use il_sim_battle::{BattleView, BattleWorld, SpeedMode};
 use il_ui::{
     Action, Bindings, DragFormation, Gesture, HudAction, HudModel, InputState, MenuChoice,
@@ -572,6 +573,32 @@ impl App {
                         OrderKind::AttackMove => "il.order.attack_move",
                         OrderKind::AttackRegiment => "il.order.attack_regiment",
                         OrderKind::Withdraw => "il.order.withdraw",
+                    })
+                    .to_string(),
+                morale: regs.locale.fmt(
+                    "il.battle.morale",
+                    &[
+                        ("value", &format!("{:.0}", r.morale.to_f32_render())),
+                        (
+                            "state",
+                            &regs.locale.get(match r.morale_state {
+                                MoraleState::Steady => "il.morale.steady",
+                                MoraleState::Unsettled => "il.morale.unsettled",
+                                MoraleState::Shaken => "il.morale.shaken",
+                                MoraleState::Broken => "il.morale.broken",
+                                MoraleState::Routing => "il.morale.routing",
+                                MoraleState::Shattered => "il.morale.shattered",
+                            }),
+                        ),
+                    ],
+                ),
+                fatigue: regs
+                    .locale
+                    .get(match fatigue_state(r.fatigue_mean, &regs.rules.fatigue) {
+                        FatigueState::Fresh => "il.fatigue.fresh",
+                        FatigueState::Active => "il.fatigue.active",
+                        FatigueState::Tired => "il.fatigue.tired",
+                        FatigueState::Exhausted => "il.fatigue.exhausted",
                     })
                     .to_string(),
             })

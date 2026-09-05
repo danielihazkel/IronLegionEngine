@@ -25,7 +25,7 @@
     "general_death_shock", "rout_shock", "rout_shock_radius",
     "disengage_penalty", "charged_penalty",
     "casualty_rate_ref", "casualty_total_ref", "fatigue_start",
-    "ally_radius", "allies_ref", "routing_ref", "outnumber_ref",
+    "ally_radius", "allies_ref", "routing_ref", "outnumber_ref", "outnumber_radius",
     "engage_fatigue_ticks", "safe_radius", "exp_bonus", "w", "state_mults"
   ],
   "properties": {
@@ -50,6 +50,7 @@
     "allies_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Steady allies nearby that saturate allies_near (SIM-MOR-015)." },
     "routing_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Routing allies nearby that saturate allies_routing (SIM-MOR-016)." },
     "outnumber_ref": { "type": "number", "exclusiveMinimum": 0, "maximum": 100, "description": "Enemy-to-own ratio excess that saturates outnumbered (SIM-MOR-020)." },
+    "outnumber_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres around the anchor within which soldiers are counted for outnumbered (SIM-MOR-020)." },
     "engage_fatigue_ticks": { "type": "integer", "minimum": 1, "maximum": 1000000, "description": "Ticks engaged that saturate engaged_duration (SIM-MOR-022)." },
     "safe_radius": { "type": "number", "minimum": 0, "maximum": 1000, "description": "Metres free of enemies for the recovery factor (SIM-MOR-024)." },
     "exp_bonus": { "type": "number", "minimum": 0, "maximum": 1, "description": "Starting morale bonus per experience level (SIM-MOR-001)." },

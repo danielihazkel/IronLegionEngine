@@ -131,6 +131,14 @@ pub struct RangedState {
     pub cooldown: u16,
 }
 
+/// SIM-GEN-001: the army's general (one soldier per side, inside its
+/// bodyguard regiment). Declared in T2-040 so the hash and snapshot layout
+/// change once; spawned from T2-043. Hashed as `Option<u8>` per soldier.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct GeneralTag {
+    pub rank: u8,
+}
+
 // --------------------------------------------------------------- regiments
 
 #[derive(Component, Clone, Debug)]
@@ -187,6 +195,9 @@ pub struct Combat {
     pub experience: u8,
     /// Kills credited to this regiment (T2-022).
     pub kills: u32,
+    /// Soldiers that left the field routing (SIM-MOR-032, SIM-FLOW-002;
+    /// written from T2-042).
+    pub fled: u16,
 }
 
 /// The regiment's formation (SIM-CORE-005, TDD §7). `slots` and
@@ -260,7 +271,8 @@ impl_hashable_fieldless_enum!(MoraleState);
 pub const DEATHS_RING: usize = 5 * TICKS_PER_SECOND as usize;
 
 /// SIM-MOR-001..004. The casualty ring and initial strength are written
-/// by death (T2-022); `rout_count` and `engaged_since` arrive with T2-041.
+/// by death (T2-022); `rout_count`, `engaged_since` and `arc_hit` are
+/// written from T2-041/T2-042 (declared in T2-040 with the layout).
 #[derive(Component, Clone, Copy, Debug, PartialEq)]
 pub struct Morale {
     pub m: S,
@@ -269,6 +281,14 @@ pub struct Morale {
     pub deaths_5s: [u16; DEATHS_RING],
     /// Soldiers at spawn (SIM-MOR-011, SIM-FLOW-018).
     pub initial: u16,
+    /// Times the regiment entered Routing (SIM-MOR-031/032).
+    pub rout_count: u8,
+    /// Tick `Combat.engaged` last rose; `Tick::ZERO` while not engaged
+    /// (SIM-MOR-022).
+    pub engaged_since: Tick,
+    /// Last tick a melee attack came from the front, flank and rear arc
+    /// (`combat::Arc` order; SIM-MOR-019).
+    pub arc_hit: [Tick; 3],
 }
 
 impl Morale {
@@ -278,8 +298,18 @@ impl Morale {
             state: MoraleState::Steady,
             deaths_5s: [0; DEATHS_RING],
             initial,
+            rout_count: 0,
+            engaged_since: Tick::ZERO,
+            arc_hit: [Tick::ZERO; 3],
         }
     }
+}
+
+/// SIM-FAT-005: the regiment's mean soldier fatigue, refreshed every ten
+/// ticks by Stage 13 (T2-040). State: it is read between refreshes.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct RegimentFatigue {
+    pub mean: S,
 }
 
 impl Default for Morale {
@@ -375,8 +405,12 @@ impl_hashable_struct!(Morale {
     m,
     state,
     deaths_5s,
-    initial
+    initial,
+    rout_count,
+    engaged_since,
+    arc_hit
 });
+impl_hashable_struct!(RegimentFatigue { mean });
 impl_hashable_struct!(MeleeState { target, cooldown });
 impl_hashable_struct!(RangedState { ammo, cooldown });
 impl_hashable_struct!(Fire {
@@ -389,7 +423,8 @@ impl_hashable_struct!(Combat {
     last_fighting,
     charge_until,
     experience,
-    kills
+    kills,
+    fled
 });
 impl_hashable_struct!(Order {
     kind,

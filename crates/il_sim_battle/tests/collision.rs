@@ -127,7 +127,8 @@ fn regiments_marching_through_each_other_end_without_overlaps() {
             .all(|r| r.order == il_sim_battle::components::OrderKind::Idle);
         match (idle, idle_since) {
             (true, None) => idle_since = Some(t),
-            (true, Some(since)) if t - since >= 40 => break,
+            // Three seconds: tired soldiers (T2-040) arrive a little later.
+            (true, Some(since)) if t - since >= 60 => break,
             _ => {}
         }
     }

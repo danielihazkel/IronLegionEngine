@@ -72,7 +72,8 @@ fn restore_mid_march_continues_identically() {
     let mut restored = BattleWorld::restore(&snap, common::regs()).unwrap();
     assert_eq!(restored.hash(), original.hash());
     restored.set_threads(8);
-    for tick in 0..400 {
+    // 900 ticks: a running regiment tires (T2-040) and crosses later.
+    for tick in 0..900 {
         assert_eq!(
             original.step(&[]).hash,
             restored.step(&[]).hash,

@@ -429,9 +429,10 @@ flowchart LR
   **Done when** the "statistical vs simulated" band (row 6) holds within 10 % over 50 seeds.
   Done 2026-09-04: `statistical_shot` in `combat/ranged.rs` (draw index 2, footprint density from the slot bounding box, nearest soldier of the target regiment, damage queued at the would-be landing tick), `footprint_area` / `stat_hit_probability` in `formulas.rs`; the harness gained per-file `bands.mods` and the cross-file `mean_loss_matches` clause; `tests/mods/projectile_cap_zero` and `projectile_cap_100`; `tests/scenarios/bands/volley_statistical.json5`; tests for the cap-zero path (queue, restore, 1 vs 8 threads) and the split volley at a cap of 100. Row 6 holds after tuning `stat_hit_base` from 0.6 to 0.36 (mean 27.1 lost against 27.1 simulated, 0.0 %; recorded in §15.1, §15.3 and SAD T-3).
 
-- [ ] **T2-040 Fatigue** · S · Refs SIM-FAT-001..005, TDD §8.3 `fatigue_mults`
+- [x] **T2-040 Fatigue** · S · Refs SIM-FAT-001..005, TDD §8.3 `fatigue_mults`
   Stage 13 accumulation by activity and terrain, recovery, armour rate, continuous multipliers wired into speed, attack, defence, and interval; regiment mean every 10 ticks.
   **Done when** a regiment that runs for 3 minutes reaches Exhausted and its speed drops by the expected multiplier.
+  Done 2026-09-05: `morale/fatigue.rs` (Stage 13 `fatigue_tick` + `regiment_fatigue_mean`, `RegimentFatigue`), fatigue and morale speed multipliers on the soldier `v_max` and the anchor speed (`movement::anchor_moves` is the shared "moving" predicate: standing soldiers churn at up to 1 m/s, so the regiment decides), `morale.outnumber_radius` tunable; the whole morale slice's state declared once (`rout_count`, `engaged_since`, `arc_hit`, `RegimentFatigue`, `Combat.fled`, `GeneralTag`, `MoraleShocks`, side escape edge and general fields; `SNAPSHOT_VERSION = 6`, goldens re-baselined); the regiment card shows morale and fatigue; `tests/fatigue.rs` (three-minute run, exhausted speed ratio, 100 s recovery, ten-tick mean, 1 vs 8 threads with a restore).
 
 - [ ] **T2-041 Morale value, factors, states** · L · Refs SIM-MOR-001..027, TDD §8.3 `morale_factors`, `morale_state`
   All fourteen factors with the anchor grid queries, one-time shocks via a `MoraleShocks` resource, hysteresis state machine, state multipliers wired into combat and movement.

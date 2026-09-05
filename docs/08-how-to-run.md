@@ -52,7 +52,7 @@ Every key comes from `game/content/input/bindings.json5`; a mod may rebind any o
 | Speed | `Ctrl+=` / `Ctrl+-` or the numpad `+` / `-`, or the HUD buttons |
 | Back to the menu | `Escape` |
 
-Only your own regiments (player 0 in the scenarios) can be selected. A single selected regiment that is right-dragged gets its rank count from the drag width; two or more get a battle line.
+Only your own regiments (player 0 in the scenarios) can be selected. A single selected regiment that is right-dragged gets its rank count from the drag width; two or more get a battle line. The selection card at the bottom lists each selected regiment's soldiers, formation, order, morale (value and state) and fatigue state (fresh, active, tired, exhausted; T2-040).
 
 Developer keys (`dev` feature, on by default):
 

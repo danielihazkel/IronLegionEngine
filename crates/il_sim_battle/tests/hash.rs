@@ -8,12 +8,13 @@ use il_core::Tick;
 use il_core::{Angle, RegimentId, S, Scalar, SoldierId, StateHash, StreamId, V2};
 use il_data::ProjectileArc;
 use il_sim_battle::components::{
-    Anchor, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health, MeleeState, Morale,
-    MoraleState, Order, OrderKind, Path, Pos, PrevPos, RangedState, Regiment, SlotRef,
-    SoldierState, Vel, Waypoint,
+    Anchor, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, GeneralTag, Health,
+    MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevPos, RangedState, Regiment,
+    RegimentFatigue, SlotRef, SoldierState, Vel, Waypoint,
 };
 use il_sim_battle::resources::{
-    BattlePhase, Ids, Pending, PendingDamage, Phase, Projectile, Projectiles, Rng,
+    BattlePhase, Ids, MoraleShocks, Pending, PendingDamage, Phase, Projectile, Projectiles, Rng,
+    Shock, ShockKind, Sides,
 };
 use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 
@@ -26,12 +27,15 @@ use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 /// T1-047 when the Phase 1 hash layout was fixed; and in T2-010 when regiments
 /// started spawning with the unit's ranged ammo; in T2-020 when the combat
 /// fields joined the layout; and in T2-030 when the regiment ammo gave way
-/// to the optional fire and ranged states and the pending damage prefix).
+/// to the optional fire and ranged states and the pending damage prefix;
+/// and in T2-040 when the morale-slice fields (side state, rout count,
+/// engaged since, arc hits, fatigue mean, fled, general rank, shock queue)
+/// joined the layout).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0xae55_acb8_3fb9_7902;
+const GOLDEN_FRESH: u64 = 0x5c93_0160_9176_3a4a;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x8bd8_418e_1bb7_4d07;
+const GOLDEN_1000: u64 = 0x5a95_5330_4845_bda2;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -452,6 +456,76 @@ fn every_hashed_field_changes_the_hash() {
         Box::new(|w| {
             let e = regiment_entity(w, 1);
             w.ecs_mut().get_mut::<Morale>(e).unwrap().initial = 7;
+        }),
+    ));
+    // T2-040: the morale-slice fields (written from T2-041..043).
+    cases.push((
+        "fatigue mean",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<RegimentFatigue>(e).unwrap().mean = S::HALF;
+        }),
+    ));
+    cases.push((
+        "rout count",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Morale>(e).unwrap().rout_count = 1;
+        }),
+    ));
+    cases.push((
+        "engaged since",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Morale>(e).unwrap().engaged_since = Tick(4);
+        }),
+    ));
+    cases.push((
+        "arc hit",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Morale>(e).unwrap().arc_hit[2] = Tick(4);
+        }),
+    ));
+    cases.push((
+        "combat fled",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Combat>(e).unwrap().fled = 3;
+        }),
+    ));
+    cases.push((
+        "general tag",
+        Box::new(|w| {
+            let e = soldier_entity(w, 3);
+            w.ecs_mut().entity_mut(e).insert(GeneralTag { rank: 1 });
+        }),
+    ));
+    cases.push((
+        "morale shock",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<MoraleShocks>().0.push(Shock {
+                regiment: RegimentId(0),
+                kind: ShockKind::Rout,
+            });
+        }),
+    ));
+    cases.push((
+        "side escape edge",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Sides>().0[1].escape_edge = il_data::MapEdge::North;
+        }),
+    ));
+    cases.push((
+        "side general",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Sides>().0[1].general = Some(SoldierId(2));
+        }),
+    ));
+    cases.push((
+        "side general dead",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Sides>().0[0].general_dead = true;
         }),
     ));
     // Globals: phase, RNG.

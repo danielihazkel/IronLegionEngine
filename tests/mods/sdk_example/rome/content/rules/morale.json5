@@ -30,6 +30,7 @@
   allies_ref: 3,
   routing_ref: 2,
   outnumber_ref: 2,
+  outnumber_radius: 30,
   engage_fatigue_ticks: 2400,  // 2 min
   safe_radius: 60,             // m
   exp_bonus: 0.02,             // SIM-MOR-001, per experience level

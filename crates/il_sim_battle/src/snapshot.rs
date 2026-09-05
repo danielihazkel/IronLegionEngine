@@ -15,14 +15,15 @@ use serde::{Deserialize, Serialize};
 use crate::command::{FireMode, SpeedMode};
 use crate::components::{
     Anchor, Attackers, Body, Combat, DEATHS_RING, Facing, FatigueC, Fire, FormationState, Fsm,
-    Health, MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos,
-    RangedState, Rank, Regiment, SlotRef, Soldier, SoldierState, Vel, Waypoint,
+    GeneralTag, Health, MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing,
+    PrevPos, RangedState, Rank, Regiment, RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
+    Waypoint,
 };
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, MapError};
 use crate::resources::{
-    BattlePhase, Clock, Ids, Pending, PendingDamage, Phase, Projectile, Projectiles, Rng, SetupRes,
-    SideState, Sides,
+    BattlePhase, Clock, Ids, MoraleShocks, Pending, PendingDamage, Phase, Projectile, Projectiles,
+    Rng, SetupRes, Shock, SideState, Sides,
 };
 use crate::world::{BattleWorld, InstallMapError};
 
@@ -35,7 +36,11 @@ use crate::world::{BattleWorld, InstallMapError};
 /// 5: ranged state (T2-030): regiment `ammo` replaced by an optional
 ///    `Fire`, soldiers carry an optional `RangedState`, the projectile list
 ///    and the pending damage queue are stored.
-pub const SNAPSHOT_VERSION: u32 = 5;
+/// 6: the morale slice (T2-040): regiments carry `fled`, `rout_count`,
+///    `engaged_since`, `arc_hit` and `fatigue_mean`, soldiers an optional
+///    general rank, the morale shock queue is stored, and `SideState`
+///    gained the escape edge and general fields.
+pub const SNAPSHOT_VERSION: u32 = 6;
 
 /// A ranged regiment's `Fire` component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,6 +88,12 @@ pub struct RegimentSnap {
     /// `DEATHS_RING` entries.
     pub deaths_5s: Vec<u16>,
     pub initial: u16,
+    // T2-040 (version 6).
+    pub fled: u16,
+    pub rout_count: u8,
+    pub engaged_since: Tick,
+    pub arc_hit: [Tick; 3],
+    pub fatigue_mean: S,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -102,6 +113,8 @@ pub struct SoldierSnap {
     /// `(ammo, cooldown)`, present exactly when the unit has a `ranged`
     /// block (T2-030).
     pub ranged: Option<(u16, u16)>,
+    /// The general's rank, present exactly for the general (T2-040/043).
+    pub general: Option<u8>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -128,6 +141,8 @@ pub struct Snapshot {
     pub projectiles: Vec<Projectile>,
     /// Queue order (T2-030; applied from T2-031).
     pub pending_damage: Vec<Pending>,
+    /// Queue order (T2-040; applied from T2-041).
+    pub morale_shocks: Vec<Shock>,
     /// Battle-flow timer; unused until T2-070.
     pub timer: u32,
 }
@@ -202,6 +217,9 @@ impl BattleWorld {
                 let path = world.get::<Path>(*entity).expect("path");
                 let formation = world.get::<FormationState>(*entity).expect("formation");
                 let combat = world.get::<Combat>(*entity).expect("combat");
+                let fatigue = world
+                    .get::<RegimentFatigue>(*entity)
+                    .expect("regiment fatigue");
                 let fire = world.get::<Fire>(*entity).map(|f| FireSnap {
                     mode: f.mode,
                     target: f.target,
@@ -244,6 +262,11 @@ impl BattleWorld {
                     kills: combat.kills,
                     deaths_5s: morale.deaths_5s.to_vec(),
                     initial: morale.initial,
+                    fled: combat.fled,
+                    rout_count: morale.rout_count,
+                    engaged_since: morale.engaged_since,
+                    arc_hit: morale.arc_hit,
+                    fatigue_mean: fatigue.mean,
                 }
             })
             .collect();
@@ -270,6 +293,7 @@ impl BattleWorld {
                     ranged: world
                         .get::<RangedState>(*entity)
                         .map(|r| (r.ammo, r.cooldown)),
+                    general: world.get::<GeneralTag>(*entity).map(|g| g.rank),
                 }
             })
             .collect();
@@ -294,6 +318,7 @@ impl BattleWorld {
             soldiers,
             projectiles: world.resource::<Projectiles>().0.clone(),
             pending_damage: world.resource::<PendingDamage>().0.clone(),
+            morale_shocks: world.resource::<MoraleShocks>().0.clone(),
             timer: 0,
         }
     }
@@ -365,6 +390,12 @@ impl BattleWorld {
                         state: r.morale_state,
                         deaths_5s,
                         initial: r.initial,
+                        rout_count: r.rout_count,
+                        engaged_since: r.engaged_since,
+                        arc_hit: r.arc_hit,
+                    },
+                    RegimentFatigue {
+                        mean: r.fatigue_mean,
                     },
                     Combat {
                         engaged: r.engaged,
@@ -372,6 +403,7 @@ impl BattleWorld {
                         charge_until: r.charge_until,
                         experience: r.experience,
                         kills: r.kills,
+                        fled: r.fled,
                     },
                     Order {
                         kind: r.order,
@@ -476,6 +508,9 @@ impl BattleWorld {
                     .entity_mut(entity)
                     .insert(RangedState { ammo, cooldown });
             }
+            if let Some(rank) = s.general {
+                w.world.entity_mut(entity).insert(GeneralTag { rank });
+            }
             w.world
                 .resource_mut::<Ids>()
                 .soldier_entities
@@ -507,6 +542,7 @@ impl BattleWorld {
             projectiles.0.clear();
             projectiles.0.extend(snapshot.projectiles.iter().copied());
             w.world.resource_mut::<PendingDamage>().0 = snapshot.pending_damage.clone();
+            w.world.resource_mut::<MoraleShocks>().0 = snapshot.morale_shocks.clone();
         }
 
         w.set_setup(snapshot.setup.clone());

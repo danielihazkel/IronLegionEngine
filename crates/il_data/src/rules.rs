@@ -315,6 +315,10 @@ pub struct MoraleRules {
     pub routing_ref: S,
     #[serde(deserialize_with = "de_s")]
     pub outnumber_ref: S,
+    /// SIM-MOR-020: metres around the anchor within which soldiers are
+    /// counted for `outnumbered` (T2-040).
+    #[serde(deserialize_with = "de_s")]
+    pub outnumber_radius: S,
     pub engage_fatigue_ticks: u32,
     #[serde(deserialize_with = "de_s")]
     pub safe_radius: S,
@@ -548,6 +552,7 @@ impl Rules {
                 allies_ref: z,
                 routing_ref: z,
                 outnumber_ref: z,
+                outnumber_radius: z,
                 engage_fatigue_ticks: 0,
                 safe_radius: z,
                 exp_bonus: z,
@@ -719,6 +724,7 @@ impl Rules {
         h.write(&mo.allies_ref);
         h.write(&mo.routing_ref);
         h.write(&mo.outnumber_ref);
+        h.write(&mo.outnumber_radius);
         h.write_u32(mo.engage_fatigue_ticks);
         h.write(&mo.safe_radius);
         h.write(&mo.exp_bonus);
@@ -868,6 +874,7 @@ mod tests {
             |r| r.morale.w.recovery = S::ONE,
             |r| r.morale.state_mults.broken.interval = S::ONE,
             |r| r.fatigue.thresholds[2] = S::ONE,
+            |r| r.morale.outnumber_radius = S::ONE,
             |r| r.general.wounded_hp = S::ONE,
             |r| r.visibility.memory_ticks = 1,
             |r| r.battle_flow.timeout_winner = TimeoutWinner::MostSoldiers,

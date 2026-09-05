@@ -80,6 +80,10 @@ pub struct SelectedRegiment {
     pub ranks: u8,
     /// Localised order label (`il.order.*`).
     pub order: String,
+    /// Morale value and localised state (`il.battle.morale`, T2-040).
+    pub morale: String,
+    /// Localised fatigue state (`il.fatigue.*`, T2-040).
+    pub fatigue: String,
 }
 
 pub struct HudModel<'a> {
@@ -170,6 +174,8 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
                             ],
                         ));
                         ui.label(&r.order);
+                        ui.label(&r.morale);
+                        ui.label(&r.fatigue);
                         ui.end_row();
                     }
                 });

@@ -11,10 +11,11 @@ use bevy_ecs::prelude::*;
 use il_core::{Angle, S, Scalar, Tick, V2};
 use il_data::Registries;
 
+use crate::combat::{fatigue_mults, morale_mults};
 use crate::command::SpeedMode;
 use crate::components::{
-    Anchor, Body, Facing, FormationState, Fsm, MeleeState, Order, Pos, Rank, SlotRef, Soldier,
-    SoldierState, Vel,
+    Anchor, Body, Facing, FatigueC, FormationState, Fsm, MeleeState, Morale, Order, Pos, Rank,
+    SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::formation::slot_world;
 use crate::map::LoadedMap;
@@ -28,8 +29,18 @@ use il_data::Layout;
 /// crosses an impassable cell (degrees).
 const AVOID_DEGREES: [i32; 10] = [15, -15, 30, -30, 45, -45, 60, -60, 90, -90];
 
-type RegimentRead<'w, 's> =
-    Query<'w, 's, (&'static Anchor, &'static FormationState, &'static Order)>;
+type RegimentRead<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Anchor,
+        &'static FormationState,
+        &'static Order,
+        &'static Morale,
+    ),
+>;
+/// One regiment as a soldier reads it.
+type RegimentItem<'a> = (&'a Anchor, &'a FormationState, &'a Order, &'a Morale);
 
 /// The per-soldier query of `soldier_steer`.
 type SteerQuery<'w, 's> = Query<
@@ -42,6 +53,7 @@ type SteerQuery<'w, 's> = Query<
         &'static SlotRef,
         &'static Rank,
         &'static MeleeState,
+        &'static FatigueC,
         &'static mut Vel,
         &'static mut Facing,
         &'static mut Fsm,
@@ -55,6 +67,7 @@ type SteerItem<'a> = (
     &'a SlotRef,
     &'a Rank,
     &'a MeleeState,
+    &'a FatigueC,
     Mut<'a, Vel>,
     Mut<'a, Facing>,
     Mut<'a, Fsm>,
@@ -150,7 +163,8 @@ impl Steer<'_, '_, '_> {
         body: &Body,
         rank: &Rank,
         melee: &MeleeState,
-        regiment: Option<(&Anchor, &FormationState, &Order)>,
+        speed_mult: S,
+        regiment: Option<RegimentItem<'_>>,
         vel: &mut Vel,
         facing: &mut Facing,
         scratch: &mut Vec<usize>,
@@ -158,10 +172,10 @@ impl Steer<'_, '_, '_> {
         let rules = &self.regs.rules.movement;
         let combat = &self.regs.rules.combat;
         let unit = self.regs.units.get(soldier.unit);
-        let mode = regiment.map_or(SpeedMode::Walk, |(_, _, o)| o.speed);
+        let mode = regiment.map_or(SpeedMode::Walk, |(_, _, o, _)| o.speed);
         // SIM-CMBT-012: second-rank fighters stop a reach bonus further back.
         let second_rank = rank.rank == 1
-            && regiment.is_some_and(|(_, state, _)| {
+            && regiment.is_some_and(|(_, state, _, _)| {
                 unit.second_rank_attack
                     || self.regs.formations.get(state.template).layout == Layout::Phalanx
             });
@@ -178,7 +192,7 @@ impl Steer<'_, '_, '_> {
                 .map(|i| &entries[i])
         });
         let mut wanted = None;
-        let mut v_max = mode_speed(unit, mode);
+        let mut v_max = mode_speed(unit, mode) * speed_mult;
         let v_des = match target {
             Some(e) if e.pos != p => {
                 let r_j = self.bodies.get(e.entity).map_or(self.max_radius, |b| b.r);
@@ -217,7 +231,8 @@ impl Steer<'_, '_, '_> {
         slot: &SlotRef,
         rank: &Rank,
         melee: &MeleeState,
-        regiment: Option<(&Anchor, &FormationState, &Order)>,
+        fatigue: &FatigueC,
+        regiment: Option<RegimentItem<'_>>,
         vel: &mut Vel,
         facing: &mut Facing,
         fsm: &mut Fsm,
@@ -225,14 +240,20 @@ impl Steer<'_, '_, '_> {
     ) {
         let rules = &self.regs.rules.movement;
         let p = pos.p;
+        // SIM-MOVE-020 (T2-040): own fatigue and the regiment's morale state
+        // scale every branch's `v_max`.
+        let speed_mult = fatigue_mults(fatigue.f, &self.regs.rules.fatigue).speed
+            * regiment.map_or(S::ONE, |(_, _, _, m)| {
+                morale_mults(m.state, &self.regs.rules.morale).speed
+            });
         if fsm.state == SoldierState::Fighting {
             self.fight(
-                soldier, p, body, rank, melee, regiment, vel, facing, scratch,
+                soldier, p, body, rank, melee, speed_mult, regiment, vel, facing, scratch,
             );
             return;
         }
         // The slot to hold, if any.
-        let target = regiment.and_then(|(anchor, state, order)| {
+        let target = regiment.and_then(|(anchor, state, order, _)| {
             let s = state.slots.get(usize::from(slot.slot?))?;
             Some((
                 slot_world(anchor, s),
@@ -262,7 +283,7 @@ impl Steer<'_, '_, '_> {
             fsm.since = self.tick;
         }
 
-        // SIM-MOVE-020: v_max (fatigue and status multipliers arrive in Phase 2).
+        // SIM-MOVE-020: v_max (the status multiplier arrives with T2-050).
         let unit = self.regs.units.get(soldier.unit);
         let dir = if dist > S::ZERO {
             seek * (S::ONE / dist)
@@ -270,6 +291,7 @@ impl Steer<'_, '_, '_> {
             V2::ZERO
         };
         let v_max = mode_speed(unit, mode)
+            * speed_mult
             * zone_move_mult(self.map, self.regs, p)
             * slope_mult(self.map, rules, p, dir);
 
@@ -329,7 +351,7 @@ pub fn soldier_steer(
     let ids = &ids;
     let regiments = &regiments;
     let run = |scratch: &mut Vec<usize>,
-               (soldier, pos, body, slot, rank, melee, mut vel, mut facing, mut fsm): SteerItem<
+               (soldier, pos, body, slot, rank, melee, fatigue, mut vel, mut facing, mut fsm): SteerItem<
         '_,
     >| {
         let regiment = ids
@@ -342,6 +364,7 @@ pub fn soldier_steer(
             slot,
             rank,
             melee,
+            fatigue,
             regiment,
             &mut vel,
             &mut facing,

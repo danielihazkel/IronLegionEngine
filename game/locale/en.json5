@@ -91,6 +91,21 @@
       commands: "{count} commands · {mode}",
       soldiers: "{count} soldiers",
       formation: "{formation} · {ranks} ranks",
+      morale: "morale {value} ({state})",
+    },
+    morale: {
+      steady: "steady",
+      unsettled: "unsettled",
+      shaken: "shaken",
+      broken: "broken",
+      routing: "routing",
+      shattered: "shattered",
+    },
+    fatigue: {
+      fresh: "fresh",
+      active: "active",
+      tired: "tired",
+      exhausted: "exhausted",
     },
   },
 }

@@ -12,9 +12,11 @@ use bevy_ecs::prelude::*;
 use il_core::{Angle, S, Scalar, TICKS_PER_SECOND, Tick, V2};
 use il_data::{FormationTemplate, Handle, Layout, MovementRules, Registries, UnitType};
 
+use crate::combat::{fatigue_mults, morale_mults};
 use crate::command::SpeedMode;
 use crate::components::{
-    Anchor, Combat, FormationState, Order, OrderKind, Path, Pos, Regiment, SlotRef,
+    Anchor, Combat, FormationState, Morale, Order, OrderKind, Path, Pos, Regiment, RegimentFatigue,
+    SlotRef,
 };
 use crate::formation::{slot_world, spacing};
 use crate::map::LoadedMap;
@@ -78,10 +80,27 @@ fn column_template(unit: &UnitType, regs: &Registries) -> Option<Handle<Formatio
 
 type SoldierRead<'w, 's> = Query<'w, 's, (&'static Pos, &'static SlotRef)>;
 
+/// The regiment query of `regiment_follow_path`.
+type FollowQuery<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Regiment,
+        &'static Combat,
+        &'static Morale,
+        &'static RegimentFatigue,
+        &'static mut Anchor,
+        &'static mut Order,
+        &'static mut Path,
+        &'static mut FormationState,
+    ),
+>;
 /// One regiment as `regiment_follow_path` sees it.
 type FollowItem<'a> = (
     &'a Regiment,
     &'a Combat,
+    &'a Morale,
+    &'a RegimentFatigue,
     Mut<'a, Anchor>,
     Mut<'a, Order>,
     Mut<'a, Path>,
@@ -131,6 +150,7 @@ fn narrow_ahead(path: &Path, from: usize, width: S) -> bool {
 #[allow(clippy::too_many_arguments)]
 fn follow_one(
     regiment: &Regiment,
+    speed_mult: S,
     anchor: &mut Anchor,
     order: &mut Order,
     path: &mut Path,
@@ -208,10 +228,12 @@ fn follow_one(
     let max_turn = deg_to_rad(rules.wheel_rate) * dt;
     anchor.facing = anchor.facing.turn_toward(desired, max_turn);
 
-    // SIM-MOVE-011 / SIM-MOVE-020 (regiment): unit speed × formation ×
-    // zone × slope, × morph and straggler factors.
+    // SIM-MOVE-011 / SIM-MOVE-020 (regiment): unit speed × fatigue and
+    // morale (T2-040, `speed_mult`) × formation × zone × slope, × morph and
+    // straggler factors.
     let template = regs.formations.get(state.template);
     let mut v = mode_speed(unit, order.speed)
+        * speed_mult
         * template.speed_mult
         * zone_move_mult(map, regs, anchor.pos)
         * slope_mult(map, rules, anchor.pos, dir);
@@ -229,16 +251,20 @@ fn follow_one(
     anchor.pos = map.clamp(anchor.pos + dir * step);
 }
 
+/// Whether `regiment_follow_path` steps the anchor this tick: a moving
+/// order with a served, unfinished path, unless an attacker's soldiers are
+/// fighting (SIM-CMBT-003). Fatigue reads the same predicate (T2-040), so
+/// "the regiment is moving" means one thing.
+pub fn anchor_moves(order: &Order, path: &Path, combat: &Combat) -> bool {
+    order.kind.moves()
+        && !(order.kind.is_attack() && combat.engaged)
+        && !path.requested
+        && path.is_active()
+}
+
 /// Stage 3 `regiment_follow_path`.
 pub fn regiment_follow_path(
-    mut regiments: Query<(
-        &Regiment,
-        &Combat,
-        &mut Anchor,
-        &mut Order,
-        &mut Path,
-        &mut FormationState,
-    )>,
+    mut regiments: FollowQuery,
     soldiers: SoldierRead,
     ids: Res<Ids>,
     regs: Res<Regs>,
@@ -252,38 +278,47 @@ pub fn regiment_follow_path(
     let regs = &regs.0;
     let map = &map.0;
     let wheel_per_tick = deg_to_rad(regs.rules.movement.wheel_rate) * tick_dt();
-    let run = |(r, combat, mut anchor, mut order, mut path, mut state): FollowItem<'_>| {
-        // SIM-CMBT-003 (plan decision 7): the anchor of an engaged attacker
-        // holds while its soldiers fight; the path is kept.
-        if order.kind.is_attack() && combat.engaged {
-            return;
-        }
-        if !order.kind.moves() {
-            // SIM-FORM-024: a halted regiment wheels toward its ordered
-            // facing while its soldiers track the moving slots.
-            if let Some(target) = order.facing
-                && anchor.facing != target
-            {
-                anchor.facing = anchor.facing.turn_toward(target, wheel_per_tick);
+    let run =
+        |(r, combat, morale, fatigue, mut anchor, mut order, mut path, mut state): FollowItem<
+            '_,
+        >| {
+            // SIM-CMBT-003 (plan decision 7): the anchor of an engaged attacker
+            // holds while its soldiers fight; the path is kept.
+            if order.kind.is_attack() && combat.engaged {
+                return;
             }
-            return;
-        }
-        if path.requested || !path.is_active() {
-            return;
-        }
-        follow_one(
-            r,
-            &mut anchor,
-            &mut order,
-            &mut path,
-            &mut state,
-            soldiers,
-            ids,
-            regs,
-            map,
-            tick,
-        );
-    };
+            if !order.kind.moves() {
+                debug_assert!(!anchor_moves(&order, &path, combat));
+                // SIM-FORM-024: a halted regiment wheels toward its ordered
+                // facing while its soldiers track the moving slots.
+                if let Some(target) = order.facing
+                    && anchor.facing != target
+                {
+                    anchor.facing = anchor.facing.turn_toward(target, wheel_per_tick);
+                }
+                return;
+            }
+            if !anchor_moves(&order, &path, combat) {
+                return;
+            }
+            // SIM-MOVE-011 (T2-040): the anchor slows with the regiment's mean
+            // fatigue and its morale state.
+            let speed_mult = fatigue_mults(fatigue.mean, &regs.rules.fatigue).speed
+                * morale_mults(morale.state, &regs.rules.morale).speed;
+            follow_one(
+                r,
+                speed_mult,
+                &mut anchor,
+                &mut order,
+                &mut path,
+                &mut state,
+                soldiers,
+                ids,
+                regs,
+                map,
+                tick,
+            );
+        };
     if parallel {
         regiments.par_iter_mut().for_each(run);
     } else {

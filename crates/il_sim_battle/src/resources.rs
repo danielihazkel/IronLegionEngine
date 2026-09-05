@@ -9,7 +9,7 @@ use il_core::{
     EventQueue, IdAllocator, PlayerId, ProjectileId, RegimentId, RngStream, S, Scalar, SoldierId,
     StateHash, StreamId, Tick, V2, impl_hashable_fieldless_enum, impl_hashable_struct,
 };
-use il_data::{ContentId, ProjectileArc, Registries};
+use il_data::{ContentId, MapEdge, ProjectileArc, Registries};
 use serde::{Deserialize, Serialize};
 
 use crate::command::{Command, RejectReason};
@@ -274,7 +274,60 @@ pub struct SideState {
     pub deployment_zone: u8,
     pub deployment_confirmed: bool,
     pub defeated: bool,
+    /// SIM-FLOW-001: the map edge routing soldiers run for, chosen at spawn
+    /// from the deployment polygon (T2-042; `West` until then).
+    pub escape_edge: MapEdge,
+    /// SIM-GEN-001: the general soldier and its bodyguard regiment
+    /// (T2-043; `None` until then).
+    pub general: Option<SoldierId>,
+    pub general_regiment: Option<RegimentId>,
+    /// SIM-GEN-003: set the tick the general dies; the id above is kept for
+    /// the fate computation.
+    pub general_dead: bool,
 }
+
+impl SideState {
+    /// Hashes the side fields SIM-DET-004 lists (`MapEdge` as its
+    /// discriminant: `il_data` types cannot implement `Hashable` here).
+    pub fn hash_state(&self, h: &mut StateHasher) {
+        h.write_u8(self.escape_edge as u8);
+        self.general.hash_state(h);
+        self.general_regiment.hash_state(h);
+        self.general_dead.hash_state(h);
+    }
+}
+
+/// SIM-MOR-014, 025, 026, 033: a one-time morale shock. The amount is
+/// resolved from `Rules` when Stage 14 applies it, so the queue carries no
+/// numbers and a hot reload of `morale.json5` takes effect immediately.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[repr(u8)]
+pub enum ShockKind {
+    /// SIM-MOR-025: an engaged regiment ordered away.
+    Disengage = 0,
+    /// SIM-MOR-026: charged through the frontal arc (half penalty).
+    ChargedFront = 1,
+    /// SIM-MOR-026: charged from the flank or rear.
+    ChargedFlank = 2,
+    /// SIM-MOR-014: the side's general died (halved for Shaken or worse).
+    GeneralDeath = 3,
+    /// SIM-MOR-033: an ally within `rout_shock_radius` routed.
+    Rout = 4,
+}
+impl_hashable_fieldless_enum!(ShockKind);
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct Shock {
+    pub regiment: RegimentId,
+    pub kind: ShockKind,
+}
+impl_hashable_struct!(Shock { regiment, kind });
+
+/// Shocks queued for Stage 14 (`morale_tick`), applied in queue order. The
+/// queue crosses the tick boundary (death queues at Stage 15), so it is
+/// hashed and snapshotted (plan decision 8).
+#[derive(Resource, Clone, Debug, Default)]
+pub struct MoraleShocks(pub Vec<Shock>);
 
 #[derive(Resource, Clone, Debug, Default)]
 pub struct Sides(pub Vec<SideState>);

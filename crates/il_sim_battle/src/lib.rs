@@ -11,6 +11,7 @@ pub mod formation;
 pub mod hash;
 pub mod interface;
 pub mod map;
+pub mod morale;
 pub mod movement;
 pub mod nav;
 pub mod resources;
