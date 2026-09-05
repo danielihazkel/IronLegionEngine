@@ -28,6 +28,8 @@
   bands: {
     seeds: 50,
     seed_base: 5000,
+    // The hastati stand and take it (T2-042: they would break and run north).
+    pin_morale: [1],
     tick_limit: 1200,            // eight volleys take 561 ticks plus the last flight
     assertions: [
       { name: "hastati lose 15-35", kind: "casualties", side: 1, min_lost: 0.125, max_lost: 0.292, min_fraction: 0.90 },

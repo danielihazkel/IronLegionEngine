@@ -60,5 +60,6 @@
     { action: "debug_anchors", keys: ["F8"] },
     { action: "debug_spatial", keys: ["F9"] },
     { action: "debug_morale", keys: ["F10"] },
+    { action: "debug_flow", keys: ["F11"] },
   ],
 }

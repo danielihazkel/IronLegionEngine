@@ -44,7 +44,7 @@ fn world() -> BattleWorld {
 
 fn segments(world: &BattleWorld, flags: DebugFlags, camera: &Camera) -> usize {
     let mut lines = LineScene::default();
-    build_debug_lines(&world.view(), flags, camera, SCREEN, &mut lines);
+    build_debug_lines(&world.view(), flags, 0, camera, SCREEN, &mut lines);
     lines.segment_count()
 }
 

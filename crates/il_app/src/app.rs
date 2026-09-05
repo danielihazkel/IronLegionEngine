@@ -348,6 +348,7 @@ impl App {
                 (Action::DebugAnchors, &mut flags.anchors),
                 (Action::DebugSpatial, &mut flags.spatial_cells),
                 (Action::DebugMorale, &mut flags.morale),
+                (Action::DebugFlow, &mut flags.flow),
             ] {
                 if input.pressed(b, action) {
                     *flag = !*flag;
@@ -660,9 +661,18 @@ impl App {
             self.lines.segment(a, b, Self::PROJECTILE_COLOUR);
         }
         if DEV {
+            // The flow overlay shows the selected regiment's side (else 0).
+            let view = session.world.view();
+            let flow_side = self
+                .selection
+                .regiments
+                .first()
+                .and_then(|id| view.regiment(*id))
+                .map_or(0, |r| r.side);
             build_debug_lines(
-                &session.world.view(),
+                &view,
                 self.debug,
+                flow_side,
                 &camera,
                 screen,
                 &mut self.lines,
@@ -932,6 +942,7 @@ fn debug_suffix(flags: DebugFlags) -> String {
         (flags.anchors, "anchors"),
         (flags.spatial_cells, "cells"),
         (flags.morale, "morale"),
+        (flags.flow, "flow"),
     ];
     let on: Vec<&str> = names.iter().filter(|(f, _)| *f).map(|(_, n)| *n).collect();
     if on.is_empty() {

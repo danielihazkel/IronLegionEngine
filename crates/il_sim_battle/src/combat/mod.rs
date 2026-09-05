@@ -26,7 +26,7 @@ pub mod ranged;
 pub mod target;
 
 pub use attack::{AttackOutcome, Kill, Kills, Outcomes, apply_outcomes, melee_attack};
-pub use death::{resolve_deaths, ring_slot};
+pub use death::{resolve_deaths, resolve_fled, ring_slot};
 pub use formulas::{
     Arc, FatigueMults, apex_height, arc_mults, attack_arc, braced, charge_mults, cooldown_ticks,
     experience_mult, fatigue_mults, flight_ticks, footprint_area, hit_probability, melee_damage,

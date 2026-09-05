@@ -247,7 +247,8 @@ pub struct SpatialGridRes(pub SpatialGrid<SoldierId>);
 #[derive(Resource, Clone)]
 pub struct AnchorGridRes(pub SpatialGrid<RegimentId>);
 
-/// The nav grid derived from the map (TDD §6.1); rebuilt on restore and
+/// The nav grid derived from the map; any mutation must be followed by
+/// `flow::rebuild_flow_fields` (SIM-FLOW-003) (TDD §6.1); rebuilt on restore and
 /// when gates change (Phase 5).
 #[derive(Resource, Clone)]
 pub struct NavGridRes(pub NavGrid);
@@ -255,6 +256,20 @@ pub struct NavGridRes(pub NavGrid);
 /// The path search (`AStar` in Phase 1, HPA* from Phase 3).
 #[derive(Resource, Default)]
 pub struct PathfinderRes(pub AStar);
+
+/// SIM-FLOW-001: one escape field per side (index = side number), derived
+/// from the nav grid by `flow::rebuild_flow_fields` (T2-042); never hashed
+/// or snapshotted. Empty until the sides exist.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct FlowFields {
+    pub fields: Vec<crate::flow::FlowField>,
+}
+
+impl FlowFields {
+    pub fn for_side(&self, side: u8) -> Option<&crate::flow::FlowField> {
+        self.fields.get(usize::from(side))
+    }
+}
 
 /// Regiments waiting for a path, served ascending, `paths_per_tick` per
 /// tick (SIM-MOVE-005). Derived: rebuilt from `Path.requested` on restore.

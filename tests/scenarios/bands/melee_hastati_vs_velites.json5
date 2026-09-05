@@ -35,7 +35,7 @@
     tick_limit: 6000,            // 5 min of sim time; stops early when a side is wiped out
     assertions: [
       { name: "hastati win", kind: "winner", side: 0, min_fraction: 0.90 },
-      { name: "velites rout early", kind: "routed_before_loss", side: 1, loss_fraction: 0.50, min_fraction: 0.90, active: false },
+      { name: "velites rout early", kind: "routed_before_loss", side: 1, loss_fraction: 0.50, min_fraction: 0.90 },
     ],
   },
 }

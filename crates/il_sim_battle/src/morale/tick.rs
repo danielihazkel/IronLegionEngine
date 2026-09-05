@@ -17,6 +17,7 @@ use crate::events::BattleEvent;
 use crate::morale::factors::{
     MoraleInputs, morale_delta, morale_factors, morale_state, shock_amount,
 };
+use crate::morale::rout;
 use crate::movement::regiment::tick_dt;
 use crate::resources::{
     AnchorGridRes, Clock, Events, Ids, MapRes, MoraleShocks, Regs, SpatialGridRes,
@@ -136,6 +137,7 @@ fn inputs(
     // SIM-MOR-017/023/024: the nearest enemy anchor and the enemies within
     // `safe_radius` (plan G23/G24).
     let nearest = nearest_enemy(rows, i);
+    let nearest_enemy = nearest.map(|(j, d)| (rows[j].anchor, d));
     let height_delta =
         nearest.map(|(j, _)| map.height_at(row.anchor) - map.height_at(rows[j].anchor));
     let enemy_within_safe = nearest.is_some_and(|(_, d)| d <= rules.safe_radius);
@@ -196,6 +198,7 @@ fn inputs(
         integrity: row.integrity,
         engaged_ticks,
         enemy_within_safe,
+        nearest_enemy,
         state: row.state,
     }
 }
@@ -227,11 +230,10 @@ pub fn morale_tick(world: &mut World) {
         }
         let x = morale_factors(&inp, &rules.morale, &rules.combat, &rules.formation);
         m = (m + morale_delta(&x, &rules.morale.w, dt)).clamp(S::ZERO, hundred);
-        let next = morale_state(m, row.state, &rules.morale);
+        let mut next = morale_state(m, row.state, &rules.morale);
         {
             let mut morale = world.get_mut::<Morale>(row.entity).expect("gathered");
             morale.m = m;
-            morale.state = next;
             // SIM-MOR-022: the engagement clock.
             morale.engaged_since = if row.engaged {
                 if row.engaged_since.0 == 0 {
@@ -243,6 +245,16 @@ pub fn morale_tick(world: &mut World) {
                 Tick::ZERO
             };
         }
+        // SIM-MOR-030..032 (T2-042): the rout, or the rally out of it.
+        if next == MoraleState::Routing && row.state != MoraleState::Routing {
+            next = rout::enter_routing(world, row.entity, tick);
+        } else if row.state == MoraleState::Routing
+            && rout::try_rally(world, row.entity, tick, m, inp.nearest_enemy)
+        {
+            next = MoraleState::Shaken;
+        } else {
+            world.get_mut::<Morale>(row.entity).expect("gathered").state = next;
+        }
         if next != row.state {
             world.resource_mut::<Events>().0.push(
                 tick,
@@ -252,9 +264,7 @@ pub fn morale_tick(world: &mut World) {
                     to: next,
                 },
             );
-            // Entering Routing: SIM-MOR-030/032 behaviour arrives with
-            // T2-042 (`rout::enter_routing`); until then the state alone
-            // changes and `melee_gate` stops the regiment fighting.
         }
     }
+    rout::follow_centroid(world);
 }

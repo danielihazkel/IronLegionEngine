@@ -100,8 +100,9 @@ const DIAGONAL: u32 = 141;
 /// How far a blocked start or goal cell is searched for a passable one.
 const SNAP_RADIUS: i64 = 8;
 
-/// The eight neighbour offsets in a fixed order (cardinals first).
-const NEIGHBOURS: [(i64, i64); 8] = [
+/// The eight neighbour offsets in a fixed order (cardinals first); the
+/// index is the flow field's direction code (T2-042).
+pub(crate) const NEIGHBOURS: [(i64, i64); 8] = [
     (1, 0),
     (0, 1),
     (-1, 0),
@@ -111,6 +112,17 @@ const NEIGHBOURS: [(i64, i64); 8] = [
     (-1, -1),
     (1, -1),
 ];
+
+/// The cost of stepping into a cell of `cost`: diagonals pay
+/// `ceil(cost × 141 / 100)` (SIM-MOVE-001).
+#[inline]
+pub fn step_cost(cost: u16, diagonal: bool) -> u32 {
+    if diagonal {
+        (u32::from(cost) * DIAGONAL).div_ceil(COST_SCALE)
+    } else {
+        u32::from(cost)
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct NavGrid {
@@ -304,6 +316,31 @@ impl NavGrid {
             (S::from_i32(cx as i32) + S::HALF) * self.cell,
             (S::from_i32(cy as i32) + S::HALF) * self.cell,
         )
+    }
+
+    /// Calls `f(k, nx, ny, step)` for every passable 8-neighbour of
+    /// `(cx, cy)` in `NEIGHBOURS` order (`k` its index), skipping diagonals
+    /// that would cut an impassable corner; `step` is `step_cost` of the
+    /// neighbour. A\*, the Dijkstra oracle and the escape flow fields
+    /// (T2-042) all walk this one graph.
+    #[inline]
+    pub fn for_each_neighbour(&self, cx: u32, cy: u32, mut f: impl FnMut(usize, u32, u32, u32)) {
+        for (k, (dx, dy)) in NEIGHBOURS.iter().enumerate() {
+            let (nx, ny) = (i64::from(cx) + dx, i64::from(cy) + dy);
+            if !self.in_bounds(nx, ny) {
+                continue;
+            }
+            let (nx, ny) = (nx as u32, ny as u32);
+            let cost = self.cost(nx, ny);
+            if cost == IMPASSABLE {
+                continue;
+            }
+            let diagonal = k >= 4;
+            if diagonal && (!self.is_passable(nx, cy) || !self.is_passable(cx, ny)) {
+                continue;
+            }
+            f(k, nx, ny, step_cost(cost, diagonal));
+        }
     }
 
     /// `IMPASSABLE` or the scaled move cost.
@@ -550,38 +587,20 @@ impl AStar {
             }
             let (cx, cy) = nav.coords(node as usize);
             let g = self.g[node as usize];
-            for (k, (dx, dy)) in NEIGHBOURS.iter().enumerate() {
-                let (nx, ny) = (i64::from(cx) + dx, i64::from(cy) + dy);
-                if !nav.in_bounds(nx, ny) {
-                    continue;
-                }
-                let (nx, ny) = (nx as u32, ny as u32);
-                let cost = nav.cost(nx, ny);
-                if cost == IMPASSABLE {
-                    continue;
-                }
-                let diagonal = k >= 4;
-                if diagonal && (!nav.is_passable(nx, cy) || !nav.is_passable(cx, ny)) {
-                    continue;
-                }
-                let step = if diagonal {
-                    (u32::from(cost) * DIAGONAL).div_ceil(COST_SCALE)
-                } else {
-                    u32::from(cost)
-                };
+            nav.for_each_neighbour(cx, cy, |_, nx, ny, step| {
                 let ng = g + step;
                 let n = nav.index(nx, ny) as u32;
                 if self.closed_epoch[n as usize] == self.epoch {
-                    continue;
+                    return;
                 }
                 if self.g_epoch[n as usize] == self.epoch && self.g[n as usize] <= ng {
-                    continue;
+                    return;
                 }
                 self.g[n as usize] = ng;
                 self.g_epoch[n as usize] = self.epoch;
                 self.came[n as usize] = node;
                 self.open.push(Reverse((ng + octile((nx, ny), goal), n)));
-            }
+            });
         }
         None
     }
@@ -665,32 +684,14 @@ pub fn dijkstra_cost(nav: &NavGrid, start: (u32, u32), goal: (u32, u32)) -> Opti
         if (cx, cy) == goal {
             return Some(d);
         }
-        for (k, (dx, dy)) in NEIGHBOURS.iter().enumerate() {
-            let (nx, ny) = (i64::from(cx) + dx, i64::from(cy) + dy);
-            if !nav.in_bounds(nx, ny) {
-                continue;
-            }
-            let (nx, ny) = (nx as u32, ny as u32);
-            let cost = nav.cost(nx, ny);
-            if cost == IMPASSABLE {
-                continue;
-            }
-            let diagonal = k >= 4;
-            if diagonal && (!nav.is_passable(nx, cy) || !nav.is_passable(cx, ny)) {
-                continue;
-            }
-            let step = if diagonal {
-                (u32::from(cost) * DIAGONAL).div_ceil(COST_SCALE)
-            } else {
-                u32::from(cost)
-            };
+        nav.for_each_neighbour(cx, cy, |_, nx, ny, step| {
             let nd = d + step;
             let ni = nav.index(nx, ny);
             if nd < dist[ni] {
                 dist[ni] = nd;
                 heap.push(Reverse((nd, ni as u32)));
             }
-        }
+        });
     }
     None
 }
@@ -710,8 +711,9 @@ mod tests {
         }
     }
 
-    /// A random grid: ~25 % rock, the rest costs 100, 150 or 250.
-    fn random_grid(cols: u32, rows: u32, seed: u64) -> NavGrid {
+    /// A random grid: ~25 % rock, the rest costs 100, 150 or 250 (shared
+    /// with the flow-field tests).
+    pub(crate) fn random_grid(cols: u32, rows: u32, seed: u64) -> NavGrid {
         let mut g = Lcg(seed);
         let cost = (0..cols * rows)
             .map(|_| match g.next() % 8 {
@@ -753,12 +755,7 @@ mod tests {
                         let dx = w[0].0.abs_diff(w[1].0);
                         let dy = w[0].1.abs_diff(w[1].1);
                         assert!(dx <= 1 && dy <= 1 && (dx, dy) != (0, 0));
-                        let c = u32::from(nav.cost(w[1].0, w[1].1));
-                        total += if dx == 1 && dy == 1 {
-                            (c * DIAGONAL).div_ceil(COST_SCALE)
-                        } else {
-                            c
-                        };
+                        total += step_cost(nav.cost(w[1].0, w[1].1), dx == 1 && dy == 1);
                     }
                     assert_eq!(total, cost);
                 }

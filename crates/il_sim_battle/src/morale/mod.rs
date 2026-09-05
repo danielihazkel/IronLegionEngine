@@ -6,6 +6,7 @@
 
 pub mod factors;
 pub mod fatigue;
+pub mod rout;
 pub mod tick;
 
 pub use factors::{
@@ -15,4 +16,5 @@ pub use fatigue::{
     Activity, FATIGUE_MEAN_PERIOD, FatigueState, activity, fatigue_rate, fatigue_state,
     fatigue_tick, regiment_fatigue_mean, weather_fatigue_mult,
 };
+pub use rout::{enter_routing, follow_centroid, try_rally};
 pub use tick::morale_tick;

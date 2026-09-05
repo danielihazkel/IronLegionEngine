@@ -67,3 +67,22 @@ pub fn two_sides(count: u16) -> BattleSetup {
 pub fn world(count: u16) -> BattleWorld {
     BattleWorld::new(&two_sides(count), regs()).unwrap()
 }
+
+/// Pins every regiment's morale at 100 (T2-041): tests about the melee
+/// itself want fights that run to the end, and a broken regiment stops
+/// fighting and flees (T2-042). Call after every step; recomputes the hash.
+pub fn pin_morale(w: &mut BattleWorld) {
+    let entities: Vec<_> = w
+        .ecs()
+        .resource::<il_sim_battle::resources::Ids>()
+        .regiment_entities
+        .iter()
+        .map(|(_, e)| *e)
+        .collect();
+    for e in entities {
+        if let Some(mut m) = w.ecs_mut().get_mut::<il_sim_battle::components::Morale>(e) {
+            m.m = <il_core::S as il_core::Scalar>::from_i32(100);
+        }
+    }
+    w.recompute_hash();
+}

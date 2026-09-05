@@ -575,6 +575,7 @@ impl BattleWorld {
             crate::nav::NavGrid::from_map(map, regs, &regs.rules.movement)
         };
         self.world.resource_mut::<crate::resources::NavGridRes>().0 = nav;
+        crate::flow::rebuild_flow_fields(&mut self.world);
         let requested: Vec<RegimentId> = {
             let ids = self.world.resource::<Ids>();
             ids.regiment_entities

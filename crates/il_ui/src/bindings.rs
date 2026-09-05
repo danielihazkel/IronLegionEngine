@@ -119,6 +119,8 @@ pub enum Action {
     DebugSpatial,
     /// Morale and fatigue overlay (T2-041).
     DebugMorale,
+    /// Escape flow field overlay (T2-042).
+    DebugFlow,
     QuitToMenu,
 }
 
@@ -154,6 +156,7 @@ const FIXED_ACTIONS: &[(&str, Action)] = &[
     ("debug_anchors", Action::DebugAnchors),
     ("debug_spatial", Action::DebugSpatial),
     ("debug_morale", Action::DebugMorale),
+    ("debug_flow", Action::DebugFlow),
     ("quit_to_menu", Action::QuitToMenu),
 ];
 

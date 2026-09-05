@@ -20,8 +20,8 @@ use crate::combat::formulas::{
     terrain_defence_mult,
 };
 use crate::components::{
-    Body, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState, Morale, Order, Pos,
-    Rank, Regiment, Soldier, SoldierState,
+    Body, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState, Morale, MoraleState,
+    Order, Pos, Rank, Regiment, Soldier, SoldierState,
 };
 use crate::resources::{Clock, Ids, MapRes, Regs, Rng};
 
@@ -234,6 +234,15 @@ impl Ctx<'_, '_, '_> {
             * terrain
             * status;
         let p = hit_probability(a, d, c);
+        // SIM-MOR-034 (T2-042, plan G22): routers are easier to hit.
+        let p = if matches!(
+            morale_j.state,
+            MoraleState::Routing | MoraleState::Shattered
+        ) {
+            (p * c.pursuit_hit_mult).min(c.max_hit)
+        } else {
+            p
+        };
         // SIM-DET-002: draw index 0 is the hit roll.
         let hit = hash_draw::<S>(self.seed, self.tick, soldier.id.0, 0) < p;
         let damage = if hit {

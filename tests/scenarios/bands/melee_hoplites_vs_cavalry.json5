@@ -33,10 +33,11 @@
     tick_limit: 6000,
     assertions: [
       { name: "hoplites win", kind: "winner", side: 0, min_fraction: 0.85 },
-      // Measured 2026-09-04 over 50 seeds: about 20 % lost 30 s after the
-      // wedge tip first fights, 30 % by 60 s in every seed; "on the charge"
-      // is read as the first minute (Simulation Spec 15.3).
-      { name: "cavalry bleeds on the charge", kind: "casualties", side: 1, min_lost: 0.30, within_ticks_of_contact: 1200, contact_regiment: 1, min_fraction: 0.85 },
+      // Melee-only (2026-09-04): about 20 % lost 30 s after the wedge tip
+      // first fights, 30 % by 60 s. With morale (T2-042) the wedge breaks
+      // at 5-10 % losses about 16 s after contact and flees, the reading
+      // Simulation Spec 15.3 anticipated for this row.
+      { name: "cavalry rout within 60 s of the charge", kind: "rout_within", side: 1, after: "contact", contact_regiment: 1, within_ticks: 1200, min_fraction: 0.85 },
     ],
   },
 }

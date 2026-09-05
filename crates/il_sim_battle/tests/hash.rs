@@ -32,12 +32,13 @@ use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 /// engaged since, arc hits, fatigue mean, fled, general rank, shock queue)
 /// joined the layout; the 1,000-tick value again in T2-041 when morale
 /// started moving and the fresh value when regiments began spawning in
-/// the state their morale falls into).
+/// the state their morale falls into; both again in T2-042 when the escape
+/// edges started coming from the deployment zones and routers fled).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0xef6b_05b8_3168_a6a4;
+const GOLDEN_FRESH: u64 = 0x43ba_b00f_c1ac_c1a6;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x4650_2831_117a_2ea5;
+const GOLDEN_1000: u64 = 0xcc18_5aef_f31d_2dc4;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 

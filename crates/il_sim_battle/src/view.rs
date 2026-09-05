@@ -257,6 +257,13 @@ impl<'w> BattleView<'w> {
         &self.world.resource::<NavGridRes>().0
     }
 
+    /// The side's escape flow field (SIM-FLOW-001, T2-042).
+    pub fn flow_field(&self, side: u8) -> Option<&'w crate::flow::FlowField> {
+        self.world
+            .resource::<crate::resources::FlowFields>()
+            .for_side(side)
+    }
+
     /// Soldier grid as rebuilt at Stage 6 of the last completed tick.
     pub fn spatial_grid(&self) -> &'w SpatialGrid<SoldierId> {
         &self.world.resource::<SpatialGridRes>().0

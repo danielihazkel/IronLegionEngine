@@ -93,7 +93,9 @@ fn run_collecting(
                 deaths.push((*id, *killer, *regiment, killer_regiment));
             }
         }
-        hashes.push(out.hash);
+        // These tests are about the melee, not the rout (T2-042).
+        common::pin_morale(world);
+        hashes.push(world.hash());
     }
     hashes
 }

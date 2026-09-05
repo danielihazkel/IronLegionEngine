@@ -175,3 +175,27 @@ fn pause_and_set_speed_are_accepted_no_ops() {
     // SIM-DET-008: no effect on the state hash.
     assert_eq!(out.hash, b.step(&[]).hash);
 }
+
+/// SIM-CMD-004 (T2-042): a Routing regiment takes no orders.
+#[test]
+fn routing_regiments_reject_orders() {
+    let mut w = common::world(10);
+    let e = w
+        .ecs()
+        .resource::<il_sim_battle::resources::Ids>()
+        .regiment_entity(RegimentId(0))
+        .unwrap();
+    w.ecs_mut()
+        .get_mut::<il_sim_battle::components::Morale>(e)
+        .unwrap()
+        .m = <il_core::S as il_core::Scalar>::ZERO;
+    w.recompute_hash();
+    w.step(&[]);
+    let t = w.tick().next();
+    let out = w.step(&[cmd(t, 0, 0, halt(0))]);
+    assert_eq!(out.rejected.len(), 1);
+    assert!(matches!(
+        out.rejected[0].1,
+        il_sim_battle::RejectReason::Routing(RegimentId(0))
+    ));
+}

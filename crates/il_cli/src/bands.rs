@@ -76,6 +76,11 @@ pub struct Bands {
     /// override such as `projectile_cap: 0`).
     #[serde(default)]
     pub mods: Vec<PathBuf>,
+    /// Sides whose regiments keep morale 100 after every tick (T2-042), for
+    /// rows that measure something else while the target stands and takes
+    /// it (the volley rows: their hastati would break and run).
+    #[serde(default)]
+    pub pin_morale: Vec<u8>,
     pub assertions: Vec<Assertion>,
 }
 
@@ -156,16 +161,21 @@ pub struct SeedOutcome {
     pub rejected: u32,
     /// Soldiers per side at the start.
     pub initial: Vec<u32>,
-    /// Soldiers per side at the end.
+    /// Soldiers per side on the field at the end.
     pub survivors: Vec<u32>,
+    /// Soldiers per side that fled the field (T2-042; not dead).
+    pub fled: Vec<u32>,
     /// First tick a soldier of each regiment was `Fighting`.
     pub first_contact: BTreeMap<u32, u32>,
     /// First tick each regiment was Routing.
     pub first_rout: BTreeMap<u32, u32>,
     pub hash: String,
-    /// Soldiers per side after every completed tick (`counts[t - 1]`).
+    /// Soldiers per side on the field after every completed tick
+    /// (`counts[t - 1]`), and the fled so far.
     #[serde(skip)]
     counts: Vec<Vec<u32>>,
+    #[serde(skip)]
+    fled_counts: Vec<Vec<u32>>,
     #[serde(skip)]
     regiment_side: BTreeMap<u32, u8>,
 }
@@ -189,6 +199,39 @@ impl SeedOutcome {
             None => self.survivors.get(s).copied().unwrap_or(0),
         };
         count as f32 / initial as f32
+    }
+
+    /// The fraction of `side` dead at `at_tick` (`None` = the end): the
+    /// fled are out of the fight but not casualties (T2-042).
+    fn dead_fraction(&self, side: u8, at_tick: Option<u32>) -> f32 {
+        let s = usize::from(side);
+        let initial = self.initial.get(s).copied().unwrap_or(0);
+        if initial == 0 {
+            return 0.0;
+        }
+        let (count, fled) = match at_tick {
+            Some(0) => (initial, 0),
+            Some(t) => {
+                let i = (t as usize - 1).min(self.counts.len().saturating_sub(1));
+                (
+                    self.counts
+                        .get(i)
+                        .and_then(|c| c.get(s))
+                        .copied()
+                        .unwrap_or(0),
+                    self.fled_counts
+                        .get(i)
+                        .and_then(|c| c.get(s))
+                        .copied()
+                        .unwrap_or(0),
+                )
+            }
+            None => (
+                self.survivors.get(s).copied().unwrap_or(0),
+                self.fled.get(s).copied().unwrap_or(0),
+            ),
+        };
+        1.0 - (count + fled) as f32 / initial as f32
     }
 
     fn regiments_of(&self, side: u8) -> impl Iterator<Item = u32> + '_ {
@@ -245,14 +288,14 @@ impl SeedOutcome {
                     },
                     None => None,
                 };
-                let lost = 1.0 - self.fraction(*side, at);
+                let lost = self.dead_fraction(*side, at);
                 lost >= *min_lost && lost <= *max_lost
             }
             AssertionKind::RoutedBeforeLoss {
                 side,
                 loss_fraction,
             } => match self.first_rout_of_side(*side) {
-                Some(t) => 1.0 - self.fraction(*side, Some(t)) < *loss_fraction,
+                Some(t) => self.dead_fraction(*side, Some(t)) < *loss_fraction,
                 None => false,
             },
             AssertionKind::RoutWithin {
@@ -385,14 +428,19 @@ pub fn band_files(dir: &Path) -> anyhow::Result<Vec<PathBuf>> {
     Ok(files)
 }
 
-fn side_counts(view: &il_sim_battle::BattleView<'_>, sides: usize) -> Vec<u32> {
+/// Soldiers on the field and fled per side.
+fn side_counts(view: &il_sim_battle::BattleView<'_>, sides: usize) -> (Vec<u32>, Vec<u32>) {
     let mut counts = vec![0u32; sides];
+    let mut fled = vec![0u32; sides];
     for r in view.regiments() {
         if let Some(c) = counts.get_mut(usize::from(r.side)) {
             *c += r.soldier_count;
         }
+        if let Some(f) = fled.get_mut(usize::from(r.side)) {
+            *f += u32::from(r.fled);
+        }
     }
-    counts
+    (counts, fled)
 }
 
 /// Runs one seed of a band scenario to its tick limit or the first
@@ -401,6 +449,7 @@ pub fn run_seed(
     scenario: &Scenario,
     seed: u64,
     tick_limit: u32,
+    pin_morale: &[u8],
     regs: Arc<Registries>,
 ) -> anyhow::Result<SeedOutcome> {
     let mut setup = scenario.setup.clone();
@@ -411,8 +460,9 @@ pub fn run_seed(
     let sides = world.view().sides().len();
     let regiment_side: BTreeMap<u32, u8> =
         world.view().regiments().map(|r| (r.id.0, r.side)).collect();
-    let initial = side_counts(&world.view(), sides);
+    let (initial, _) = side_counts(&world.view(), sides);
     let mut counts = Vec::with_capacity(tick_limit as usize);
+    let mut fled_counts = Vec::with_capacity(tick_limit as usize);
     let mut first_contact = BTreeMap::new();
     let mut first_rout = BTreeMap::new();
     let mut rejected = 0u32;
@@ -422,9 +472,12 @@ pub fn run_seed(
         let out = world.step(&commands);
         rejected += out.rejected.len() as u32;
         hash = out.hash;
+        if !pin_morale.is_empty() {
+            hash = hold_morale(&mut world, pin_morale);
+        }
         let view = world.view();
         let tick = view.tick().0;
-        let now = side_counts(&view, sides);
+        let (now, fled_now) = side_counts(&view, sides);
         for r in view.regiments() {
             if r.morale_state == MoraleState::Routing {
                 first_rout.entry(r.id.0).or_insert(tick);
@@ -439,23 +492,57 @@ pub fn run_seed(
         }
         let done = now.contains(&0);
         counts.push(now);
+        fled_counts.push(fled_now);
         if done {
             break;
         }
     }
     let survivors = counts.last().cloned().unwrap_or_else(|| initial.clone());
+    let fled = fled_counts
+        .last()
+        .cloned()
+        .unwrap_or_else(|| vec![0; sides]);
     Ok(SeedOutcome {
         seed,
         end_tick: world.tick().0,
         rejected,
         initial,
         survivors,
+        fled,
         first_contact,
         first_rout,
         hash: format!("{hash}"),
         counts,
+        fled_counts,
         regiment_side,
     })
+}
+
+/// `bands.pin_morale`: every regiment of the listed sides back to morale
+/// 100 after the step; returns the recomputed hash.
+fn hold_morale(world: &mut BattleWorld, sides: &[u8]) -> il_core::StateHash {
+    let targets: Vec<il_core::RegimentId> = world
+        .view()
+        .regiments()
+        .filter(|r| sides.contains(&r.side))
+        .map(|r| r.id)
+        .collect();
+    for id in targets {
+        let Some(e) = world
+            .ecs()
+            .resource::<il_sim_battle::resources::Ids>()
+            .regiment_entity(id)
+        else {
+            continue;
+        };
+        if let Some(mut m) = world
+            .ecs_mut()
+            .get_mut::<il_sim_battle::components::Morale>(e)
+        {
+            m.m = <il_core::S as il_core::Scalar>::from_i32(100);
+        }
+    }
+    world.recompute_hash()
 }
 
 /// Runs every seed of one band file on `jobs` threads.
@@ -481,7 +568,7 @@ pub fn run_file(
                         break;
                     }
                     let seed = bands.seed_base + u64::from(i);
-                    let r = run_seed(scenario, seed, tick_limit, regs.clone());
+                    let r = run_seed(scenario, seed, tick_limit, &bands.pin_morale, regs.clone());
                     results.lock().expect("no poisoned seed").push((seed, r));
                 }
             });
@@ -495,7 +582,7 @@ pub fn run_file(
         .collect()
 }
 
-/// Mean soldiers `side` lost per seed.
+/// Mean soldiers of `side` killed per seed (the fled are not casualties).
 pub fn mean_lost(outcomes: &[SeedOutcome], side: u8) -> f64 {
     if outcomes.is_empty() {
         return 0.0;
@@ -506,6 +593,7 @@ pub fn mean_lost(outcomes: &[SeedOutcome], side: u8) -> f64 {
         .map(|o| {
             f64::from(o.initial.get(s).copied().unwrap_or(0))
                 - f64::from(o.survivors.get(s).copied().unwrap_or(0))
+                - f64::from(o.fled.get(s).copied().unwrap_or(0))
         })
         .sum::<f64>()
         / outcomes.len() as f64
@@ -780,6 +868,7 @@ mod tests {
             rejected: 0,
             initial: initial.to_vec(),
             survivors: survivors.to_vec(),
+            fled: vec![0; initial.len()],
             first_contact: BTreeMap::from([(0, 10), (1, 12)]),
             first_rout: BTreeMap::from([(1, 40)]),
             hash: String::new(),
@@ -792,6 +881,7 @@ mod tests {
                         .collect()
                 })
                 .collect(),
+            fled_counts: vec![vec![0; initial.len()]; 100],
             regiment_side: BTreeMap::from([(0, 0), (1, 1)]),
         }
     }
@@ -875,6 +965,7 @@ mod tests {
             seed_base: 0,
             tick_limit: 100,
             mods: Vec::new(),
+            pin_morale: Vec::new(),
             assertions: vec![
                 Assertion {
                     name: "win".into(),
@@ -923,6 +1014,7 @@ mod tests {
             seed_base: 0,
             tick_limit: 100,
             mods: Vec::new(),
+            pin_morale: Vec::new(),
             assertions: vec![Assertion {
                 name: "same".into(),
                 kind: AssertionKind::MeanLossMatches {

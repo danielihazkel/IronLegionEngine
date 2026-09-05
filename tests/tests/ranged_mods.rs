@@ -9,6 +9,23 @@ use il_sim_battle::components::{RangedState, Regiment};
 use il_sim_battle::resources::Ids;
 use il_sim_battle::{BattleEvent, BattleWorld};
 
+/// Every regiment's morale back to 100 after a step (T2-041/042).
+fn pin_morale(w: &mut BattleWorld) {
+    let entities: Vec<_> = w
+        .ecs()
+        .resource::<Ids>()
+        .regiment_entities
+        .iter()
+        .map(|(_, e)| *e)
+        .collect();
+    for e in entities {
+        if let Some(mut m) = w.ecs_mut().get_mut::<il_sim_battle::components::Morale>(e) {
+            m.m = <il_core::S as il_core::Scalar>::from_i32(100);
+        }
+    }
+    w.recompute_hash();
+}
+
 #[test]
 fn volley_off_lets_soldiers_throw_on_their_own_clocks() {
     let game = il_tests::game_root();
@@ -29,6 +46,8 @@ fn volley_off_lets_soldiers_throw_on_their_own_clocks() {
     let mut per_tick: Vec<(Tick, u16)> = Vec::new();
     for _ in 0..800 {
         let out = w.step(&[]);
+        // The hastati stand and take it (T2-042: they would break and flee).
+        pin_morale(&mut w);
         for e in out.events {
             if let BattleEvent::VolleyFired { regiment, count } = e
                 && regiment == RegimentId(0)

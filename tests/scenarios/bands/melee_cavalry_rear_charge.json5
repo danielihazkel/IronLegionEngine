@@ -22,7 +22,9 @@
       faction: "persia:persia", player: 1, deployment_zone: 1,
       general: { unit_type: "persia:cavalry", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
-        { id: 2, unit_type: "greece:hoplite", count: 120, formation: "rome:line", position: [340, 150], facing_deg: 180 },
+        // 80, not 120 (T2-042): against 120 hoplites the hastati break on
+        // their own seven seconds after contact, before the charge arrives.
+        { id: 2, unit_type: "greece:hoplite", count: 80, formation: "rome:line", position: [340, 150], facing_deg: 180 },
         { id: 3, unit_type: "persia:cavalry", count: 60, formation: "rome:wedge", position: [200, 150], facing_deg: 0 },
       ],
     },
@@ -31,7 +33,12 @@
     // Melee only: the pila stay in hand (T2-030).
     { tick: 1,   player: 0, seq: 0, kind: { FireMode: { regiments: [0], mode: "Hold" } } },
     { tick: 1,   player: 0, seq: 1, kind: { AttackRegiment: { regiments: [0], target: 1 } } },
-    { tick: 800, player: 1, seq: 0, kind: { AttackRegiment: { regiments: [2], target: 0 } } },
+    // Tick 100 at run, not 800 at walk (T2-042): the hastati break from the
+    // hoplite front about eight seconds after contact (tick ~445), so the
+    // cavalry, 130 m away, must set off early and at 9 m/s to strike a line
+    // still standing (walking, they only ran the last 30 m and arrived late).
+    { tick: 1,   player: 1, seq: 0, kind: { SetSpeedMode: { regiments: [2], mode: "Run" } } },
+    { tick: 100, player: 1, seq: 0, kind: { AttackRegiment: { regiments: [2], target: 0 } } },
   ],
   bands: {
     seeds: 50,
@@ -39,7 +46,7 @@
     tick_limit: 6000,
     assertions: [
       { name: "rear-charged hastati lose", kind: "winner", side: 1, min_fraction: 0.80 },
-      { name: "hastati rout within 30 s of the charge", kind: "rout_within", side: 0, after: "contact", contact_regiment: 2, within_ticks: 600, min_fraction: 0.80, active: false },
+      { name: "hastati rout within 30 s of the charge", kind: "rout_within", side: 0, after: "contact", contact_regiment: 2, within_ticks: 600, min_fraction: 0.80 },
     ],
   },
 }

@@ -98,6 +98,7 @@ impl BattleWorld {
         )));
         world.insert_resource(PathfinderRes::default());
         world.insert_resource(PathRequests::default());
+        world.insert_resource(crate::resources::FlowFields::default());
         world.insert_resource(MeleeGateRes::default());
         world.insert_resource(RangedGateRes::default());
         world.insert_resource(crate::combat::Outcomes::default());

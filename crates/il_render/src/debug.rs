@@ -22,6 +22,8 @@ pub struct DebugFlags {
     pub spatial_cells: bool,
     /// Morale state and fatigue state per regiment (T2-041).
     pub morale: bool,
+    /// Escape flow field arrows of `flow_side` (T2-042).
+    pub flow: bool,
 }
 
 impl DebugFlags {
@@ -32,6 +34,7 @@ impl DebugFlags {
             || self.anchors
             || self.spatial_cells
             || self.morale
+            || self.flow
     }
 }
 
@@ -60,10 +63,12 @@ fn v2(p: V2) -> Vec2 {
     Vec2::new(p.x.to_f32_render(), p.y.to_f32_render())
 }
 
-/// Appends every enabled overlay to `lines`.
+/// Appends every enabled overlay to `lines`; `flow_side` picks the side
+/// whose escape field the `flow` overlay draws.
 pub fn build_debug_lines(
     view: &BattleView,
     flags: DebugFlags,
+    flow_side: u8,
     camera: &Camera,
     screen: Vec2,
     lines: &mut LineScene,
@@ -74,6 +79,33 @@ pub fn build_debug_lines(
     let map = view.map();
     let proj = |p: Vec2| project(map, camera, screen, p);
     let (min, max) = camera.visible_bounds(screen, 0.0);
+
+    if flags.flow
+        && let Some(field) = view.flow_field(flow_side)
+    {
+        // One arrow per nav cell toward the escape edge (SIM-FLOW-001).
+        let nav = view.nav_grid();
+        let cell = nav.cell().to_f32_render();
+        let (x0, y0) = nav.cell_of(V2::from_f32_data(min.x, min.y));
+        let (x1, y1) = nav.cell_of(V2::from_f32_data(max.x, max.y));
+        if (x1 - x0 + 1) * (y1 - y0 + 1) <= MAX_CELLS {
+            let tint = side_tint(flow_side);
+            for cy in y0..=y1 {
+                for cx in x0..=x1 {
+                    let centre = nav.cell_center(cx, cy);
+                    let dir = field.direction_at(nav, centre);
+                    if dir == V2::ZERO {
+                        continue;
+                    }
+                    let c = v2(centre);
+                    let d = v2(dir) * (cell * 0.4);
+                    let tip = c + d;
+                    lines.segment(proj(c - d), proj(tip), tint);
+                    lines.circle(proj(tip), 2.0, 4, tint);
+                }
+            }
+        }
+    }
 
     if flags.nav_grid {
         let nav = view.nav_grid();

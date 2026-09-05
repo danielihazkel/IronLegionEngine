@@ -291,6 +291,7 @@ impl BattleWorld {
         validate(setup, &regs)?;
         let mut w = BattleWorld::empty(setup.seed, regs.clone(), BattlePhase::Battle);
         w.install_map(&setup.map_id)?;
+        let map = w.map().clone();
         w.world.resource_mut::<Sides>().0 = setup
             .sides
             .iter()
@@ -300,8 +301,8 @@ impl BattleWorld {
                 deployment_zone: s.deployment_zone,
                 deployment_confirmed: true,
                 defeated: false,
-                // T2-042 picks the edge from the deployment polygon.
-                escape_edge: il_data::MapEdge::West,
+                // SIM-FLOW-001 (T2-042): the edge nearest the deployment zone.
+                escape_edge: crate::flow::escape_edge(&map, s.deployment_zone),
                 general: None,
                 general_regiment: None,
                 general_dead: false,

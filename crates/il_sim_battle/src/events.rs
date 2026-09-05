@@ -65,6 +65,17 @@ pub enum BattleEvent {
         from: MoraleState,
         to: MoraleState,
     },
+    /// A Routing regiment rallied into Shaken (SIM-MOR-031, T2-042).
+    Rallied { regiment: RegimentId },
+    /// The regiment shattered and leaves the field (SIM-MOR-032, T2-042).
+    Shattered { regiment: RegimentId },
+    /// A routing or withdrawing soldier reached its side's escape edge and
+    /// left the battle (SIM-FLOW-002, T2-042); no corpse.
+    SoldierFled {
+        id: SoldierId,
+        regiment: RegimentId,
+        pos: V2,
+    },
 }
 
 impl Event for BattleEvent {}

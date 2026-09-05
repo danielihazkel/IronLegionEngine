@@ -13,7 +13,7 @@ use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 
 use crate::combat::{
     apply_outcomes, melee_attack, melee_gate, melee_recount, melee_target, projectile_stage,
-    pursue_update, ranged_fire, ranged_spawn, ranged_target, resolve_deaths,
+    pursue_update, ranged_fire, ranged_spawn, ranged_target, resolve_deaths, resolve_fled,
 };
 use crate::command::apply_commands;
 use crate::formation::{formation_apply, formation_integrity, formation_layout};
@@ -179,7 +179,7 @@ fn stage_schedule(stage: Stage) -> Schedule {
             s.add_systems((fatigue_tick, regiment_fatigue_mean).chain().in_set(stage))
         }
         Stage::Morale => s.add_systems(morale_tick.in_set(stage)),
-        Stage::Death => s.add_systems(resolve_deaths.in_set(stage)),
+        Stage::Death => s.add_systems((resolve_deaths, resolve_fled).chain().in_set(stage)),
         Stage::BattleFlow => s.add_systems(stage_battle_flow.in_set(stage)),
         Stage::EventsAndHash => s.add_systems(flush_events_and_hash.in_set(stage)),
     };

@@ -108,6 +108,8 @@ fn run(world: &mut BattleWorld, commands: &[Command], until: u32, log: &mut Log)
             .collect();
         let out = world.step(&batch);
         assert!(out.rejected.is_empty(), "{:?}", out.rejected);
+        // The targets stand and take it (T2-042: they would break and flee).
+        common::pin_morale(world);
         for e in &out.events {
             match e {
                 BattleEvent::VolleyFired { regiment, count } => {

@@ -10,14 +10,15 @@
 //! Exclusive: every write happens in one defined order.
 
 use bevy_ecs::prelude::*;
-use il_core::{SoldierId, Tick};
+use il_core::{RegimentId, SoldierId, Tick, V2};
 
 use crate::combat::Kills;
 use crate::components::{
-    Combat, DEATHS_RING, FormationState, MeleeState, Morale, Pos, Regiment, Soldier,
+    Combat, DEATHS_RING, FormationState, Fsm, MeleeState, Morale, Pos, Regiment, Soldier,
+    SoldierState,
 };
 use crate::events::BattleEvent;
-use crate::resources::{Clock, Events, Ids, SpatialGridRes};
+use crate::resources::{Clock, Events, FlowFields, Ids, NavGridRes, SpatialGridRes};
 use crate::spatial::Entry;
 
 /// The casualty ring slot of a tick (SIM-MOR-010: a five-second window
@@ -72,28 +73,10 @@ pub fn resolve_deaths(world: &mut World) {
                 pos,
             },
         );
-        if let Some(re) = world.resource::<Ids>().regiment_entity(regiment) {
-            let removed = {
-                let mut r = world.get_mut::<Regiment>(re).expect("regiment");
-                let k = r.soldiers.binary_search(victim).ok();
-                if let Some(k) = k {
-                    r.soldiers.remove(k);
-                }
-                k
-            };
-            if let Some(mut f) = world.get_mut::<FormationState>(re) {
-                // SIM-FORM-021: the assignment stays parallel to the soldier
-                // list; the layout itself is rebuilt at the next Stage 2.
-                if let Some(k) = removed
-                    && k < f.assignment.len()
-                {
-                    f.assignment.remove(k);
-                }
-                f.needs_reform = true;
-            }
-            if let Some(mut m) = world.get_mut::<Morale>(re) {
-                m.deaths_5s[slot] = m.deaths_5s[slot].saturating_add(1);
-            }
+        if let Some(re) = detach_from_regiment(world, regiment, *victim)
+            && let Some(mut m) = world.get_mut::<Morale>(re)
+        {
+            m.deaths_5s[slot] = m.deaths_5s[slot].saturating_add(1);
         }
         // Kill credit goes to the killer's regiment, resolved when the kill
         // was recorded, so a killer that fell earlier still counts.
@@ -105,8 +88,42 @@ pub fn resolve_deaths(world: &mut World) {
         }
     }
 
-    // Nobody targets the dead; a fighter without a target holds still
-    // until its next retarget tick (SIM-CORE-011).
+    remove_soldiers(world, &dead_ids);
+}
+
+/// SIM-FORM-021: takes `victim` out of its regiment's soldier list and the
+/// parallel slot assignment and requests a reform; the layout itself is
+/// rebuilt at the next Stage 2. Returns the regiment entity.
+fn detach_from_regiment(
+    world: &mut World,
+    regiment: RegimentId,
+    victim: SoldierId,
+) -> Option<Entity> {
+    let re = world.resource::<Ids>().regiment_entity(regiment)?;
+    let removed = {
+        let mut r = world.get_mut::<Regiment>(re).expect("regiment");
+        let k = r.soldiers.binary_search(&victim).ok();
+        if let Some(k) = k {
+            r.soldiers.remove(k);
+        }
+        k
+    };
+    if let Some(mut f) = world.get_mut::<FormationState>(re) {
+        if let Some(k) = removed
+            && k < f.assignment.len()
+        {
+            f.assignment.remove(k);
+        }
+        f.needs_reform = true;
+    }
+    Some(re)
+}
+
+/// Takes the (ascending) soldiers out of every query at once (SIM-CORE-008):
+/// nobody targets them any more (a fighter without a target holds still
+/// until its next retarget tick, SIM-CORE-011), they leave `Ids`, the
+/// world and the spatial grid.
+fn remove_soldiers(world: &mut World, gone: &[SoldierId]) {
     let soldier_entities: Vec<Entity> = world
         .resource::<Ids>()
         .soldier_entities
@@ -116,26 +133,22 @@ pub fn resolve_deaths(world: &mut World) {
     for e in &soldier_entities {
         if let Some(mut m) = world.get_mut::<MeleeState>(*e)
             && let Some(t) = m.target
-            && dead_ids.binary_search(&t).is_ok()
+            && gone.binary_search(&t).is_ok()
         {
             m.target = None;
         }
     }
-
-    // Leave the id lists, then the world, then the grid (SIM-CORE-008: the
-    // sim removes the dead from every query at once).
-    let dead_entities: Vec<Entity> = {
+    let entities: Vec<Entity> = {
         let ids = world.resource::<Ids>();
-        dead_ids
-            .iter()
+        gone.iter()
             .filter_map(|id| ids.soldier_entity(*id))
             .collect()
     };
     world
         .resource_mut::<Ids>()
         .soldier_entities
-        .retain(|(id, _)| dead_ids.binary_search(id).is_err());
-    for e in dead_entities {
+        .retain(|(id, _)| gone.binary_search(id).is_err());
+    for e in entities {
         world.despawn(e);
     }
     let mut grid = world.resource_mut::<SpatialGridRes>();
@@ -143,8 +156,58 @@ pub fn resolve_deaths(world: &mut World) {
         .0
         .entries()
         .iter()
-        .filter(|e| dead_ids.binary_search(&e.id).is_err())
+        .filter(|e| gone.binary_search(&e.id).is_err())
         .copied()
         .collect();
     grid.0.rebuild(alive);
+}
+
+/// Stage 15 `resolve_fled` (T2-042; SIM-FLOW-002, SIM-MOR-032), after
+/// `resolve_deaths` so a soldier killed on the tick it reaches the edge is
+/// a death and never both: every Routing or Withdrawing soldier standing
+/// in a cell of its side's escape edge leaves the battle, ascending id;
+/// `Combat.fled` counts it, `SoldierFled` carries the position. No corpse,
+/// no casualty ring, no kill credit.
+pub fn resolve_fled(world: &mut World) {
+    let tick = world.resource::<Clock>().tick;
+    let fled: Vec<(SoldierId, RegimentId, V2)> = {
+        let ids = world.resource::<Ids>();
+        let nav = &world.resource::<NavGridRes>().0;
+        let flow = world.resource::<FlowFields>();
+        ids.soldier_entities
+            .iter()
+            .filter_map(|(id, e)| {
+                let fsm = world.get::<Fsm>(*e)?;
+                if !matches!(fsm.state, SoldierState::Routing | SoldierState::Withdrawing) {
+                    return None;
+                }
+                let regiment = world.get::<Soldier>(*e)?.regiment;
+                let side = world.get::<Regiment>(ids.regiment_entity(regiment)?)?.side;
+                let p = world.get::<Pos>(*e)?.p;
+                flow.for_side(side)
+                    .is_some_and(|f| f.is_exit(nav, p))
+                    .then_some((*id, regiment, p))
+            })
+            .collect()
+    };
+    if fled.is_empty() {
+        return;
+    }
+    for (id, regiment, pos) in &fled {
+        world.resource_mut::<Events>().0.push(
+            tick,
+            BattleEvent::SoldierFled {
+                id: *id,
+                regiment: *regiment,
+                pos: *pos,
+            },
+        );
+        if let Some(re) = detach_from_regiment(world, *regiment, *id)
+            && let Some(mut c) = world.get_mut::<Combat>(re)
+        {
+            c.fled = c.fled.saturating_add(1);
+        }
+    }
+    let ids: Vec<SoldierId> = fled.iter().map(|f| f.0).collect();
+    remove_soldiers(world, &ids);
 }

@@ -3,7 +3,7 @@
 //! hysteresis state machine. Every tunable comes from `Rules`; the systems
 //! in `tick.rs` only gather inputs and apply results.
 
-use il_core::{S, Scalar};
+use il_core::{S, Scalar, V2};
 use il_data::{CombatRules, FormationRules, MoraleRules, MoraleWeights};
 
 use crate::components::MoraleState;
@@ -53,6 +53,8 @@ pub struct MoraleInputs {
     pub engaged_ticks: Option<u32>,
     /// An enemy anchor lies within `safe_radius` (SIM-MOR-024).
     pub enemy_within_safe: bool,
+    /// The nearest enemy anchor and its distance (SIM-MOR-031 rally).
+    pub nearest_enemy: Option<(V2, S)>,
     pub state: MoraleState,
 }
 
@@ -297,6 +299,7 @@ mod tests {
             integrity: S::ONE,
             engaged_ticks: None,
             enemy_within_safe: false,
+            nearest_enemy: None,
             state: MoraleState::Steady,
         }
     }

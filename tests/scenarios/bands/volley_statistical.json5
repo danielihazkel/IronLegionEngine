@@ -28,6 +28,7 @@
   bands: {
     seeds: 50,
     seed_base: 5000,
+    pin_morale: [1],
     tick_limit: 1200,
     mods: ["../../mods/projectile_cap_zero"],
     assertions: [

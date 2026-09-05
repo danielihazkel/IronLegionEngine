@@ -7,6 +7,7 @@ pub mod combat;
 pub mod command;
 pub mod components;
 pub mod events;
+pub mod flow;
 pub mod formation;
 pub mod hash;
 pub mod interface;
@@ -24,6 +25,7 @@ pub mod world;
 
 pub use command::{AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode};
 pub use events::BattleEvent;
+pub use flow::{FlowField, NO_DIRECTION, escape_edge};
 pub use formation::{
     AssignScratch, AssignSoldier, Slot, assign_slots, effective_ranks, layout_for, layout_slots,
     ranks_for_width, slot_world,
@@ -37,7 +39,8 @@ pub use interface::{
 pub use map::{FLAT_MAP_ID, LoadedMap, MapError, polygon_contains};
 pub use nav::{AStar, NavGrid, PathResult, Pathfinder, string_pull};
 pub use resources::{
-    AnchorGridRes, BattlePhase, MapRes, NavGridRes, PathRequests, PathfinderRes, SpatialGridRes,
+    AnchorGridRes, BattlePhase, FlowFields, MapRes, NavGridRes, PathRequests, PathfinderRes,
+    SpatialGridRes,
 };
 pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};

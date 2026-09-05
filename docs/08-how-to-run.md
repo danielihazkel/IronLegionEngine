@@ -65,6 +65,7 @@ Developer keys (`dev` feature, on by default):
 | `F8` | regiment anchors |
 | `F9` | spatial grid cells |
 | `F10` | morale: a ring per regiment coloured by state (green steady, yellow unsettled, orange shaken, red-orange broken, red routing, grey shattered), one extra ring per fatigue state above fresh, and a morale bar (T2-041) |
+| `F11` | escape flow field of the selected regiment's side (side 0 with nothing selected): one arrow per nav cell toward that side's escape edge (T2-042) |
 
 ## 4. The M4 check: drag ten regiments into a line
 
@@ -84,7 +85,7 @@ Things that would be wrong: regiments overlapping, a regiment facing the opposit
 cargo run --release -p il_app -- tests/scenarios/bands/melee_hastati_vs_velites.json5
 ```
 
-The hastati line attack-moves into the velites on its own (the file scripts it). Expect: the line advances, the two regiments lock together with a ragged front, soldiers fall and stay on the ground as darkened sprites for thirty seconds, and the weaker side thins out first. Nobody routs yet: morale arrives with T2-041.
+The hastati line attack-moves into the velites on its own (the file scripts it). Expect: the line advances, the two regiments lock together with a ragged front, soldiers fall and stay on the ground as darkened sprites for thirty seconds, and the weaker side thins out first. Since T2-041/042 the losing regiment breaks before it is wiped out: its soldiers turn and run for their own map edge (side 0 south, side 1 north on the test map) and vanish when they reach it.
 
 ### 4b. The volley check (Phase 2, T2-031)
 
@@ -92,7 +93,15 @@ The hastati line attack-moves into the velites on its own (the file scripts it).
 cargo run --release -p il_app -- tests/scenarios/bands/volley_velites_vs_hastati.json5
 ```
 
-Nobody moves: the velites throw at will from 35 m. Expect: every four seconds a volley of pale javelins arcs from the loose line into the hastati, a few of them fall each time and stay as corpses, and after eight volleys the velites are out of javelins and stop. Select the velites and press `F` to make them hold fire, `F` again to resume.
+Nobody moves: the velites throw at will from 35 m. Expect: every four seconds a volley of pale javelins arcs from the loose line into the hastati, a few of them fall each time and stay as corpses, and after eight volleys the velites are out of javelins and stop. Select the velites and press `F` to make them hold fire, `F` again to resume. Under the arrows the hastati's morale drains (`F10`); if they break they run north.
+
+### 4c. The rout check (Phase 2, T2-042)
+
+```
+cargo run --release -p il_app -- tests/scenarios/bands/melee_cavalry_rear_charge.json5
+```
+
+The file scripts a hastati line fighting velites and, forty seconds in, Persian cavalry charging the hastati from behind. Expect: the charge shock and the rear attacks turn the hastati's `F10` ring red within a few seconds, the line dissolves and the soldiers run south for their edge, the cavalry chase them at the gallop and cut some down, and any hastati that get clear of the enemy by fifty metres with their morale back above thirty stop, turn to face the enemy and reform. `F11` draws the escape field the routers follow.
 
 ## 5. Headless tools (`il_cli`)
 
@@ -109,7 +118,7 @@ cargo run -p il_cli -- genart
 - `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
 - `validate` loads the mod roots you list and prints every diagnostic with file, line and column; exit code 1 on errors.
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers, `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release.
-- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; a file's rout clauses print `skip` until morale exists (T2-041). A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), and a `mean_loss_matches` row compares two files' mean losses after both have run.
+- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), and a `mean_loss_matches` row compares two files' mean losses after both have run.
 - `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
 
 Criterion micro-benches:

@@ -168,6 +168,8 @@ fn kill_credit_reconciles_with_the_enemy_losses() {
     let mut died_events = 0;
     while w.tick().0 < 2_000 {
         let out = w.step(&[]);
+        // The fight must run to the end (T2-042: a broken side would flee).
+        common::pin_morale(&mut w);
         died_events += out
             .events
             .iter()
