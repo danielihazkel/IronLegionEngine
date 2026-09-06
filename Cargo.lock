@@ -1571,6 +1571,8 @@ dependencies = [
  "il_save",
  "il_sim_battle",
  "il_ui",
+ "serde",
+ "serde_json",
  "winit",
 ]
 
@@ -1699,6 +1701,7 @@ dependencies = [
  "il_data",
  "il_sim_battle",
  "json5",
+ "serde_json",
  "winit",
 ]
 

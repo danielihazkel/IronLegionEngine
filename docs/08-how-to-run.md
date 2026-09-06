@@ -17,7 +17,8 @@ The first release build takes a few minutes. Debug builds already optimise depen
 cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --threads 8
 ```
 
-- The positional argument is a scenario file. Without it the main menu opens and lists every `*.json5` under `tests/scenarios/` (change the folder with `--scenarios-dir`).
+- The positional argument is a scenario file. Without it the main menu opens (T2-091): **Custom battle** builds a battle in the menu (map, weather, seed, time limit, two to four sides with a faction, a controller, a general and roster rows; Start opens it in Deployment; Save writes it as a scenario file so it appears in the list), **Scenario file** lists every `*.json5` under `tests/scenarios/` (change the folder with `--scenarios-dir`), **Load battle** lists the saves under `saves/`, **Settings** opens the settings screen (§2a).
+- `--settings <file>` points at a settings file; without it the app reads `%APPDATA%\IronLegion\settings.json5` (Windows), `$XDG_CONFIG_HOME/IronLegion/settings.json5` or `~/.config/IronLegion/settings.json5` elsewhere, and `./settings.json5` when none of those variables is set. A missing file means the defaults.
 - `--threads 8` runs the sim on eight workers; the default is one thread.
 - `--mod <folder>` loads an extra mod after the game, repeatable (see §6).
 - `--ai <player>` hands that player's sides to the engine AI at tick 1, repeatable (T2-081): `--ai 1` turns any two-player scenario into a fight against the AI. The engine's sides deploy and confirm by themselves; the AI's commands join the command count in the title.
@@ -36,9 +37,13 @@ The scenario file format is in the Modding SDK §4.13.
 
 The window title is the quick telemetry line: tick, soldiers drawn, sim milliseconds per tick, speed, selection size, commands recorded, zoom, rotation.
 
+### 2a. Settings
+
+The settings screen (main menu → Settings, or the pause menu's Settings during a battle; T2-091) has three tabs. **Video**: the UI scale (multiplied by the window height over 1080, so 1440p text is a third larger by itself), vertical sync, borderless fullscreen, the simulation thread count for the next battle. **Audio**: the three volumes (stored now, played from T2-100). **Bindings**: every action with its keys; click a key and press the new key or mouse button (`+` adds a second chord, `−` removes one, Reset restores the mod's default); a chord bound to two actions is shown in red with the other action's name. Apply takes effect at once; Save writes `settings.json5` (the path is shown). The file holds only the bindings you changed, on top of the mods' bindings, plus the video and audio values and the replay and save folders.
+
 ## 3. Controls
 
-Every key comes from `game/content/input/bindings.json5`; a mod may rebind any of them.
+Every key comes from `game/content/input/bindings.json5`; a mod may rebind any of them, and the settings screen (§2a) rebinds them for you alone.
 
 | Action | Keys |
 |---|---|
@@ -148,9 +153,10 @@ Put the keyboard aside. Expect, in order:
 4. Right-click on the minimap: the selection moves there. Left-click the minimap: the camera goes there.
 5. Click Hold fire on a velites regiment if the file had one (this one has none: the fire button is absent for units without missiles), Run/Walk to toggle the run flag, a formation button (`F1: Line` …) to reform, the ability button (`1: Testudo (ready)`) to raise the testudo.
 6. As soldiers fall the strength bars shrink, the morale dots turn yellow, orange, red, the casualties line counts the dead and the fled, and an engaged regiment shows "engaged" in orange.
-7. Click Menu (top right) or press nothing at all: the pause menu opens and the clock stops. Resume continues. Open it again and click Surrender: the battle ends against you and the result window appears; its button returns to the menu.
+7. Click Menu (top right) or press nothing at all: the pause menu opens and the clock stops. Resume continues. Open it again and click Surrender: the battle ends against you and the result screen appears (T2-091): the winner, the duration, per side the general's fate, the loot and a row per regiment with its initial strength, survivors, killed, fled, experience and ammo, the replay's path, and two buttons. Rematch starts the same battle with the next seed; Back to the menu returns.
+8. From the menu, without a scenario file (`cargo run --release -p il_app`): Custom battle, pick the map and two factions, set one side to You and one to Engine AI, add a regiment row or two, Start. The battle opens in Deployment with your regiments in a line at your zone; pick a deployment preset or place them, Confirm, fight. Back in the builder, Save writes the setup under `tests/scenarios/<name>.json5` (the list under Scenario file shows it at once, and `il_cli autoresolve` runs it headless).
 
-Things that would be wrong: a button that does nothing visible, a click on a card that also orders a move, an attack-move that goes off on the first click of the button, a minimap block for a hoplite regiment you cannot see, and a `--show-keys` run (`cargo run -p il_app -- <scenario> --show-keys`) that shows any English word instead of an `il.*` key.
+Things that would be wrong: a button that does nothing visible, a click on a card that also orders a move, an attack-move that goes off on the first click of the button, a minimap block for a hoplite regiment you cannot see, a builder that lets you Start with two sides marked You, and a `--show-keys` run (`cargo run -p il_app -- <scenario> --show-keys`, or the menu with `--show-keys`) that shows any English word instead of an `il.*` key.
 
 ### 4g. Save, load and replay (Phase 2, T2-101)
 
@@ -233,4 +239,5 @@ CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of both 
 - `docs/evidence/phase1/`: the target machine spec and the profiler screenshot.
 - `benches/baseline.json`: stage timings on the target machine.
 - `replays/` and `saves/` under the working directory (ignored by git): every battle's replay and the quick save (T2-101).
+- `settings.json5` in the user's config directory (§2): the UI scale, video and audio values, the rebound keys (T2-091).
 - `game/`: the flagship game as a mod; `game/content/rules/*.json5` hold every engine tunable.

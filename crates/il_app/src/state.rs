@@ -5,6 +5,10 @@
 
 use std::path::{Path, PathBuf};
 
+use il_core::PlayerId;
+use il_sim_battle::BattleSetup;
+use il_ui::{BuilderState, SaveEntry, SettingsState};
+
 use crate::session::BattleSession;
 
 pub enum AppState {
@@ -12,13 +16,25 @@ pub enum AppState {
     Battle(Box<BattleSession>),
 }
 
+/// Which menu screen is up (T2-091, REQ-UI-007).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum MenuScreen {
+    #[default]
+    Root,
+    Scenarios,
+    CustomBattle(Box<BuilderState>),
+    Settings(Box<SettingsState>),
+    Load(Vec<SaveEntry>),
+}
+
 /// What the main menu shows: the scenario files it found, the mod roots in
-/// load order, and the last failure to start a battle.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// load order, the last failure to start a battle, and the screen.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct MenuState {
     pub scenarios: Vec<PathBuf>,
     pub mods: Vec<PathBuf>,
     pub error: Option<String>,
+    pub screen: MenuScreen,
 }
 
 impl MenuState {
@@ -37,15 +53,23 @@ impl MenuState {
             scenarios,
             mods,
             error: None,
+            screen: MenuScreen::Root,
         }
     }
 }
 
 /// What the UI asked for this frame.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Transition {
     /// Main menu: start the custom battle in this scenario file.
     StartBattle(PathBuf),
+    /// Start a battle from a setup built in memory: the custom battle
+    /// builder or a rematch (T2-091); from a battle the session is replaced.
+    StartSetup {
+        setup: Box<BattleSetup>,
+        stem: String,
+        ai: Vec<PlayerId>,
+    },
     /// Continue the battle save at this path (quick load or the load
     /// screen, T2-101); from a battle the session is replaced.
     LoadSave(PathBuf),
@@ -72,13 +96,15 @@ impl AppState {
         }
     }
 
-    /// Applies a transition. `start` builds the session for a scenario and
-    /// `load` one for a battle save; on failure the menu comes up with the
-    /// error. `menu` rebuilds the menu when a battle quits.
+    /// Applies a transition. `start` builds the session for a scenario,
+    /// `build` one for a setup in memory and `load` one for a battle save;
+    /// on failure the menu comes up with the error. `menu` rebuilds the menu
+    /// when a battle quits.
     pub fn apply(
         self,
         transition: Transition,
         start: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
+        build: impl FnOnce(BattleSetup, String, Vec<PlayerId>) -> anyhow::Result<BattleSession>,
         load: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
         menu: impl FnOnce() -> MenuState,
     ) -> Self {
@@ -90,6 +116,19 @@ impl AppState {
                     AppState::MainMenu(m)
                 }
             },
+            (state, Transition::StartSetup { setup, stem, ai }) => {
+                match build(*setup, stem.clone(), ai) {
+                    Ok(session) => AppState::Battle(Box::new(session)),
+                    Err(e) => {
+                        let mut m = match state {
+                            AppState::MainMenu(m) => m,
+                            AppState::Battle(_) => menu(),
+                        };
+                        m.error = Some(format!("{stem}: {e:#}"));
+                        AppState::MainMenu(m)
+                    }
+                }
+            }
             (state, Transition::LoadSave(path)) => match load(&path) {
                 Ok(session) => AppState::Battle(Box::new(session)),
                 Err(e) => {
@@ -126,6 +165,10 @@ mod tests {
         ))
     }
 
+    fn no_build(_: BattleSetup, stem: String, _: Vec<PlayerId>) -> anyhow::Result<BattleSession> {
+        anyhow::bail!("no builder for {stem}")
+    }
+
     fn failing(p: &Path) -> anyhow::Result<BattleSession> {
         anyhow::bail!("no such scenario {}", p.display())
     }
@@ -143,12 +186,13 @@ mod tests {
         let state = state.apply(
             Transition::StartBattle(PathBuf::from("a.json5")),
             session,
+            no_build,
             failing,
             menu,
         );
         assert!(state.is_battle());
         assert!(state.session().is_some());
-        let state = state.apply(Transition::QuitToMenu, session, session, menu);
+        let state = state.apply(Transition::QuitToMenu, session, no_build, session, menu);
         assert!(!state.is_battle());
         match state {
             AppState::MainMenu(m) => assert_eq!(m, menu()),
@@ -161,6 +205,7 @@ mod tests {
         let state = AppState::MainMenu(menu()).apply(
             Transition::StartBattle(PathBuf::from("missing.json5")),
             failing,
+            no_build,
             failing,
             menu,
         );
@@ -179,14 +224,20 @@ mod tests {
 
     #[test]
     fn mismatched_transitions_are_ignored() {
-        let state =
-            AppState::MainMenu(menu()).apply(Transition::QuitToMenu, session, session, menu);
+        let state = AppState::MainMenu(menu()).apply(
+            Transition::QuitToMenu,
+            session,
+            no_build,
+            session,
+            menu,
+        );
         assert!(!state.is_battle());
         let battle = AppState::Battle(Box::new(session(Path::new("x")).unwrap()));
         let tick = battle.session().unwrap().world.tick();
         let battle = battle.apply(
             Transition::StartBattle(PathBuf::from("b.json5")),
             failing,
+            no_build,
             failing,
             menu,
         );
@@ -201,6 +252,7 @@ mod tests {
         let from_menu = AppState::MainMenu(menu()).apply(
             Transition::LoadSave(PathBuf::from("quick.ilsv")),
             failing,
+            no_build,
             session,
             menu,
         );
@@ -209,6 +261,7 @@ mod tests {
         let replaced = battle.apply(
             Transition::LoadSave(PathBuf::from("quick.ilsv")),
             failing,
+            no_build,
             session,
             menu,
         );
@@ -216,6 +269,7 @@ mod tests {
         let failed = replaced.apply(
             Transition::LoadSave(PathBuf::from("gone.ilsv")),
             failing,
+            no_build,
             failing,
             menu,
         );

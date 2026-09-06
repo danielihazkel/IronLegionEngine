@@ -608,7 +608,7 @@ Three Phase 1 kinds without a section of their own; their schemas are the refere
 
 ### 4.13 Scenario files — a `BattleSetup` on disk
 
-A scenario file (`tests/scenarios/*.json5`, `il_cli run`, `il_cli autoresolve`, the main menu's custom battle; REQ-SIM-063, Simulation Spec SIM-FLOW-019) is a `BattleSetup` object with an optional `commands` list; band files add a `bands` block (§15.3 of the Simulation Spec). Regiment ids are the 0-based spawn order across sides (side 0's regiments first), not the file's `id` fields.
+A scenario file (`tests/scenarios/*.json5`, `il_cli run`, `il_cli autoresolve`, the main menu's scenario list; REQ-SIM-063, Simulation Spec SIM-FLOW-019) is a `BattleSetup` object with an optional `commands` list; band files add a `bands` block (§15.3 of the Simulation Spec). Regiment ids are the 0-based spawn order across sides (side 0's regiments first), not the file's `id` fields. The main menu's custom battle builder (T2-091) writes such a file into the scenario folder on Save: the setup it built (no positions, so the battle opens in Deployment; engine sides as player 255) with an empty `commands` list, as pretty-printed JSON, which is valid JSON5.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|

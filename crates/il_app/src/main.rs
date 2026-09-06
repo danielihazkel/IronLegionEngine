@@ -7,9 +7,11 @@
 mod app;
 mod battle_ui;
 mod bench;
+mod menus;
 mod profiler;
 mod replay_io;
 mod session;
+mod settings;
 mod state;
 
 use std::path::{Path, PathBuf};
@@ -37,9 +39,14 @@ struct Args {
     /// Folder the main menu lists scenario files from.
     #[arg(long, default_value = "tests/scenarios")]
     scenarios_dir: PathBuf,
-    /// Simulation worker threads (`1` = single-threaded executor).
-    #[arg(long, default_value_t = 1)]
-    threads: usize,
+    /// Simulation worker threads (`1` = single-threaded executor); the
+    /// settings file's value when absent (T2-091).
+    #[arg(long)]
+    threads: Option<usize>,
+    /// The settings file (T2-091); default `%APPDATA%\IronLegion\settings.json5`
+    /// (or `$XDG_CONFIG_HOME` / `~/.config`), the working directory without one.
+    #[arg(long)]
+    settings: Option<PathBuf>,
     /// Render 32,768 synthetic sprites with vsync off, print the frame time,
     /// exit (T1-051 acceptance test).
     #[arg(long)]
@@ -55,12 +62,14 @@ struct Args {
     /// no orders are taken; the title reports the hash check.
     #[arg(long)]
     replay: Option<PathBuf>,
-    /// Where replays are written at the end of every battle (T2-101).
-    #[arg(long, default_value = "replays")]
-    replays_dir: PathBuf,
-    /// Where the quick save lives (`quick.ilsv`; Ctrl+S / Ctrl+L, T2-101).
-    #[arg(long, default_value = "saves")]
-    saves_dir: PathBuf,
+    /// Where replays are written at the end of every battle (T2-101);
+    /// the settings file's `replays_dir` (default `replays`) when absent.
+    #[arg(long)]
+    replays_dir: Option<PathBuf>,
+    /// Where the quick save lives (`quick.ilsv`; Ctrl+S / Ctrl+L, T2-101);
+    /// the settings file's `saves_dir` (default `saves`) when absent.
+    #[arg(long)]
+    saves_dir: Option<PathBuf>,
 }
 
 /// With the `dev` feature the app watches the mod folders and swaps
@@ -101,26 +110,41 @@ fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     let (regs, hot_reload) = load_registries(&args.content_root, &args.mods)?;
     regs.locale.set_show_keys(args.show_keys);
+    // T2-091: the settings file first; the command line wins where given.
+    let settings_path = args.settings.clone().unwrap_or_else(settings::default_path);
+    let (user_settings, warning) = settings::load(&settings_path);
+    if let Some(w) = warning {
+        eprintln!("settings: {w} (defaults used)");
+    }
+    let threads = args.threads.unwrap_or(user_settings.threads);
     let launch = Launch {
         content_root: args.content_root.clone(),
         mods: args.mods.clone(),
         scenarios_dir: args.scenarios_dir.clone(),
-        threads: args.threads,
+        threads,
         bench_sprites: args.bench_sprites,
         ai: args.ai.iter().map(|p| il_core::PlayerId(*p)).collect(),
-        replays_dir: args.replays_dir.clone(),
-        saves_dir: args.saves_dir.clone(),
+        replays_dir: args
+            .replays_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(&user_settings.replays_dir)),
+        saves_dir: args
+            .saves_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(&user_settings.saves_dir)),
+        settings: user_settings,
+        settings_path,
     };
     let state = match (&args.replay, &args.scenario) {
         (Some(replay), _) => AppState::Battle(Box::new(replay_io::load_replay(
             replay,
             regs.clone(),
-            args.threads,
+            threads,
         )?)),
         (None, Some(path)) => AppState::Battle(Box::new(start_battle(
             path,
             regs.clone(),
-            args.threads,
+            threads,
             launch.ai.clone(),
         )?)),
         (None, None) => {

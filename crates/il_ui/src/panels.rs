@@ -21,14 +21,23 @@ pub struct MenuModel<'a> {
     pub locale: &'a Locale,
 }
 
+/// The root menu's buttons (T2-091: custom battle, scenario file, load,
+/// settings) and the scenario list's picks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuChoice {
-    /// Start the custom battle in `scenarios[index]`.
+    CustomBattle,
+    /// Open the scenario file list.
+    Scenarios,
+    Load,
+    Settings,
+    /// Start the scenario `scenarios[index]` (the list screen).
     Start(usize),
+    /// Back to the root (the list screen).
+    Back,
     Exit,
 }
 
-/// Draws the main menu; returns the click, if any.
+/// Draws the root of the main menu; returns the click, if any.
 pub fn main_menu(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoice> {
     let mut choice = None;
     let l = model.locale;
@@ -38,17 +47,18 @@ pub fn main_menu(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoic
         .resizable(false)
         .default_width(360.0)
         .show(ctx, |ui| {
-            ui.vertical_centered(|ui| {
+            ui.vertical_centered_justified(|ui| {
                 ui.add_space(24.0);
                 ui.heading(l.get("il.app.title"));
-                ui.label(l.get("il.menu.custom_battle"));
                 ui.add_space(16.0);
-                if model.scenarios.is_empty() {
-                    ui.label(l.get("il.menu.no_scenarios"));
-                }
-                for (i, name) in model.scenarios.iter().enumerate() {
-                    if ui.button(name).clicked() {
-                        choice = Some(MenuChoice::Start(i));
+                for (key, c) in [
+                    ("il.menu.custom_battle", MenuChoice::CustomBattle),
+                    ("il.menu.scenarios", MenuChoice::Scenarios),
+                    ("il.menu.load", MenuChoice::Load),
+                    ("il.menu.settings", MenuChoice::Settings),
+                ] {
+                    if ui.button(l.get(key)).clicked() {
+                        choice = Some(c);
                     }
                 }
                 ui.add_space(16.0);
@@ -62,6 +72,44 @@ pub fn main_menu(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoic
                 ui.add_space(24.0);
                 if ui.button(l.get("il.menu.exit")).clicked() {
                     choice = Some(MenuChoice::Exit);
+                }
+            });
+        });
+    choice
+}
+
+/// Draws the scenario file list (the T1-070 menu); returns the click.
+pub fn scenario_list(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoice> {
+    let mut choice = None;
+    let l = model.locale;
+    egui::Window::new("il_scenarios")
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .title_bar(false)
+        .resizable(false)
+        .default_width(360.0)
+        .show(ctx, |ui| {
+            ui.vertical_centered_justified(|ui| {
+                ui.heading(l.get("il.menu.scenarios_title"));
+                ui.add_space(8.0);
+                if model.scenarios.is_empty() {
+                    ui.label(l.get("il.menu.no_scenarios"));
+                }
+                egui::ScrollArea::vertical()
+                    .max_height(420.0)
+                    .show(ui, |ui| {
+                        for (i, name) in model.scenarios.iter().enumerate() {
+                            if ui.button(name).clicked() {
+                                choice = Some(MenuChoice::Start(i));
+                            }
+                        }
+                    });
+                if let Some(e) = model.error {
+                    ui.add_space(8.0);
+                    ui.colored_label(egui::Color32::from_rgb(255, 120, 120), e);
+                }
+                ui.add_space(16.0);
+                if ui.button(l.get("il.menu.back")).clicked() {
+                    choice = Some(MenuChoice::Back);
                 }
             });
         });
@@ -175,72 +223,6 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
             }
         });
     action
-}
-
-/// The result screen model (T2-070; the full screen is T2-091).
-pub struct ResultModel<'a> {
-    pub result: &'a il_sim_battle::BattleResult,
-    /// Where the battle's replay was written (T2-101), if it was.
-    pub replay_path: Option<&'a str>,
-    pub locale: &'a Locale,
-}
-
-/// Draws the end-of-battle window; returns true when the player asked for
-/// the menu.
-pub fn result_window(ctx: &egui::Context, model: &ResultModel<'_>) -> bool {
-    let l = model.locale;
-    let r = model.result;
-    let mut back = false;
-    egui::Window::new(l.get("il.result.title"))
-        .id(egui::Id::new("il_result"))
-        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-        .collapsible(false)
-        .resizable(false)
-        .show(ctx, |ui| {
-            match r.winner {
-                Some(side) => ui.heading(l.fmt("il.result.winner", &[("side", &side)])),
-                None => ui.heading(l.get("il.result.draw")),
-            };
-            ui.label(l.fmt(
-                "il.result.duration",
-                &[("time", &clock(Tick(r.duration_ticks)) as &dyn Display)],
-            ));
-            egui::Grid::new("il_result_sides")
-                .striped(true)
-                .show(ui, |ui| {
-                    for (i, s) in r.sides.iter().enumerate() {
-                        let survivors: u32 =
-                            s.regiments.iter().map(|x| u32::from(x.survivors)).sum();
-                        let killed: u32 = s.regiments.iter().map(|x| u32::from(x.killed)).sum();
-                        let fled: u32 = s.regiments.iter().map(|x| u32::from(x.fled)).sum();
-                        let fate = l.get(match s.general_fate {
-                            il_sim_battle::GeneralFate::Alive => "il.fate.alive",
-                            il_sim_battle::GeneralFate::Wounded => "il.fate.wounded",
-                            il_sim_battle::GeneralFate::Dead => "il.fate.dead",
-                            il_sim_battle::GeneralFate::Captured => "il.fate.captured",
-                        });
-                        ui.label(l.fmt("il.result.side", &[("side", &i)]));
-                        ui.label(l.fmt(
-                            "il.result.line",
-                            &[
-                                ("survivors", &survivors as &dyn Display),
-                                ("killed", &killed),
-                                ("fled", &fled),
-                                ("fate", &fate),
-                                ("loot", &s.loot),
-                            ],
-                        ));
-                        ui.end_row();
-                    }
-                });
-            if let Some(path) = model.replay_path {
-                ui.label(l.fmt("il.result.replay", &[("path", &path)]));
-            }
-            if ui.button(l.get("il.result.back")).clicked() {
-                back = true;
-            }
-        });
-    back
 }
 
 /// One routed event or rejected command, for the developer panel.

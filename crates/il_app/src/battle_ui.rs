@@ -12,10 +12,10 @@ use il_data::Registries;
 use il_render::{Camera, side_tint};
 use il_sim_battle::components::{MoraleState, OrderKind};
 use il_sim_battle::morale::{FatigueState, fatigue_state};
-use il_sim_battle::{BattlePhase, BattleView};
+use il_sim_battle::{BattlePhase, BattleResult, BattleView, GeneralFate};
 use il_ui::{
-    AbilitySlot, CommandCardModel, MiniBlock, Minimap, RegimentCard, SelectedRegiment, Selection,
-    SideTally,
+    AbilitySlot, CommandCardModel, MiniBlock, Minimap, RegimentCard, ResultRow, ResultSide,
+    SelectedRegiment, Selection, SettingsState, SideTally,
 };
 
 use crate::session::BattleSession;
@@ -34,6 +34,8 @@ pub struct BattleUi {
     /// Whether the session was paused before the menu opened.
     pub pause_was_paused: bool,
     pub minimap: Minimap,
+    /// The settings screen opened from the pause menu (T2-091).
+    pub settings: Option<Box<SettingsState>>,
 }
 
 impl Default for BattleUi {
@@ -43,8 +45,70 @@ impl Default for BattleUi {
             pause_open: false,
             pause_was_paused: false,
             minimap: Minimap::new(),
+            settings: None,
         }
     }
+}
+
+/// The result screen's rows (T2-091, decision 15): per side the faction's
+/// name, the general's fate, the loot and a row per regiment, named through
+/// the setup's rosters (`RegimentResult.id` is the setup id).
+pub fn result_sides(session: &BattleSession, result: &BattleResult) -> Vec<ResultSide> {
+    let view = session.world.view();
+    let regs = view.regs();
+    let l = &regs.locale;
+    let setup = session.setup();
+    result
+        .sides
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            let side_setup = setup.and_then(|st| st.sides.get(i));
+            let name = side_setup
+                .and_then(|ss| regs.factions.lookup(&ss.faction))
+                .map(|h| l.get(&regs.factions.get(h).name_key).to_string())
+                .unwrap_or_else(|| l.fmt("il.result.side", &[("side", &i)]));
+            let unit_name = |id: u32| -> String {
+                side_setup
+                    .and_then(|ss| {
+                        ss.regiments
+                            .iter()
+                            .chain(ss.reinforcements.iter().flat_map(|g| g.regiments.iter()))
+                            .find(|r| r.id == id)
+                    })
+                    .and_then(|r| regs.units.lookup(&r.unit_type))
+                    .map(|h| l.get(&regs.units.get(h).name_key).to_string())
+                    .unwrap_or_else(|| format!("#{id}"))
+            };
+            ResultSide {
+                name,
+                tint: side_tint(i as u8),
+                fate: l
+                    .get(match s.general_fate {
+                        GeneralFate::Alive => "il.fate.alive",
+                        GeneralFate::Wounded => "il.fate.wounded",
+                        GeneralFate::Dead => "il.fate.dead",
+                        GeneralFate::Captured => "il.fate.captured",
+                    })
+                    .to_string(),
+                loot: s.loot,
+                rows: s
+                    .regiments
+                    .iter()
+                    .map(|r| ResultRow {
+                        unit: unit_name(r.id),
+                        initial: r.initial,
+                        survivors: r.survivors,
+                        killed: r.killed,
+                        fled: r.fled,
+                        experience: r.experience_gain,
+                        ammo: r.ammo_left,
+                        arrived: r.arrived,
+                    })
+                    .collect(),
+            }
+        })
+        .collect()
 }
 
 /// The owned half of a `MinimapInput` (the map and the slices borrow it).

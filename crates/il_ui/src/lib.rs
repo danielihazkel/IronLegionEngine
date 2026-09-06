@@ -12,7 +12,9 @@ pub mod cards;
 pub mod casualties;
 pub mod command_card;
 pub mod context;
+pub mod custom_battle;
 pub mod input;
+pub mod load_screen;
 pub mod minimap;
 pub mod orders;
 pub mod overlay;
@@ -20,7 +22,9 @@ pub mod panels;
 pub mod pause_menu;
 pub mod pick;
 pub mod profiler;
+pub mod result;
 pub mod selection;
+pub mod settings;
 
 pub use bindings::{
     Action, BindingError, Bindings, Button, Chord, Mods, Trigger, key_code_name, parse_chord,
@@ -31,8 +35,13 @@ pub use command_card::{
     AbilitySlot, CommandAction, CommandCardModel, command_card, selection_grid,
 };
 pub use context::{UiContext, UiOutput};
+pub use custom_battle::{
+    BuildError, BuilderAction, BuilderCatalog, BuilderState, Controller, FactionChoice, MapChoice,
+    RowDraft, SideDraft, UnitChoice, custom_battle,
+};
 pub use egui;
 pub use input::{Drag, Gesture, InputState, gesture_matches};
+pub use load_screen::{LoadAction, SaveEntry, load_screen};
 pub use minimap::{MapScale, MiniBlock, Minimap, MinimapAction, MinimapInput, render_fog};
 pub use orders::{
     DragFormation, OrderContext, UiIntent, battle_line_template, commands_for, drag_formation,
@@ -40,8 +49,8 @@ pub use orders::{
 };
 pub use overlay::{drag_formation_preview, selection_box};
 pub use panels::{
-    EventLine, HudAction, HudModel, MenuChoice, MenuModel, ResultModel, SelectedRegiment,
-    battle_hud, clock, event_panel, main_menu, result_window,
+    EventLine, HudAction, HudModel, MenuChoice, MenuModel, SelectedRegiment, battle_hud, clock,
+    event_panel, main_menu, scenario_list,
 };
 pub use pause_menu::{PauseAction, PauseModel, pause_menu};
 pub use pick::{
@@ -49,4 +58,8 @@ pub use pick::{
     regiments_of_type_on_screen,
 };
 pub use profiler::{ProfilerStats, StageStat, profiler_overlay};
+pub use result::{ResultAction, ResultRow, ResultScreenModel, ResultSide, result_screen};
 pub use selection::{GROUPS, Selection};
+pub use settings::{
+    BindingRow, Capture, SettingsAction, SettingsDraft, SettingsState, Tab, settings_screen,
+};

@@ -22,15 +22,16 @@ use il_render::{
     Renderer, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_debug_lines, build_snapshot,
     deployment_outlines, ground_height, scene_from_snapshot,
 };
-use il_sim_battle::{BattlePhase, BattleView, BattleWorld, SpeedMode};
+use il_sim_battle::{
+    BattlePhase, BattleSetup, BattleView, BattleWorld, ScriptedCommands, SpeedMode,
+};
 use il_ui::{
     Action, Bindings, CardAction, CardStripModel, CommandAction, DragFormation, Gesture, HudAction,
-    HudModel, InputState, MenuChoice, MenuModel, MinimapAction, MinimapInput, OrderContext,
-    PauseAction, PauseModel, Selection, UiContext, UiIntent, battle_hud, card_strip,
-    casualties_line, command_card, commands_for, drag_formation, drag_formation_preview,
-    event_panel, main_menu, own_regiments, pause_menu, pick_enemy_regiment, pick_regiment,
-    preset_deploy_commands, profiler_overlay, regiments_in_box, regiments_of_type_on_screen,
-    selection_box, selection_centroid,
+    HudModel, InputState, MinimapAction, MinimapInput, OrderContext, PauseAction, PauseModel,
+    Selection, UiContext, UiIntent, battle_hud, card_strip, casualties_line, command_card,
+    commands_for, drag_formation, drag_formation_preview, event_panel, own_regiments, pause_menu,
+    pick_enemy_regiment, pick_regiment, preset_deploy_commands, profiler_overlay, regiments_in_box,
+    regiments_of_type_on_screen, selection_box, selection_centroid,
 };
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -40,8 +41,10 @@ use winit::window::{Window, WindowId};
 use crate::HotReloadHandle;
 use crate::battle_ui::{self, Armed, BattleUi};
 use crate::bench::SpriteBench;
+use crate::menus::draft_from;
 use crate::profiler::Profiler;
 use crate::session::BattleSession;
+use crate::settings::{self, Settings};
 use crate::state::{AppState, MenuState, Transition};
 
 /// Frames between title refreshes (the title shows the tick and sim cost).
@@ -85,60 +88,78 @@ pub struct Launch {
     pub replays_dir: PathBuf,
     /// Where the quick save lives (T2-101, plan decision 14).
     pub saves_dir: PathBuf,
+    /// The user's settings and where they are saved (T2-091).
+    pub settings: Settings,
+    pub settings_path: PathBuf,
 }
 
 pub struct App {
-    state: AppState,
-    launch: Launch,
-    regs: Arc<Registries>,
+    pub(crate) state: AppState,
+    pub(crate) launch: Launch,
+    pub(crate) regs: Arc<Registries>,
     #[allow(dead_code, reason = "unused without the dev feature")]
-    hot_reload: HotReloadHandle,
-    window: Option<Arc<Window>>,
-    renderer: Option<Renderer>,
-    ui: Option<UiContext>,
-    input: InputState,
-    bindings: Bindings,
-    selection: Selection,
+    pub(crate) hot_reload: HotReloadHandle,
+    pub(crate) window: Option<Arc<Window>>,
+    pub(crate) renderer: Option<Renderer>,
+    pub(crate) ui: Option<UiContext>,
+    pub(crate) input: InputState,
+    pub(crate) bindings: Bindings,
+    pub(crate) selection: Selection,
     /// The run toggle: new movement orders run instead of walk.
-    run: bool,
-    profiler: Profiler,
-    show_profiler: bool,
+    pub(crate) run: bool,
+    pub(crate) profiler: Profiler,
+    pub(crate) show_profiler: bool,
     /// Debug overlays (T1-054), `dev` builds only.
-    debug: DebugFlags,
+    pub(crate) debug: DebugFlags,
     /// One atlas per sprite set, in registry order.
-    atlases: Vec<AtlasId>,
-    camera: Option<Camera>,
-    snapshot: RenderSnapshot,
-    scene: SpriteScene,
-    lines: LineScene,
-    bench: Option<SpriteBench>,
+    pub(crate) atlases: Vec<AtlasId>,
+    pub(crate) camera: Option<Camera>,
+    pub(crate) snapshot: RenderSnapshot,
+    pub(crate) scene: SpriteScene,
+    pub(crate) lines: LineScene,
+    pub(crate) bench: Option<SpriteBench>,
     /// Requested this frame, applied after rendering.
-    transition: Option<Transition>,
+    pub(crate) transition: Option<Transition>,
     /// The battle screen's panels' state (T2-090).
-    battle_ui: BattleUi,
+    pub(crate) battle_ui: BattleUi,
     /// The settings' `ui_scale` (1.0 until T2-091).
-    ui_scale_user: f32,
+    pub(crate) ui_scale_user: f32,
     /// The egui zoom factor last applied (decision 7).
-    zoom_applied: f32,
+    pub(crate) zoom_applied: f32,
     /// This battle's replay has been written (once per battle, T2-101).
-    replay_written: bool,
+    pub(crate) replay_written: bool,
     /// The replay file the last write produced (shown on the result window).
-    last_replay: Option<PathBuf>,
-    started: Instant,
-    last_frame: Option<Instant>,
-    frames: u32,
+    pub(crate) last_replay: Option<PathBuf>,
+    pub(crate) started: Instant,
+    pub(crate) last_frame: Option<Instant>,
+    pub(crate) frames: u32,
     /// Wall time spent inside `BattleWorld::step` since the last title refresh.
-    step_seconds: f64,
-    ticks_since_title: u32,
+    pub(crate) step_seconds: f64,
+    pub(crate) ticks_since_title: u32,
 }
 
-/// Parses the registry's bindings, printing what it had to skip.
-fn load_bindings(regs: &Registries) -> Bindings {
-    let (bindings, errors) = Bindings::from_content(&regs.input);
+/// Parses the registry's bindings with the settings' overrides (T2-091),
+/// printing what it had to skip.
+fn load_bindings(regs: &Registries, user: &Settings) -> Bindings {
+    let (bindings, errors) = settings::effective_bindings(regs, user);
     for e in errors {
         eprintln!("bindings: {e}");
     }
     bindings
+}
+
+/// Builds a session for a setup built in memory (the custom battle builder
+/// or a rematch, T2-091).
+pub fn start_from_setup(
+    setup: BattleSetup,
+    stem: String,
+    regs: Arc<Registries>,
+    threads: usize,
+    ai: Vec<PlayerId>,
+) -> anyhow::Result<BattleSession> {
+    let mut world = BattleWorld::new(&setup, regs).map_err(|e| anyhow!("{e}"))?;
+    world.set_threads(threads);
+    Ok(BattleSession::new(world, PlayerId(0), ScriptedCommands::default(), ai).with_stem(stem))
 }
 
 /// Builds a session for a scenario file (the main menu's "custom battle").
@@ -162,13 +183,6 @@ fn speed_mode(run: bool) -> SpeedMode {
     if run { SpeedMode::Run } else { SpeedMode::Walk }
 }
 
-fn file_name(p: &Path) -> String {
-    p.file_name().map_or_else(
-        || p.display().to_string(),
-        |n| n.to_string_lossy().into_owned(),
-    )
-}
-
 impl App {
     pub fn new(
         state: AppState,
@@ -176,7 +190,8 @@ impl App {
         regs: Arc<Registries>,
         hot_reload: HotReloadHandle,
     ) -> Self {
-        let bindings = load_bindings(&regs);
+        let bindings = load_bindings(&regs, &launch.settings);
+        let ui_scale_user = launch.settings.ui_scale;
         Self {
             state,
             launch,
@@ -200,7 +215,7 @@ impl App {
             bench: None,
             transition: None,
             battle_ui: BattleUi::default(),
-            ui_scale_user: 1.0,
+            ui_scale_user,
             zoom_applied: 1.0,
             replay_written: false,
             last_replay: None,
@@ -559,8 +574,13 @@ impl App {
                 }
                 self.toggle_pause_menu();
             }
-            // The settings screen arrives with T2-091.
-            PauseAction::Settings => {}
+            // T2-091: the settings screen over the paused battle.
+            PauseAction::Settings => {
+                self.battle_ui.settings = Some(Box::new(il_ui::SettingsState::new(draft_from(
+                    &self.launch.settings,
+                    &self.regs,
+                ))));
+            }
             PauseAction::Quit => self.transition = Some(Transition::QuitToMenu),
         }
     }
@@ -842,7 +862,7 @@ impl App {
         if let Some(hr) = self.hot_reload.as_mut() {
             if let Some(regs) = hr.poll() {
                 session.world.replace_registries(regs.clone());
-                self.bindings = load_bindings(&regs);
+                self.bindings = load_bindings(&regs, &self.launch.settings);
                 self.regs = regs;
             }
             for event in hr.take_events() {
@@ -949,10 +969,16 @@ impl App {
                 return;
             }
         } else if self.state.is_battle() {
-            self.apply_camera_input(dt as f32);
-            self.apply_toggles();
-            self.apply_selection_input();
-            self.apply_order_input();
+            // T2-091: a settings screen capturing a chord owns the input.
+            let capturing = self.capturing_chord();
+            if capturing {
+                self.capture_chord();
+            } else {
+                self.apply_camera_input(dt as f32);
+                self.apply_toggles();
+                self.apply_selection_input();
+                self.apply_order_input();
+            }
             self.advance_battle(dt);
             if self.state.session().is_some_and(|s| s.result().is_some()) {
                 self.write_replay_now();
@@ -1043,10 +1069,18 @@ impl App {
                     };
                     let pause = PauseModel {
                         can_surrender: session.observer_side().is_some()
-                            && phase != BattlePhase::Ended,
-                        has_settings: false,
+                            && phase != BattlePhase::Ended
+                            && !session.is_replay(),
+                        has_settings: true,
                         locale,
                     };
+                    let result_sides = session
+                        .result()
+                        .map(|r| battle_ui::result_sides(session, r))
+                        .unwrap_or_default();
+                    let can_rematch = !session.is_replay() && session.setup().is_some();
+                    let battle_settings = &mut self.battle_ui.settings;
+                    let mut settings_click = None;
                     let pause_open = self.battle_ui.pause_open;
                     let armed = self.battle_ui.armed;
                     let replay_path = self.last_replay.as_ref().map(|p| p.display().to_string());
@@ -1056,7 +1090,7 @@ impl App {
                     let mut command_click = None;
                     let mut minimap_click = None;
                     let mut pause_click = None;
-                    let mut result_back = false;
+                    let mut result_click = None;
                     let out = ui.run(window, |ctx| {
                         if show_profiler {
                             profiler_overlay(ctx, locale, &stats);
@@ -1079,13 +1113,19 @@ impl App {
                         if pause_open {
                             pause_click = pause_menu(ctx, &pause);
                         }
-                        // T2-070: the result window once the battle ended.
+                        if let Some(state) = battle_settings.as_mut() {
+                            settings_click = il_ui::settings_screen(ctx, state, locale, true);
+                        }
+                        // T2-070/T2-091: the result screen once the battle ended.
                         if let Some(result) = session.result() {
-                            result_back = il_ui::result_window(
+                            result_click = il_ui::result_screen(
                                 ctx,
-                                &il_ui::ResultModel {
-                                    result,
+                                &il_ui::ResultScreenModel {
+                                    winner: result.winner,
+                                    duration: il_ui::clock(il_core::Tick(result.duration_ticks)),
+                                    sides: &result_sides,
                                     replay_path: replay_path.as_deref(),
+                                    can_rematch,
                                     locale,
                                 },
                             );
@@ -1105,33 +1145,35 @@ impl App {
                     if let Some(action) = pause_click {
                         self.pause_action(action);
                     }
-                    if result_back {
-                        self.transition = Some(Transition::QuitToMenu);
-                    }
-                }
-                AppState::MainMenu(menu) => {
-                    let scenarios: Vec<String> =
-                        menu.scenarios.iter().map(|p| file_name(p)).collect();
-                    let mods: Vec<String> = menu.mods.iter().map(|p| file_name(p)).collect();
-                    let model = MenuModel {
-                        scenarios: &scenarios,
-                        mods: &mods,
-                        error: menu.error.as_deref(),
-                        locale: &self.regs.locale,
-                    };
-                    let mut choice = None;
-                    let out = ui.run(window, |ctx| {
-                        choice = main_menu(ctx, &model);
-                    });
-                    ui_out = Some(out);
-                    match choice {
-                        Some(MenuChoice::Start(i)) => {
-                            self.transition =
-                                Some(Transition::StartBattle(menu.scenarios[i].clone()));
+                    match result_click {
+                        Some(il_ui::ResultAction::Menu) => {
+                            self.transition = Some(Transition::QuitToMenu);
                         }
-                        Some(MenuChoice::Exit) => event_loop.exit(),
+                        Some(il_ui::ResultAction::Rematch) => self.rematch(),
                         None => {}
                     }
+                    if let Some(action) = settings_click
+                        && let Some(mut state) = self.battle_ui.settings.take()
+                        && !self.settings_action(&mut state, action)
+                    {
+                        self.battle_ui.settings = Some(state);
+                    }
+                }
+                AppState::MainMenu(_) => {}
+            }
+        }
+        // T2-091: the menu screens (they need the app mutably, so the
+        // egui context is taken out for the call).
+        if !self.state.is_battle() && self.bench.is_none() {
+            if self.capturing_chord() {
+                self.capture_chord();
+            }
+            if let (Some(mut ui), Some(window)) = (self.ui.take(), self.window.clone()) {
+                let (out, exit) = self.menu_frame(&mut ui, &window);
+                ui_out = Some(out);
+                self.ui = Some(ui);
+                if exit {
+                    event_loop.exit();
                 }
             }
         }
@@ -1177,6 +1219,7 @@ impl App {
             self.write_replay_now();
         }
         let regs = self.regs.clone();
+        let regs_build = regs.clone();
         let regs_load = regs.clone();
         let threads = self.launch.threads;
         let ai = self.launch.ai.clone();
@@ -1185,11 +1228,30 @@ impl App {
         self.state = state.apply(
             transition,
             |path| start_battle(path, regs, threads, ai),
+            |setup, stem, ai| start_from_setup(setup, stem, regs_build, threads, ai),
             |path| crate::replay_io::load_save(path, regs_load, threads),
             || menu,
         );
         self.reset_battle_state();
         self.refresh_title();
+    }
+
+    /// The result screen's Rematch (decision 12): the same setup with the
+    /// next seed, the same `--ai` list and stem.
+    fn rematch(&mut self) {
+        let Some(session) = self.state.session() else {
+            return;
+        };
+        let Some(setup) = session.setup() else {
+            return;
+        };
+        let mut setup = setup.clone();
+        setup.seed = setup.seed.wrapping_add(1);
+        self.transition = Some(Transition::StartSetup {
+            setup: Box::new(setup),
+            stem: session.scenario_stem().to_string(),
+            ai: self.launch.ai.clone(),
+        });
     }
 
     /// ` — replay 120/600`, ` — replay OK` or ` — replay MISMATCH at tick
@@ -1383,6 +1445,9 @@ impl ApplicationHandler for App {
         }
         self.load_terrain();
         self.ui = Some(UiContext::new(&window));
+        self.window = Some(window);
+        // T2-091: vsync and fullscreen from the settings file.
+        self.apply_window_settings();
         if self.launch.bench_sprites {
             let renderer = self.renderer.as_mut().expect("renderer exists");
             renderer.set_vsync(false);
@@ -1390,7 +1455,6 @@ impl ApplicationHandler for App {
             self.bench = Some(SpriteBench::new(&self.atlases, w as f32, h as f32));
         }
         event_loop.set_control_flow(ControlFlow::Poll);
-        self.window = Some(window);
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {

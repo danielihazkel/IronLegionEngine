@@ -493,9 +493,10 @@ flowchart LR
   **Done when** a full battle can be fought with mouse only, and a `--show-keys` run shows no literal strings.
   Done 2026-09-06: `il_ui::{cards, command_card, casualties, minimap, pause_menu}` (the card column with strength bars over the new `RegimentRow.initial`, morale dots, fatigue, mean volleys left as the "ammo", engaged marks and control groups; the command card with every key order as a button and the group-formation presets, which re-lay the whole side in its zone during the deployment; the casualties line from the session's event tallies; the ≤ 256 px minimap fogged outside the observer side's `los_radius` discs because the sim keeps per-regiment visibility, not a fog grid; the pause menu with Surrender), `UiIntent::{AttackMove, AttackRegiment, Withdraw, GroupPreset}`, `pick_enemy_regiment`, the armed attack-move cursor (`T` or the button, then a left click), `order_withdraw` (`Shift+H`), `pause_menu` (Escape, replacing `quit_to_menu`), the deployment's Confirm button, the egui zoom factor from the window height (REQ-UI-006), `il_app::battle_ui`. Tests: `crates/il_ui/tests/{orders,pick,minimap,panels}.rs`, the session's tally test, `locale_keys.rs` over every il_ui module. REQ-INP-003's attack-move and withdraw (listed as Phase 1) are met here. The mouse-only battle is the docs/08 §4f checkpoint, owed to the owner's eyes.
 
-- [ ] **T2-091 Main menu, custom battle setup, settings, result screen** · M · Refs REQ-UI-004, 007, REQ-INP-005
+- [x] **T2-091 Main menu, custom battle setup, settings, result screen** · M · Refs REQ-UI-004, 007, REQ-INP-005
   Map picker from the registry, side and roster builder, seed, weather; settings for bindings, video, audio; battle result screen from `BattleResult`.
   **Done when** a custom battle can be set up and fought without editing files.
+  Done 2026-09-06: the main menu's root (custom battle, scenario file, load battle, settings, exit) and screens (`il_app::state::MenuScreen`, `il_app::menus`); `il_ui::custom_battle` (map, weather from `weather_allowed`, seed, time limit, 2..4 sides with faction, controller You / Engine AI (player 255) / Idle, general, roster rows; `to_setup` with its errors; Start opens in Deployment, Save writes a scenario file); `il_ui::settings` and `il_app::settings` (`settings.json5` under the config dir found through the environment, `--settings`; Video, Audio, Bindings tabs with chord capture, Reset and conflict flags; Apply and Save; the same screen from the pause menu); `il_ui::load_screen` over `saves/*.ilsv` headers; `il_ui::result_screen` (per-regiment table named through the setup, the replay path, Rematch = `seed + 1`) replacing the T2-070 window; `Transition::StartSetup`. Tests: `crates/il_ui/tests/custom_battle.rs`, `crates/il_app/src/{settings,menus,state}.rs`. Checkpoint: docs/08 §4f step 8 (build in the menu, fight, result, rematch), §2a (rebind a key and see it survive a restart).
 
 ### AUD — audio
 
@@ -534,8 +535,8 @@ flowchart LR
 - [ ] The AI wins against a passive player (T2-082): `ai_vs_passive` 3/20 seeds on 2026-09-06 in release (`ai_vs_charge` 16/20); see the T2-082 finding.
 - [ ] Scenario band tests pass (T2-110).
 - [ ] Determinism test passes with all combat systems at 1 and 8 threads, including snapshot/restore (T2-112).
-- [ ] A recorded replay verifies (T2-101).
-- [ ] Every Phase 2 Must requirement is satisfied: REQ-PERF-002, 008, REQ-SIM-030..032, 035, 040, 060, 061, 063, REQ-FORM-006, REQ-PATH-004, REQ-CMBT-001..005, 007, 010..013, 015, 020..022, REQ-ABIL-001, 002 (buff/debuff), REQ-MOR-001..006, REQ-FAT-001..004, REQ-AI-001, 003, 005, 006, REQ-UI-001, 003, 006, 007, REQ-AUD-001, REQ-NET-008, REQ-SAVE-006.
+- [x] A recorded replay verifies (T2-101): the in-process tests record and verify the AI skirmish on every push; the nightly records it to its end and verifies on eight threads (first run owed after the push).
+- [ ] Every Phase 2 Must requirement is satisfied: REQ-PERF-002, 008, REQ-SIM-030..032, 035, 040, 060, 061, 063, REQ-FORM-006, REQ-PATH-004, REQ-CMBT-001..005, 007, 010..013, 015, 020..022, REQ-ABIL-001, 002 (buff/debuff), REQ-MOR-001..006, REQ-FAT-001..004, REQ-AI-001, 003, 005, 006, REQ-UI-001, 003, 006, 007, REQ-AUD-001, REQ-NET-008, REQ-SAVE-006. Met by the UI milestone (2026-09-06): REQ-UI-001, 003, 006 (T2-090), REQ-UI-004, 007 and REQ-INP-005's settings UI (T2-091), REQ-SAVE-005's recording and playback and REQ-SAVE-006 (T2-101: the save/load hash-equality test). The audit of the rest is T2-113's.
 
 ---
 
