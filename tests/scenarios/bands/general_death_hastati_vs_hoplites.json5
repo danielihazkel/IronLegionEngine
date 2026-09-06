@@ -1,0 +1,51 @@
+// Simulation Spec §15.3 row 7: an even fight in which one general dies at
+// tick 600; the side that lost its general routs first in ≥ 75 % of seeds.
+//
+// "Even hastati vs hoplite fight" is read as a mirrored fight, 160 hastati
+// a side, so that only the general's death separates the two sides (a real
+// hoplite phalanx beats hastati frontally every time, row 2). Both
+// generals ride with their side's one regiment (`bodyguard`, T2-043); the
+// harness kills side 0's general before tick 600 is stepped, never through
+// a Command.
+//
+// RegimentIds: side 0 hastati 0, side 1 hastati 1.
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder", bodyguard: 1 },
+      regiments: [
+        { id: 1, unit_type: "rome:hastati", count: 160, formation: "rome:line", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder", bodyguard: 2 },
+      regiments: [
+        // 100 m apart, not 50: contact comes at tick ~620, just after the
+        // kill; at 50 m one side had already broken by tick 400.
+        { id: 2, unit_type: "rome:hastati", count: 160, formation: "rome:line", position: [400, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    // Melee only: the pila stay in hand (T2-030).
+    { tick: 1, player: 0, seq: 0, kind: { FireMode: { regiments: [0], mode: "Hold" } } },
+    { tick: 1, player: 1, seq: 0, kind: { FireMode: { regiments: [1], mode: "Hold" } } },
+    { tick: 1, player: 0, seq: 1, kind: { AttackRegiment: { regiments: [0], target: 1 } } },
+    { tick: 1, player: 1, seq: 1, kind: { AttackRegiment: { regiments: [1], target: 0 } } },
+  ],
+  bands: {
+    seeds: 50,
+    seed_base: 7000,
+    tick_limit: 6000,
+    harness: [
+      { tick: 600, kill_general: 0 },
+    ],
+    assertions: [
+      { name: "the side without a general routs first", kind: "routs_first", side: 0, min_fraction: 0.75 },
+    ],
+  },
+}

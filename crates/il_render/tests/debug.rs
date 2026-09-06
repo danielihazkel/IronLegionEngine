@@ -20,7 +20,7 @@ fn world() -> BattleWorld {
           map_id: "rome:test_field", seed: 7,
           sides: [
             { faction: "rome:rome", player: 0, deployment_zone: 0,
-              general: { unit_type: "rome:hastati", name_key: "g0" },
+              general: { unit_type: "rome:general", name_key: "g0" },
               regiments: [ { id: 1, unit_type: "rome:hastati", count: 40, position: [300, 150], facing_deg: 90 } ] },
           ],
         }"#,

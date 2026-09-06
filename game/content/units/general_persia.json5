@@ -1,0 +1,49 @@
+// persia:general — the army's general (SIM-GEN-001, T2-043): one soldier of
+// category `general` spawned inside the bodyguard regiment named by
+// `BattleSetup.sides[].general.bodyguard`. Its hp is multiplied by
+// `general.hp_mult`; it moves at its bodyguard's pace, so the speeds match
+// the faction's usual bodyguard unit. Values are *chosen* (Simulation Spec
+// §15.2).
+{
+  id: "persia:general",
+  name_key: "persia.units.general.name",
+  category: "general",
+
+  soldier_radius: 0.6,
+  mass: 450,
+  hp: 120,
+
+  speed_walk: 3.0,
+  speed_run: 9.0,
+  speed_march: 3.0,
+
+  attack: 40,
+  defence: 35,
+  armour: 12,
+  armour_penetration: 0,
+  damage: 30,
+  attack_interval_ticks: 20,
+  reach: 1.0,
+  charge_bonus: 0.2,
+  anti_cavalry_bonus: 0,
+  second_rank_attack: false,
+  shield: true,
+  frontal_arc_deg: 120,
+
+  morale_base: 80,
+  fatigue_rate_mult: 1.0,
+  los_radius: 250,
+
+  abilities: [],
+  formations: ["rome:wedge", "rome:line", "rome:column"],
+
+  sprite_set: "rome:sprites_general",
+  sounds: {},
+
+  cost: 1000,
+  upkeep: 100,
+  recruit_turns: 4,
+  regiment_size: 1,
+  tier: 3,
+  experience_tiers: [],
+}

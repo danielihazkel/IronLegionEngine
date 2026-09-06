@@ -173,7 +173,11 @@ fn a_hastati_clash_wounds_both_sides_deterministically() {
             assert_ne!(kr, regiment, "{victim:?} killed by an ally");
         }
     }
-    assert_eq!(w.soldier_count(), 240 - deaths.len());
+    assert_eq!(
+        w.soldier_count(),
+        242 - deaths.len(),
+        "two generals ride along"
+    );
 
     // Eight threads, and a restore from tick 1,000, reproduce the hashes.
     let mut w8 = BattleWorld::new(&setup, regs.clone()).unwrap();
@@ -286,21 +290,44 @@ fn a_charge_opens_a_window_and_doubles_the_mass_inside_it() {
     assert_eq!(order.speed, SpeedMode::Run, "not charging at a run");
     assert_eq!(c.charge_until, Tick(t + window));
     assert_eq!(charge_event, Some(RegimentId(0)));
+    // Every rider doubles its own unit's mass; the fixture's Roman general
+    // rides with them at its own weight (T2-043).
+    let general_mass = {
+        let regs = w.registries();
+        regs.units
+            .get(regs.units.lookup(&common::cid("rome:general")).unwrap())
+            .mass
+    };
     assert!(
-        cav_mass(&w).iter().all(|m| *m == mass * mult),
+        cav_mass(&w)
+            .iter()
+            .all(|m| *m == mass * mult || *m == general_mass * mult),
         "mass not raised"
     );
 
     // Inside the window the mass stays raised; on its last tick it drops.
     run(&mut w, &commands, t + window - 1);
-    assert!(cav_mass(&w).iter().all(|m| *m == mass * mult));
+    assert!(
+        cav_mass(&w)
+            .iter()
+            .all(|m| *m == mass * mult || *m == general_mass * mult)
+    );
     run(&mut w, &commands, t + window);
-    assert!(cav_mass(&w).iter().all(|m| *m == mass), "mass not restored");
+    assert!(
+        cav_mass(&w)
+            .iter()
+            .all(|m| *m == mass || *m == general_mass),
+        "mass not restored"
+    );
 
     // A restore inside the window brings the raised mass back.
     let mut w2 = BattleWorld::new(&setup, common::regs()).unwrap();
     run(&mut w2, &commands, t + 10);
     let snap = w2.snapshot();
     let restored = BattleWorld::restore(&snap, common::regs()).unwrap();
-    assert!(cav_mass(&restored).iter().all(|m| *m == mass * mult));
+    assert!(
+        cav_mass(&restored)
+            .iter()
+            .all(|m| *m == mass * mult || *m == general_mass * mult)
+    );
 }

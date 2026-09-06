@@ -81,7 +81,20 @@ pub struct Bands {
     /// it (the volley rows: their hastati would break and run).
     #[serde(default)]
     pub pin_morale: Vec<u8>,
+    /// Harness-side interventions applied through `ecs_mut` before the
+    /// named tick is stepped, never sim commands (T2-043, plan decision 12).
+    #[serde(default)]
+    pub harness: Vec<HarnessEvent>,
     pub assertions: Vec<Assertion>,
+}
+
+/// One harness intervention: at `tick`, kill side `kill_general`'s general
+/// (hp to zero plus a `Kill` entry, resolved at that tick's Stage 15).
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HarnessEvent {
+    pub tick: u32,
+    pub kill_general: u8,
 }
 
 fn d_one() -> f32 {
@@ -141,6 +154,9 @@ pub enum AssertionKind {
         contact_regiment: Option<u32>,
         within_ticks: u32,
     },
+    /// `side` routs before every other side (its first Routing regiment
+    /// precedes theirs; a side that never routs is last) (T2-043, row 7).
+    RoutsFirst { side: u8 },
     /// Cross-file (T2-032): the mean soldiers `side` lost over this file's
     /// seeds is within `tolerance` (a fraction) of the mean in the band
     /// file `reference` (its stem) of the same run. Evaluated once every
@@ -298,6 +314,12 @@ impl SeedOutcome {
                 Some(t) => self.dead_fraction(*side, Some(t)) < *loss_fraction,
                 None => false,
             },
+            AssertionKind::RoutsFirst { side } => match self.first_rout_of_side(*side) {
+                Some(t) => (0..self.initial.len() as u8)
+                    .filter(|s| s != side)
+                    .all(|s| self.first_rout_of_side(s).is_none_or(|o| t < o)),
+                None => false,
+            },
             AssertionKind::RoutWithin {
                 side,
                 after,
@@ -450,6 +472,7 @@ pub fn run_seed(
     seed: u64,
     tick_limit: u32,
     pin_morale: &[u8],
+    harness: &[HarnessEvent],
     regs: Arc<Registries>,
 ) -> anyhow::Result<SeedOutcome> {
     let mut setup = scenario.setup.clone();
@@ -468,7 +491,11 @@ pub fn run_seed(
     let mut rejected = 0u32;
     let mut hash = world.hash();
     while world.tick().0 < tick_limit {
-        let commands = script.take_for(world.tick().next());
+        let next = world.tick().next();
+        for event in harness.iter().filter(|e| e.tick == next.0) {
+            kill_general(&mut world, event.kill_general);
+        }
+        let commands = script.take_for(next);
         let out = world.step(&commands);
         rejected += out.rejected.len() as u32;
         hash = out.hash;
@@ -516,6 +543,42 @@ pub fn run_seed(
         fled_counts,
         regiment_side,
     })
+}
+
+/// `bands.harness` `kill_general`: the side's general takes lethal damage
+/// before the tick, so Stage 15 of that tick resolves the death.
+fn kill_general(world: &mut BattleWorld, side: u8) {
+    let Some(general) = world
+        .view()
+        .sides()
+        .get(usize::from(side))
+        .and_then(|s| s.general)
+    else {
+        return;
+    };
+    let Some(e) = world
+        .ecs()
+        .resource::<il_sim_battle::resources::Ids>()
+        .soldier_entity(general)
+    else {
+        return;
+    };
+    if let Some(mut h) = world
+        .ecs_mut()
+        .get_mut::<il_sim_battle::components::Health>(e)
+    {
+        h.hp = <il_core::S as il_core::Scalar>::ZERO;
+    }
+    world
+        .ecs_mut()
+        .resource_mut::<il_sim_battle::combat::Kills>()
+        .0
+        .push(il_sim_battle::combat::Kill {
+            victim: general,
+            killer: None,
+            killer_regiment: None,
+        });
+    world.recompute_hash();
 }
 
 /// `bands.pin_morale`: every regiment of the listed sides back to morale
@@ -568,7 +631,14 @@ pub fn run_file(
                         break;
                     }
                     let seed = bands.seed_base + u64::from(i);
-                    let r = run_seed(scenario, seed, tick_limit, &bands.pin_morale, regs.clone());
+                    let r = run_seed(
+                        scenario,
+                        seed,
+                        tick_limit,
+                        &bands.pin_morale,
+                        &bands.harness,
+                        regs.clone(),
+                    );
                     results.lock().expect("no poisoned seed").push((seed, r));
                 }
             });
@@ -966,6 +1036,7 @@ mod tests {
             tick_limit: 100,
             mods: Vec::new(),
             pin_morale: Vec::new(),
+            harness: Vec::new(),
             assertions: vec![
                 Assertion {
                     name: "win".into(),
@@ -1015,6 +1086,7 @@ mod tests {
             tick_limit: 100,
             mods: Vec::new(),
             pin_morale: Vec::new(),
+            harness: Vec::new(),
             assertions: vec![Assertion {
                 name: "same".into(),
                 kind: AssertionKind::MeanLossMatches {

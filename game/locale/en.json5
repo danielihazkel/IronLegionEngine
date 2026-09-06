@@ -6,6 +6,7 @@
     mod: { name: "Iron Legion: Rome" },
     units: {
       hastati: { name: "Hastati" },
+      general: { name: "Roman general" },
       velites: { name: "Velites" },
     },
     formations: {
@@ -41,11 +42,11 @@
     },
   },
   greece: {
-    units: { hoplite: { name: "Hoplite" } },
+    units: { hoplite: { name: "Hoplite" }, general: { name: "Greek general" } },
     factions: { greece: { name: "Greek city-states" } },
   },
   persia: {
-    units: { cavalry: { name: "Persian cavalry" }, archer: { name: "Persian archers" } },
+    units: { cavalry: { name: "Persian cavalry" }, archer: { name: "Persian archers" }, general: { name: "Persian general" } },
     factions: { persia: { name: "Persia" } },
   },
   il: {

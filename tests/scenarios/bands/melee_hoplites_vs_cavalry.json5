@@ -11,14 +11,14 @@
   sides: [
     {
       faction: "greece:greece", player: 0, deployment_zone: 0,
-      general: { unit_type: "greece:hoplite", rank: 1, name_key: "rome.generals.placeholder" },
+      general: { unit_type: "greece:general", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
         { id: 1, unit_type: "greece:hoplite", count: 160, formation: "rome:phalanx", position: [300, 150], facing_deg: 0 },
       ],
     },
     {
       faction: "persia:persia", player: 1, deployment_zone: 1,
-      general: { unit_type: "persia:cavalry", rank: 1, name_key: "rome.generals.placeholder" },
+      general: { unit_type: "persia:general", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
         { id: 2, unit_type: "persia:cavalry", count: 60, formation: "rome:wedge", position: [420, 150], facing_deg: 180 },
       ],

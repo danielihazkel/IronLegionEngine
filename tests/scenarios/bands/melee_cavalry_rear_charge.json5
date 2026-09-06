@@ -13,14 +13,14 @@
   sides: [
     {
       faction: "rome:rome", player: 0, deployment_zone: 0,
-      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
         { id: 1, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [300, 150], facing_deg: 0 },
       ],
     },
     {
       faction: "persia:persia", player: 1, deployment_zone: 1,
-      general: { unit_type: "persia:cavalry", rank: 1, name_key: "rome.generals.placeholder" },
+      general: { unit_type: "persia:general", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
         // 80, not 120 (T2-042): against 120 hoplites the hastati break on
         // their own seven seconds after contact, before the charge arrives.

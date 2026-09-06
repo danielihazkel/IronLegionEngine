@@ -103,7 +103,7 @@ fn two_thousand_soldiers_reform_line_column_line_within_15_seconds() {
     let mut a = BattleWorld::new(&ten_regiments(), regs.clone()).unwrap();
     let mut b = BattleWorld::new(&ten_regiments(), regs).unwrap();
     b.set_threads(8);
-    assert_eq!(a.soldier_count(), 2_000);
+    assert_eq!(a.soldier_count(), 2_001, "2,000 plus the general");
     assert_eq!(integrity(&a), S::ONE, "spawned on slots");
 
     for w in [&mut a, &mut b] {

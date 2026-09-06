@@ -73,11 +73,17 @@ pub struct SideSetup {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct GeneralSetup {
+    /// A unit type of category `general` (SIM-GEN-001).
     pub unit_type: ContentId,
     #[serde(default = "default_rank")]
     pub rank: u8,
     #[serde(default)]
     pub name_key: String,
+    /// `RegimentSetup.id` of the bodyguard regiment the general spawns in
+    /// as one extra soldier; the side's first regiment when absent
+    /// (T2-043, plan decision 4).
+    #[serde(default)]
+    pub bodyguard: Option<u32>,
 }
 
 fn default_rank() -> u8 {
@@ -116,7 +122,8 @@ pub struct ReinforcementGroup {
 }
 
 impl BattleSetup {
-    /// Soldiers at start plus pending reinforcements (SIM-CORE-006).
+    /// Soldiers at start plus pending reinforcements plus one general per
+    /// side (SIM-CORE-006).
     pub fn soldier_total(&self) -> u32 {
         self.sides
             .iter()
@@ -126,7 +133,8 @@ impl BattleSetup {
                     .chain(s.reinforcements.iter().flat_map(|g| g.regiments.iter()))
             })
             .map(|r| u32::from(r.count))
-            .sum()
+            .sum::<u32>()
+            + self.sides.len() as u32
     }
 }
 
@@ -235,10 +243,10 @@ mod tests {
               seed: 42,
               sides: [
                 { faction: "rome:rome", player: 0,
-                  general: { unit_type: "rome:hastati" },
+                  general: { unit_type: "rome:general" },
                   regiments: [ { id: 1, unit_type: "rome:hastati", count: 500, position: [-100, 0] } ] },
                 { faction: "rome:rome", player: 1,
-                  general: { unit_type: "rome:hastati" },
+                  general: { unit_type: "rome:general", bodyguard: 2 },
                   regiments: [ { id: 2, unit_type: "rome:hastati", count: 500, facing_deg: 180 } ],
                   reinforcements: [ { arrival_tick: 100, edge: 1,
                     regiments: [ { id: 3, unit_type: "rome:hastati", count: 20 } ] } ] },
@@ -254,7 +262,8 @@ mod tests {
         assert_eq!(setup.sides[1].player, PlayerId(1));
         assert_eq!(setup.sides[0].regiments[0].position, Some([-100.0, 0.0]));
         assert_eq!(setup.sides[1].regiments[0].facing_deg, Some(180.0));
-        assert_eq!(setup.soldier_total(), 1020);
+        assert_eq!(setup.sides[1].general.bodyguard, Some(2));
+        assert_eq!(setup.soldier_total(), 1022);
         let json = serde_json::to_string(&setup).unwrap();
         let back: BattleSetup = serde_json::from_str(&json).unwrap();
         assert_eq!(back, setup);

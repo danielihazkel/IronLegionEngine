@@ -15,8 +15,8 @@ use il_data::{FormationTemplate, Handle, ProjectileArc, Registries, UnitCategory
 
 use crate::command::FireMode;
 use crate::components::{
-    Anchor, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health, MeleeState, Morale,
-    MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos, RangedState, Regiment,
+    Anchor, Combat, Facing, FatigueC, Fire, FormationState, Fsm, GeneralTag, Health, MeleeState,
+    Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos, RangedState, Regiment,
     RegimentFatigue, SlotRef, Soldier, SoldierState,
 };
 use crate::map::LoadedMap;
@@ -39,6 +39,7 @@ type SoldierData = (
     &'static MeleeState,
     Option<&'static RangedState>,
     &'static FatigueC,
+    Option<&'static GeneralTag>,
 );
 type RegimentData = (
     &'static Regiment,
@@ -92,6 +93,8 @@ pub struct SoldierRow {
     pub ammo: Option<u16>,
     /// SIM-FAT-001, in `[0, 1]` (T2-040).
     pub fatigue: S,
+    /// The general's rank; `None` for everyone else (SIM-GEN-001, T2-043).
+    pub general: Option<u8>,
 }
 
 /// One regiment as the presentation layer sees it.
@@ -160,6 +163,7 @@ type SoldierItem<'a> = (
     &'a MeleeState,
     Option<&'a RangedState>,
     &'a FatigueC,
+    Option<&'a GeneralTag>,
 );
 type RegimentItem<'a> = (
     &'a Regiment,
@@ -173,7 +177,9 @@ type RegimentItem<'a> = (
 );
 
 fn soldier_row(
-    (s, pos, prev, facing, prev_facing, fsm, health, slot, melee, ranged, fatigue): SoldierItem<'_>,
+    (s, pos, prev, facing, prev_facing, fsm, health, slot, melee, ranged, fatigue, general): SoldierItem<
+        '_,
+    >,
 ) -> SoldierRow {
     SoldierRow {
         id: s.id,
@@ -190,6 +196,7 @@ fn soldier_row(
         target: melee.target,
         ammo: ranged.map(|r| r.ammo),
         fatigue: fatigue.f,
+        general: general.map(|g| g.rank),
     }
 }
 

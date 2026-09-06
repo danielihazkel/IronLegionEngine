@@ -270,6 +270,12 @@ impl BattleWorld {
 
     /// Read-only view for render, UI and AI (TDD §4.2). Cheap to build; the
     /// query states behind it are cached and refreshed by `step`.
+    /// SIM-GEN-004: the side's general's fate given whether the side lost
+    /// (T2-043; `BattleResult` decides `lost` in T2-071).
+    pub fn general_fate(&self, side: u8, lost: bool) -> crate::interface::GeneralFate {
+        crate::morale::general_fate(&self.world, side, lost)
+    }
+
     pub fn view(&self) -> BattleView<'_> {
         BattleView::new(&self.world, &self.view_queries, self.tick, self.phase)
     }

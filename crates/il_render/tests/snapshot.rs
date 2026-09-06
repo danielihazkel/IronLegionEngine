@@ -22,10 +22,10 @@ fn world() -> BattleWorld {
           seed: 7,
           sides: [
             { faction: "rome:rome", player: 0, deployment_zone: 0,
-              general: { unit_type: "rome:hastati", name_key: "g0" },
+              general: { unit_type: "rome:general", name_key: "g0" },
               regiments: [ { id: 1, unit_type: "rome:hastati", count: 6, position: [300, 150], facing_deg: 0 } ] },
             { faction: "rome:rome", player: 1, deployment_zone: 1,
-              general: { unit_type: "rome:hastati", name_key: "g1" },
+              general: { unit_type: "rome:general", name_key: "g1" },
               regiments: [ { id: 2, unit_type: "rome:hastati", count: 6, position: [340, 150], facing_deg: 180 } ] },
           ],
         }"#,
@@ -66,8 +66,11 @@ fn snapshot_interpolates_between_prev_and_current_positions() {
     build_snapshot(&view, &input(camera, 0.5, &selected), &mut half);
 
     assert_eq!(at0.soldiers.len(), ids.len());
-    assert_eq!(at0.counts.visible_soldiers, 12);
-    assert_eq!(at0.counts.soldiers, 12);
+    assert_eq!(
+        at0.counts.visible_soldiers, 14,
+        "12 soldiers and two generals"
+    );
+    assert_eq!(at0.counts.soldiers, 14);
     assert_eq!(at0.counts.regiments, 2);
     for i in 0..ids.len() {
         assert!((at1.soldiers[i].pos[0] - at0.soldiers[i].pos[0] - 2.0).abs() < 1e-4);
@@ -93,7 +96,7 @@ fn snapshot_culls_to_the_camera_and_marks_selection() {
     build_snapshot(&view, &input(camera, 0.0, &selected), &mut far);
     assert_eq!(far.counts.visible_soldiers, 0);
     assert_eq!(
-        far.counts.soldiers, 12,
+        far.counts.soldiers, 14,
         "counts still cover the whole battle"
     );
     assert_eq!(far.regiments.len(), 2, "regiment blocks are never culled");

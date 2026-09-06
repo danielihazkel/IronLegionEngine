@@ -186,19 +186,19 @@ fn a_broken_regiment_flees_to_its_edge_and_leaves() {
     // 150 m south at run: gone well inside a minute.
     run(&mut w, &[], 1_200, &mut events);
     assert_eq!(soldiers(&w, 0), 0, "everyone left");
-    assert_eq!(combat(&w, 0).fled, 100);
-    assert_eq!(fled_events(&events, 0), 100);
+    assert_eq!(combat(&w, 0).fled, 101, "100 plus the general");
+    assert_eq!(fled_events(&events, 0), 101);
     assert!(
         !events
             .iter()
             .any(|(_, e)| matches!(e, BattleEvent::SoldierDied { .. }))
     );
-    assert_eq!(soldiers(&w, 1), 100, "the enemy was untouched");
+    assert_eq!(soldiers(&w, 1), 101, "the enemy was untouched");
     assert!(
         w.view().regiment(RegimentId(0)).is_some(),
         "the entity stays"
     );
-    assert_eq!(w.view().regiment(RegimentId(0)).unwrap().fled, 100);
+    assert_eq!(w.view().regiment(RegimentId(0)).unwrap().fled, 101);
 }
 
 /// SIM-MOR-031: a Routing regiment rallies at `t_routing + rally_margin`
@@ -234,7 +234,11 @@ fn a_routing_regiment_rallies_when_safe() {
             .all(|s| s.state != SoldierState::Routing)
     );
     run(&mut w, &[], 400, &mut events);
-    assert_eq!(soldiers(&w, 0), 60, "nobody left the field");
+    assert_eq!(
+        soldiers(&w, 0),
+        61,
+        "nobody left the field (60 plus the general)"
+    );
     assert!(w.view().regiment(RegimentId(0)).unwrap().integrity > S::from_f32_data(0.9));
 
     // With an enemy 40 m away the same morale does not rally.

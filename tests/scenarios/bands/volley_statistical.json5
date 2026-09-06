@@ -11,14 +11,14 @@
   sides: [
     {
       faction: "rome:rome", player: 0, deployment_zone: 0,
-      general: { unit_type: "rome:velites", rank: 1, name_key: "rome.generals.placeholder" },
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
         { id: 1, unit_type: "rome:velites", count: 120, formation: "rome:loose", position: [300, 150], facing_deg: 0 },
       ],
     },
     {
       faction: "rome:rome", player: 1, deployment_zone: 1,
-      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
         { id: 2, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [335, 150], facing_deg: 180 },
       ],

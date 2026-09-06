@@ -28,9 +28,10 @@ pub mod target;
 pub use attack::{AttackOutcome, Kill, Kills, Outcomes, apply_outcomes, melee_attack};
 pub use death::{resolve_deaths, resolve_fled, ring_slot};
 pub use formulas::{
-    Arc, FatigueMults, apex_height, arc_mults, attack_arc, braced, charge_mults, cooldown_ticks,
-    experience_mult, fatigue_mults, flight_ticks, footprint_area, hit_probability, melee_damage,
-    morale_mults, range_mult, ranged_damage, scatter, stat_hit_probability, terrain_defence_mult,
+    Arc, FatigueMults, apex_height, arc_mults, attack_arc, aura_attack_mult, braced, charge_mults,
+    cooldown_ticks, experience_mult, fatigue_mults, flight_ticks, footprint_area, hit_probability,
+    melee_damage, morale_mults, range_mult, ranged_damage, scatter, stat_hit_probability,
+    terrain_defence_mult,
 };
 pub use gate::melee_gate;
 pub use pursue::pursue_update;

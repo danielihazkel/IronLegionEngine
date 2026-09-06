@@ -269,11 +269,11 @@ Each factor's `x_f` is its activation in [0, 1]; the sign lives in the weight `w
 
 | Rule | Statement | Satisfies |
 |---|---|---|
-| SIM-GEN-001 | Each army's general is a soldier of category `general` inside a bodyguard regiment given in `BattleSetup`. The general soldier has `hp × general.hp_mult` (default 3) and its own `attack/defence` from its unit type. | REQ-CMBT-020 |
-| SIM-GEN-002 | Aura: allied regiments whose anchor is within `general.aura_radius` (default 60 m) of the general receive the `general_aura` morale factor and combat `attack × (1 + general.aura_attack)` (default 0.05). The radius is modified by `general.aura_per_rank × general_rank`. | REQ-CMBT-021 |
-| SIM-GEN-003 | On general death: SIM-MOR-014 shock, aura removed, `BattleResult.general_fate = Dead`. If the bodyguard regiment routs with the general alive, the general routes with it (aura suspended while Routing). | REQ-CMBT-022 |
-| SIM-GEN-004 | Fate at battle end: `Dead` if hp ≤ 0; `Captured` if alive on a losing side and the bodyguard was Shattered; `Wounded` if hp < `general.wounded_hp` (0.3) fraction; else `Alive`. | REQ-CMBT-023 |
-| SIM-GEN-005 | The general may be ordered like any regiment; a bodyguard regiment engaging in melee applies the general's aura to itself. | — |
+| SIM-GEN-001 | Each army's general is a soldier of category `general` (validation rejects any other category) inside a bodyguard regiment given in `BattleSetup`: `sides[].general.bodyguard` names one of the side's regiments by its setup id (the side's first regiment when absent), and the general spawns as that regiment's extra last soldier (`count + 1`, so the regiment's `initial` strength counts it) with its own unit type, `hp × general.hp_mult` (default 3) and its own `attack/defence`, tagged `GeneralTag { rank }`; `SideState.general` and `general_regiment` remember it (T2-043, plan decision 4). The cap counts one general per side. | REQ-CMBT-020 |
+| SIM-GEN-002 | Aura: allied regiments whose anchor is within `general.aura_radius + general.aura_per_rank × (rank − 1)` (defaults 60 m and 5 m: a rank 1 general has exactly 60 m) of a living general whose bodyguard is not Routing or Shattered receive the `general_aura` morale factor and melee `attack × (1 + general.aura_attack)` (default 0.05). The Stage 9 gate computes the flag per regiment each tick (`MeleeGateRes.in_aura`) from the general's position that tick; Stage 10 and Stage 14 read it (T2-043, plan decision 15). | REQ-CMBT-021 |
+| SIM-GEN-003 | On general death (Stage 15): `SideState.general_dead` is set, every regiment of the side is queued the SIM-MOR-014 shock for the next tick, `GeneralDied { side, soldier }` is emitted, the aura ends with the flag, `BattleResult.general_fate = Dead`. If the bodyguard regiment routs with the general alive, the general routs with it (aura suspended while Routing or Shattered). | REQ-CMBT-022 |
+| SIM-GEN-004 | Fate at battle end (`BattleWorld::general_fate(side, lost)`, called by the result of T2-071): `Dead` if the general died; `Captured` if alive on a losing side and the bodyguard is Shattered; `Wounded` if its hp is below `general.wounded_hp` (0.3) of `unit.hp × hp_mult`; else `Alive` (a general that fled the field alive is `Alive`, or `Captured` under the losing-side rule). | REQ-CMBT-023 |
+| SIM-GEN-005 | The general may be ordered like any regiment (it is a soldier of its bodyguard); a bodyguard regiment engaging in melee applies the general's aura to itself, which holds by construction since the general stands inside its own anchor's radius. | — |
 
 ## 10. Abilities and status effects
 
@@ -311,7 +311,7 @@ Each factor's `x_f` is its activation in [0, 1]; the sign lives in the weight `w
 | SIM-FLOW-016 | Reinforcements: `BattleSetup.side[i].reinforcements: [{ arrival_tick, edge, regiments }]` spawn in a Column at the given edge midpoint, subject to SIM-CORE-006. | REQ-SIM-036 |
 | SIM-FLOW-017 | `Surrender` by a player marks that side defeated immediately. | — |
 | SIM-FLOW-018 | `BattleResult` = `{ winner, duration_ticks, per side: per regiment { id, initial, survivors, fled, killed, experience_gain, ammo_left }, general_fate, loot, summary }`. `experience_gain = floor(battle_flow.exp_per_kill × kills_by_regiment + battle_flow.exp_survive × survived)` (0.01, 1). Fled soldiers return to the campaign as survivors if their side won, or `battle_flow.fled_return_fraction` (0.5) of them if it lost. Loot = `battle_flow.loot_per_enemy_killed × enemy_dead` for the winner. | REQ-SIM-061 |
-| SIM-FLOW-019 | `BattleSetup` = `{ map_id, seed, weather, time_of_day, time_limit_ticks, reveal_deployment, sides: [{ faction, player (human/ai id), deployment_zone, general: { unit_type, rank, name_key }, regiments: [{ id, unit_type, count, experience, fatigue, formation }], reinforcements }], victory: { timeout_winner } }`. Validation: cap, map exists, zones exist, unit types exist, each side has a general. | REQ-SIM-060 |
+| SIM-FLOW-019 | `BattleSetup` = `{ map_id, seed, weather, time_of_day, time_limit_ticks, reveal_deployment, sides: [{ faction, player (human/ai id), deployment_zone, general: { unit_type, rank, name_key, bodyguard? }, regiments: [{ id, unit_type, count, experience, fatigue, formation }], reinforcements }], victory: { timeout_winner } }`. Validation: cap (one general per side counts), map exists, zones exist, unit types exist, each side has a general of category `general` whose `bodyguard` (default: the side's first regiment) is one of its regiments (SIM-GEN-001, T2-043). | REQ-SIM-060 |
 
 ## 13. Battle AI
 
@@ -540,23 +540,23 @@ The `ai.*` tunables (`army_period_ticks` 40, `regiment_period_ticks` 20 and the 
 
 ### 15.2 Example unit types
 
-| Field | `rome:hastati` | `rome:velites` | `greece:hoplite` | `persia:cavalry` | `persia:archer` (*chosen*, T2-030) |
-|---|---|---|---|---|---|
-| category | infantry | skirmisher | infantry | cavalry | ranged |
-| soldier_radius / mass | 0.4 / 80 | 0.4 / 70 | 0.4 / 85 | 0.7 / 400 | 0.4 / 70 |
-| hp | 100 | 80 | 110 | 160 | 80 |
-| speed_walk / run / march | 1.6 / 4.0 / 1.6 | 1.8 / 4.5 / 1.8 | 1.4 / 3.6 / 1.4 | 3.0 / 9.0 / 3.0 | 1.6 / 4.0 / 1.6 |
-| attack / defence / armour / damage | 35 / 30 / 8 / 30 | 25 / 20 / 2 / 25 | 32 / 38 / 10 / 30 | 38 / 25 / 8 / 35 | 20 / 18 / 2 / 20 |
-| attack_interval_ticks / reach | 30 / 0.6 | 32 / 0.5 | 34 / 1.2 | 30 / 1.0 | 32 / 0.5 |
-| charge_bonus / anti_cavalry_bonus | 0.3 / 0 | 0.1 / 0 | 0.15 / 0.5 | 0.8 / 0 | 0.05 / 0 |
-| second_rank_attack / shield | false / true | false / false | true / true | false / false | false / false |
-| frontal_arc_deg / armour_penetration | 120 / 0 | 120 / 0 | 120 / 0 | 120 / 0 | 120 / 0 |
-| ranged | pilum: range 25, min 5, acc 0.6, speed 20, reload 120, ammo 2, dmg 40, pen 0.5, direct | javelin: range 40, min 5, acc 0.5, speed 20, reload 80, ammo 8, dmg 30, pen 0.3, direct | none | none | bow: range 120, min 15, acc 0.35, speed 40, reload 100, ammo 20, dmg 25, pen 0.2, indirect |
-| morale_base / los_radius | 60 / 200 | 50 / 250 | 65 / 200 | 60 / 300 | 45 / 250 |
-| formations | line, column, loose | loose, line, column | phalanx, line, column | wedge, line, column | loose, line, column |
-| cost / upkeep / recruit_turns / regiment_size | 400 / 60 / 1 / 120 | 250 / 40 / 1 / 120 | 450 / 70 / 1 / 160 | 800 / 120 / 2 / 60 | 300 / 45 / 1 / 120 |
+| Field | `rome:hastati` | `rome:velites` | `greece:hoplite` | `persia:cavalry` | `persia:archer` (*chosen*, T2-030) | `rome:general` / `greece:general` / `persia:general` (*chosen*, T2-043) |
+|---|---|---|---|---|---|---|
+| category | infantry | skirmisher | infantry | cavalry | ranged | general |
+| soldier_radius / mass | 0.4 / 80 | 0.4 / 70 | 0.4 / 85 | 0.7 / 400 | 0.4 / 70 | 0.4 / 85 (persia: 0.6 / 450, mounted) |
+| hp | 100 | 80 | 110 | 160 | 80 | 120 (× `general.hp_mult` in battle) |
+| speed_walk / run / march | 1.6 / 4.0 / 1.6 | 1.8 / 4.5 / 1.8 | 1.4 / 3.6 / 1.4 | 3.0 / 9.0 / 3.0 | 1.6 / 4.0 / 1.6 | as the faction's bodyguard unit: 1.6 / 4.0 / 1.6, 1.4 / 3.6 / 1.4, 3.0 / 9.0 / 3.0 |
+| attack / defence / armour / damage | 35 / 30 / 8 / 30 | 25 / 20 / 2 / 25 | 32 / 38 / 10 / 30 | 38 / 25 / 8 / 35 | 20 / 18 / 2 / 20 | 40 / 35 / 12 / 30 |
+| attack_interval_ticks / reach | 30 / 0.6 | 32 / 0.5 | 34 / 1.2 | 30 / 1.0 | 32 / 0.5 | 20 / 0.6 (persia 1.0) |
+| charge_bonus / anti_cavalry_bonus | 0.3 / 0 | 0.1 / 0 | 0.15 / 0.5 | 0.8 / 0 | 0.05 / 0 | 0.2 / 0 |
+| second_rank_attack / shield | false / true | false / false | true / true | false / false | false / false | false / true |
+| frontal_arc_deg / armour_penetration | 120 / 0 | 120 / 0 | 120 / 0 | 120 / 0 | 120 / 0 | 120 / 0 |
+| ranged | pilum: range 25, min 5, acc 0.6, speed 20, reload 120, ammo 2, dmg 40, pen 0.5, direct | javelin: range 40, min 5, acc 0.5, speed 20, reload 80, ammo 8, dmg 30, pen 0.3, direct | none | none | bow: range 120, min 15, acc 0.35, speed 40, reload 100, ammo 20, dmg 25, pen 0.2, indirect | none |
+| morale_base / los_radius | 60 / 200 | 50 / 250 | 65 / 200 | 60 / 300 | 45 / 250 | 80 / 250 |
+| formations | line, column, loose | loose, line, column | phalanx, line, column | wedge, line, column | loose, line, column | the bodyguard unit's (unused: the general rides in its bodyguard's formation) |
+| cost / upkeep / recruit_turns / regiment_size | 400 / 60 / 1 / 120 | 250 / 40 / 1 / 120 | 450 / 70 / 1 / 160 | 800 / 120 / 2 / 60 | 300 / 45 / 1 / 120 | 1000 / 100 / 4 / 1 |
 
-The archer is the flagship's only indirect-fire unit (SIM-PROJ-005's lob, SIM-PROJ-009's fire over friends); at 40 m/s a 45° launch reaches 163 m, so the speed cap never bites inside its 120 m range.
+The generals share one placeholder sprite set (`rome:sprites_general`) and ride at their faction's usual bodyguard pace; every value is *chosen*. The archer is the flagship's only indirect-fire unit (SIM-PROJ-005's lob, SIM-PROJ-009's fire over friends); at 40 m/s a 45° launch reaches 163 m, so the speed cap never bites inside its 120 m range.
 
 ### 15.3 Scenario tests
 
@@ -568,7 +568,7 @@ Outcome bands over 50 seeds; a failing band means a formula or default needs rev
 | 160 hoplites (phalanx) vs 160 hastati frontal (`melee_hoplites_vs_hastati`) | Hoplites win ≥ 70 % (50/50 melee-only on 2026-09-04; 50/50 with morale on 2026-09-05: the hastati break first in every seed, mean 160 hoplites left). | The 70–90 % window (hastati winning 10–30 %) stays an open tuning target (T2-113): no §15.1 default makes a frontal assault on a phalanx a coin flip, and the band carries no ceiling until one does. |
 | 160 hoplites vs 60 Persian cavalry frontal charge (`melee_hoplites_vs_cavalry`) | Hoplites win 85–100 % (50/50 on 2026-09-05, mean 159 left). Melee-only (2026-09-04) the cavalry had lost about 20 % at 30 s and 30 % by 60 s in every seed. | The cavalry rout within 60 s of their first contact in ≥ 85 % of seeds (50/50 on 2026-09-05: the wedge breaks about 16 s after contact at 5–10 % losses and 55 of 60 flee north), the reading the melee-era note anticipated; it replaced the casualty clause. |
 | 60 Persian cavalry rear-charge 120 engaged hastati (`melee_cavalry_rear_charge`) | The charged side loses (side 1 wins) in ≥ 80 % of seeds (50/50 on 2026-09-04 and 2026-09-05). Since T2-042 the front is 80 hoplites, not 120, and the cavalry set off at tick 100 at `run`, not at tick 800 at `walk`: against 120 hoplites the hastati broke on their own eight seconds after contact, and a walking wedge only ran the last 30 m and arrived after the rout. | Hastati rout within 30 s of the charge in ≥ 80 % of seeds (50/50 on 2026-09-05: cavalry contact at tick 408, the rout within a second of it, about 95 of 120 hastati fleeing). |
-| 120 velites (loose) fire 8 volleys at 120 hastati (line) at 35 m, no approach (`volley_velites_vs_hastati`) | Hastati lose 15–35 soldiers (`casualties` 0.125–0.292 of 120 in ≥ 90 % of seeds). Measured 2026-09-04 over 50 seeds after tuning `scatter_scale` to 0.17: 50/50, mean 27 lost (the loose line's wings stand beyond 40 m, so about 107 of the 120 velites throw each volley; every javelin lands, roughly half on a soldier); 50/50 and mean 27.1 again on 2026-09-05. | The file holds the hastati at morale 100 (`bands.pin_morale: [1]`, T2-042): unpinned they break after the third volley and run north, and only about 16 die. |
-| Statistical vs simulated projectile path, same volley (`volley_statistical`: the row 5 file run with `mods: ["../../mods/projectile_cap_zero"]`) | Mean hastati casualties within 10 % of `volley_velites_vs_hastati` over the same 50 seeds (`mean_loss_matches`), and the same 15–35 band. Measured 2026-09-04 after tuning `stat_hit_base` to 0.36: mean 27.1 lost against 27.1 simulated (0.0 %), 50/50 inside the band; the same on 2026-09-05 (the hastati pinned as in row 5). The statistical victim (the target regiment's soldier nearest the aim point) concentrates hits on the front rank more than a landing query does, which is why the base sits well under the simulated hit rate. | — |
-| General killed at tick 600 in an even hastati vs hoplite fight | Side without general routs first in ≥ 75 % of seeds (T2-043). | — |
+| 120 velites (loose) fire 8 volleys at 120 hastati (line) at 35 m, no approach (`volley_velites_vs_hastati`) | Hastati lose 15–35 soldiers (`casualties` 0.125–0.292 of 120 in ≥ 90 % of seeds). Measured 2026-09-04 over 50 seeds after tuning `scatter_scale` to 0.17: 50/50, mean 27 lost (the loose line's wings stand beyond 40 m, so about 107 of the 120 velites throw each volley; every javelin lands, roughly half on a soldier); 50/50 and mean 27.1 again on 2026-09-05; 47/50 and mean 27.0 on 2026-09-06 with the general riding in each regiment (T2-043). | The file holds the hastati at morale 100 (`bands.pin_morale: [1]`, T2-042): unpinned they break after the third volley and run north, and only about 16 die. |
+| Statistical vs simulated projectile path, same volley (`volley_statistical`: the row 5 file run with `mods: ["../../mods/projectile_cap_zero"]`) | Mean hastati casualties within 10 % of `volley_velites_vs_hastati` over the same 50 seeds (`mean_loss_matches`), and the same 15–35 band. Measured 2026-09-04 after tuning `stat_hit_base` to 0.36: mean 27.1 lost against 27.1 simulated (0.0 %), 50/50 inside the band; the same on 2026-09-05 (the hastati pinned as in row 5); 26.6 against 27.0 (1.8 %), 49/50, on 2026-09-06 with the generals. The statistical victim (the target regiment's soldier nearest the aim point) concentrates hits on the front rank more than a landing query does, which is why the base sits well under the simulated hit rate. | — |
+| General killed at tick 600 in an even fight (`general_death_hastati_vs_hoplites`: 160 hastati a side, mirrored, 100 m apart; "hastati vs hoplite" is read as mirrored hastati because a phalanx beats hastati frontally every time, row 2; the harness kills side 0's general before tick 600 is stepped, `bands.harness`) | The side without a general routs first in ≥ 75 % of seeds (`routs_first`). Measured 2026-09-06 over 50 seeds: 50/50 (contact at tick 555, the shocked side breaks at about 745, the other never); at 50 m apart one side had broken by tick 400, before the kill. | — |
 | Determinism | Every scenario above: identical hash on run 1 and run 2, and after snapshot/restore at tick 1,000 (T2-112 enrols the band files in the determinism test). | — |

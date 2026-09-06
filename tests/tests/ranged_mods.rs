@@ -81,11 +81,10 @@ fn volley_off_lets_soldiers_throw_on_their_own_clocks() {
         .soldiers
         .iter()
         .filter(|s| {
+            // The general rides along without javelins (T2-043).
             w.ecs()
                 .get::<RangedState>(ids.soldier_entity(**s).unwrap())
-                .unwrap()
-                .ammo
-                == 0
+                .is_some_and(|r| r.ammo == 0)
         })
         .count();
     assert!(dry >= 100, "{dry} soldiers threw all eight");

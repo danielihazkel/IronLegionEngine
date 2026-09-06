@@ -14,7 +14,7 @@
       faction: "rome:rome",
       player: 0,
       deployment_zone: 0,
-      general: { unit_type: "rome:hastati", rank: 1, name_key: "rome.generals.placeholder" },
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
       regiments: [
         { id: 1,  unit_type: "rome:hastati",   count: 250, position: [80, 120],  facing_deg: 90 },
         { id: 2,  unit_type: "rome:hastati",   count: 250, position: [150, 120], facing_deg: 90 },

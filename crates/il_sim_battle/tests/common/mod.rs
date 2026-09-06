@@ -36,9 +36,10 @@ pub fn side(player: u8, regiments: Vec<RegimentSetup>) -> SideSetup {
         player: PlayerId(player),
         deployment_zone: 0,
         general: GeneralSetup {
-            unit_type: cid("rome:hastati"),
+            unit_type: cid("rome:general"),
             rank: 1,
             name_key: String::new(),
+            bodyguard: None,
         },
         regiments,
         reinforcements: vec![],

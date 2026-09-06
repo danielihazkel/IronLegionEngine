@@ -54,7 +54,7 @@ fn spawning_places_soldiers_on_line_slots() {
         let state = w.view().formation_state(RegimentId(rid)).unwrap();
         let anchor = *w.ecs().get::<Anchor>(regiment_entity(&w, rid)).unwrap();
         assert_eq!(state.ranks, 4, "rome:line default ranks");
-        assert_eq!(state.files, 15);
+        assert_eq!(state.files, 16, "61 soldiers with the general");
         for (slot, _, p) in members(&w, rid) {
             assert_eq!(
                 p,
@@ -121,7 +121,7 @@ fn losses_shrink_the_layout_and_close_ranks_from_the_rear() {
     w.step(&[]);
     assert_one_to_one(&w, 0);
     let state = w.view().formation_state(RegimentId(0)).unwrap();
-    assert_eq!(state.slots.len(), 35);
+    assert_eq!(state.slots.len(), 36, "35 plus the general");
     assert_eq!(state.ranks, 4);
     // The front rank is full again: nine files, all present.
     let front = members(&w, 0)

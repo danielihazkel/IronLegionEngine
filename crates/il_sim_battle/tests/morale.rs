@@ -162,7 +162,8 @@ fn a_lone_regiment_recovers_to_steady_and_full_morale() {
     assert_eq!(changes.len(), 1, "{changes:?}");
     let (tick, _, from, to) = changes[0];
     assert_eq!((from, to), (MoraleState::Unsettled, MoraleState::Steady));
-    assert!((95..=110).contains(&tick), "climbed at tick {tick}");
+    // +3 recovery and +1 aura per second (the general rides along, T2-043).
+    assert!((70..=110).contains(&tick), "climbed at tick {tick}");
 }
 
 /// Done-when: a regiment losing 30 % in ten seconds passes through
@@ -254,11 +255,13 @@ fn nearby_steady_allies_raise_morale() {
     let mut a = BattleWorld::new(&lone, common::regs()).unwrap();
     let mut b = BattleWorld::new(&flanked, common::regs()).unwrap();
     let mut changes = Vec::new();
-    run(&mut a, &[], 200, &mut changes);
-    run(&mut b, &[], 200, &mut changes);
+    // 130 ticks: the neighbours turn Steady at about 76 and the factor
+    // then counts; recovery plus the aura (T2-043) saturate at 100 by 200.
+    run(&mut a, &[], 130, &mut changes);
+    run(&mut b, &[], 130, &mut changes);
     let (ma, mb) = (morale(&a, 0).m, morale(&b, 0).m);
     assert!(mb > ma + S::ONE, "alone {ma:?}, with allies {mb:?}");
-    assert!(ma > S::from_i32(85) && mb < S::from_i32(100));
+    assert!(ma > S::from_i32(75) && mb < S::from_i32(100));
 }
 
 /// SIM-MOR-025: an engaged regiment ordered away loses `disengage_penalty`

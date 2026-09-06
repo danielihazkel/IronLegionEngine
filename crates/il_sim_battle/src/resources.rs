@@ -128,6 +128,9 @@ pub struct MeleeGateRes {
     pub near_enemy: Vec<bool>,
     /// Farthest soldier from the anchor, metres.
     pub extent: Vec<il_core::S>,
+    /// SIM-GEN-002 (T2-043): the anchor lies within its side's living,
+    /// non-routing general's aura this tick.
+    pub in_aura: Vec<bool>,
 }
 
 /// Stage 9 ranged gate (T2-030, derived per tick): one entry per regiment

@@ -4,7 +4,9 @@
 //! produce them (T2-040, T2-041, T2-050, T2-043) only have to feed values.
 
 use il_core::{Angle, S, Scalar, TICKS_PER_SECOND, V2};
-use il_data::{CombatRules, FatigueRules, MoraleRules, MovementRules, ProjectileArc, StateMults};
+use il_data::{
+    CombatRules, FatigueRules, GeneralRules, MoraleRules, MovementRules, ProjectileArc, StateMults,
+};
 
 use crate::components::{MoraleState, OrderKind};
 use crate::movement::regiment::deg_to_rad;
@@ -96,9 +98,14 @@ pub fn status_mult() -> S {
     S::ONE
 }
 
-/// SIM-GEN-002 placeholder until T2-043: no auras exist.
-pub fn aura_attack_mult() -> S {
-    S::ONE
+/// SIM-GEN-002: `1 + general.aura_attack` inside a living general's aura
+/// (the Stage 9 gate's `in_aura`), else 1.
+pub fn aura_attack_mult(in_aura: bool, r: &GeneralRules) -> S {
+    if in_aura {
+        S::ONE + r.aura_attack
+    } else {
+        S::ONE
+    }
 }
 
 /// SIM-CMBT-017: `1 + exp_step × experience`.

@@ -34,14 +34,14 @@ fn world() -> BattleWorld {
           seed: 7,
           sides: [
             { faction: "rome:rome", player: 0, deployment_zone: 0,
-              general: { unit_type: "rome:hastati", name_key: "g0" },
+              general: { unit_type: "rome:general", name_key: "g0" },
               regiments: [
                 { id: 1, unit_type: "rome:hastati", count: 12, position: [20, 20], facing_deg: 90 },
                 { id: 2, unit_type: "rome:hastati", count: 12, position: [60, 20], facing_deg: 90 },
                 { id: 3, unit_type: "rome:velites", count: 12, position: [100, 20], facing_deg: 90 },
               ] },
             { faction: "rome:rome", player: 1, deployment_zone: 1,
-              general: { unit_type: "rome:hastati", name_key: "g1" },
+              general: { unit_type: "rome:general", name_key: "g1" },
               regiments: [
                 { id: 4, unit_type: "rome:hastati", count: 12, position: [20, 60], facing_deg: 270 },
               ] },

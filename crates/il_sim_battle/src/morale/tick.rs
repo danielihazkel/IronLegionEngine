@@ -20,7 +20,7 @@ use crate::morale::factors::{
 use crate::morale::rout;
 use crate::movement::regiment::tick_dt;
 use crate::resources::{
-    AnchorGridRes, Clock, Events, Ids, MapRes, MoraleShocks, Regs, SpatialGridRes,
+    AnchorGridRes, Clock, Events, Ids, MapRes, MeleeGateRes, MoraleShocks, Regs, SpatialGridRes,
 };
 
 /// One regiment as the gather phase read it.
@@ -183,8 +183,11 @@ fn inputs(
         own_deaths_5s: row.deaths_5s,
         enemy_deaths_5s,
         fatigue_mean: row.fatigue_mean,
-        // SIM-MOR-013: no general exists until T2-043.
-        in_aura: false,
+        // SIM-MOR-013: the Stage 9 gate's aura flag (SIM-GEN-002, T2-043).
+        in_aura: ids
+            .regiment_index(row.id)
+            .and_then(|k| world.resource::<MeleeGateRes>().in_aura.get(k).copied())
+            .unwrap_or(false),
         allies_steady,
         allies_routing,
         height_delta,

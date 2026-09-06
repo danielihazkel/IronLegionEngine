@@ -5,7 +5,7 @@
 mod common;
 
 use il_core::{Angle, RegimentId, S, Scalar, V2};
-use il_sim_battle::components::{Body, Fire, Order, OrderKind, Path, Pos};
+use il_sim_battle::components::{Body, Fire, Order, OrderKind, Path, Pos, Regiment};
 use il_sim_battle::resources::Ids;
 use il_sim_battle::{BattleWorld, FireMode, PathRequests, SpeedMode};
 
@@ -48,6 +48,19 @@ fn hold_fire(w: &mut BattleWorld, rid: u32) {
 }
 
 /// Deepest interpenetration over every pair, in metres.
+/// The generals ride with a one-man regiment far from the test pair, so
+/// the geometry under test is unchanged by T2-043 (they never touch the
+/// pair; the far regiments' own two soldiers stand a slot apart).
+fn far_bodyguards(setup: &mut il_sim_battle::BattleSetup) {
+    for (side, (x, y)) in [(100.0, 100.0), (700.0, 500.0)].into_iter().enumerate() {
+        let id = 10 + side as u32;
+        let mut r = common::regiment(id, "rome:hastati", 1, x, 0.0);
+        r.position = Some([x, y]);
+        setup.sides[side].regiments.push(r);
+        setup.sides[side].general.bodyguard = Some(id);
+    }
+}
+
 fn max_overlap(w: &BattleWorld) -> S {
     let ids = w.ecs().resource::<Ids>();
     let soldiers: Vec<(V2, S)> = ids
@@ -109,6 +122,7 @@ fn regiments_marching_through_each_other_end_without_overlaps() {
     let mut setup = common::two_sides(60);
     setup.sides[0].regiments[0].position = Some([380.0, 150.0]);
     setup.sides[1].regiments[0].position = Some([420.0, 150.0]);
+    far_bodyguards(&mut setup);
     let mut w = BattleWorld::new(&setup, common::regs()).unwrap();
     order_move(&mut w, 0, v(440.0, 150.0), 0.0);
     order_move(&mut w, 1, v(360.0, 150.0), 180.0);
@@ -160,6 +174,7 @@ fn a_resolve_pass_preserves_the_momentum_weighted_centre() {
     setup.sides[1].regiments[0].unit_type = common::cid("persia:cavalry");
     setup.sides[0].regiments[0].position = Some([300.0, 150.0]);
     setup.sides[1].regiments[0].position = Some([300.3, 150.0]);
+    far_bodyguards(&mut setup);
     let mut w = BattleWorld::new(&setup, common::regs()).unwrap();
     let ids: Vec<_> = w.ecs().resource::<Ids>().soldier_entities.clone();
     let masses: Vec<S> = ids
@@ -189,16 +204,26 @@ fn a_resolve_pass_preserves_the_momentum_weighted_centre() {
         (before - after).length() < S::from_f32_data(1e-3),
         "{before:?} -> {after:?}"
     );
-    // The lighter soldier moved farther.
+    // The lighter soldier moved farther (the pair are the first soldiers of
+    // regiments 0 and 2; 1 and 3 are the far bodyguards).
+    let first_of = |rid: u32| {
+        let r = w
+            .ecs()
+            .resource::<Ids>()
+            .regiment_entity(RegimentId(rid))
+            .unwrap();
+        let sid = w.ecs().get::<Regiment>(r).unwrap().soldiers[0];
+        w.ecs().resource::<Ids>().soldier_entity(sid).unwrap()
+    };
     let d0 = w
         .ecs()
-        .get::<Pos>(ids[0].1)
+        .get::<Pos>(first_of(0))
         .unwrap()
         .p
         .distance(v(300.0, 150.0));
     let d1 = w
         .ecs()
-        .get::<Pos>(ids[1].1)
+        .get::<Pos>(first_of(2))
         .unwrap()
         .p
         .distance(v(300.3, 150.0));

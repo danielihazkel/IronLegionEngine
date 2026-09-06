@@ -151,11 +151,11 @@ fn ammo_of(w: &BattleWorld, regiment: u32) -> Vec<u16> {
         .unwrap()
         .soldiers
         .iter()
-        .map(|s| {
+        .filter_map(|s| {
+            // The general rides along without javelins (T2-043).
             w.ecs()
                 .get::<RangedState>(ids.soldier_entity(*s).unwrap())
-                .unwrap()
-                .ammo
+                .map(|r| r.ammo)
         })
         .collect()
 }
@@ -210,7 +210,7 @@ fn velites_fire_eight_synchronised_volleys_and_run_dry() {
     );
     assert_eq!(
         w.ecs().get::<Combat>(regiment_entity(&w, 0)).unwrap().kills,
-        120 - left,
+        121 - left,
         "kill credit reconciles with the losses"
     );
 

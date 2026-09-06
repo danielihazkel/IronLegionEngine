@@ -23,7 +23,7 @@ use crate::components::{
     Body, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState, Morale, MoraleState,
     Order, Pos, Rank, Regiment, Soldier, SoldierState,
 };
-use crate::resources::{Clock, Ids, MapRes, Regs, Rng};
+use crate::resources::{Clock, Ids, MapRes, MeleeGateRes, Regs, Rng};
 
 /// One attack, hit or miss (TDD §8.1).
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -108,6 +108,7 @@ struct Ctx<'a, 'w, 's> {
     map: &'a crate::map::LoadedMap,
     defenders: &'a Defender<'w, 's>,
     regiments: &'a RegimentRead<'w, 's>,
+    gate: &'a MeleeGateRes,
     tick: il_core::Tick,
     seed: u64,
     out: &'a Mutex<Vec<AttackOutcome>>,
@@ -211,7 +212,13 @@ impl Ctx<'_, '_, '_> {
             * charge_mult
             * exp
             * status
-            * aura_attack_mult()
+            * aura_attack_mult(
+                self.ids
+                    .regiment_index(soldier.regiment)
+                    .and_then(|i| self.gate.in_aura.get(i).copied())
+                    .unwrap_or(false),
+                &rules.general,
+            )
             * anti_cav_i;
         let (dmg_mult, def_mult) = arc_mults(arc, c);
         let (zone_mult, ford) = self.map.zone_at(p_j).map_or((S::ONE, false), |h| {
@@ -287,6 +294,7 @@ pub fn melee_attack(
     clock: Res<Clock>,
     rng: Res<Rng>,
     outcomes: Res<Outcomes>,
+    gate: Res<MeleeGateRes>,
 ) {
     let ctx = Ctx {
         ids: &ids,
@@ -294,6 +302,7 @@ pub fn melee_attack(
         map: &map.0,
         defenders: &defenders,
         regiments: &regiments,
+        gate: &gate,
         tick: clock.tick,
         seed: rng.draw_seed(StreamId::CombatMelee),
         out: &outcomes.0,

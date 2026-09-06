@@ -193,6 +193,30 @@ pub fn build_debug_lines(
                 colour,
             );
         }
+        if flags.morale
+            && on_screen
+            && let Some(s) = view.sides().get(usize::from(r.side))
+            && !s.general_dead
+            && s.general_regiment == Some(r.id)
+            && let Some(row) = s.general.and_then(|id| view.soldier(id))
+        {
+            // SIM-GEN-002 (T2-043): the living general's aura around it.
+            let g = &view.regs().rules.general;
+            let rank = i32::from(row.general.unwrap_or(1).saturating_sub(1));
+            let radius =
+                (g.aura_radius + g.aura_per_rank * il_core::S::from_i32(rank)).to_f32_render();
+            let centre = v2(row.pos);
+            let steps = 48;
+            let mut prev = None;
+            for k in 0..=steps {
+                let t = k as f32 / steps as f32 * std::f32::consts::TAU;
+                let p = proj(centre + Vec2::new(t.cos(), t.sin()) * radius);
+                if let Some(q) = prev {
+                    lines.segment(q, p, tint);
+                }
+                prev = Some(p);
+            }
+        }
         if flags.slots
             && on_screen
             && let Some(state) = view.formation_state(r.id)

@@ -462,11 +462,29 @@ impl BattleWorld {
                     soldier: s.id,
                     regiment: s.regiment,
                 })?;
-            let unit = w
-                .world
-                .get::<Regiment>(regiment_entity)
-                .expect("just spawned")
-                .unit;
+            // The general carries its own unit type (SIM-GEN-001, T2-043),
+            // resolved from the stored setup; everyone else the regiment's.
+            let (regiment_unit, side) = {
+                let r = w
+                    .world
+                    .get::<Regiment>(regiment_entity)
+                    .expect("just spawned");
+                (r.unit, r.side)
+            };
+            let unit = if s.general.is_some() {
+                let id = &snapshot
+                    .setup
+                    .sides
+                    .get(usize::from(side))
+                    .ok_or(RestoreError::Malformed("general without a side"))?
+                    .general
+                    .unit_type;
+                regs.units
+                    .lookup(id)
+                    .ok_or_else(|| RestoreError::UnknownUnitType(id.clone()))?
+            } else {
+                regiment_unit
+            };
             let (radius, mass, category) = {
                 let u = regs.units.get(unit);
                 (u.soldier_radius, u.mass, u.category)

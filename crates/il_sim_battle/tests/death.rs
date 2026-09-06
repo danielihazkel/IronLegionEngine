@@ -110,7 +110,7 @@ fn five_thousand_deaths_keep_counts_ids_grid_and_hash_consistent() {
     let mut w = BattleWorld::new(&setup, regs()).unwrap();
     let (hashes, deaths) = scripted_deaths(&mut w, 100, 50);
     assert_eq!(deaths, 5_000);
-    assert_eq!(w.soldier_count(), 0);
+    assert_eq!(w.soldier_count(), 2, "only the two generals stand");
     check_invariants(&mut w);
     // The casualty ring saw fifty per tick on the side that died that tick.
     let m = w.ecs().get::<Morale>(regiment_entity(&w, 1)).unwrap();
@@ -118,7 +118,7 @@ fn five_thousand_deaths_keep_counts_ids_grid_and_hash_consistent() {
         m.deaths_5s.iter().map(|d| u32::from(*d)).sum::<u32>(),
         50 * 50
     );
-    assert_eq!(m.initial, 2_500);
+    assert_eq!(m.initial, 2_501, "2,500 plus the general");
 
     // Eight threads reproduce the hashes.
     let mut w8 = BattleWorld::new(&setup, regs()).unwrap();
@@ -189,10 +189,11 @@ fn kill_credit_reconciles_with_the_enemy_losses() {
             .unwrap()
             .kills
     };
-    assert!(count(0) < 120 && count(1) < 120, "no deaths in 2,000 ticks");
-    assert_eq!(kills(0), 120 - count(1));
-    assert_eq!(kills(1), 120 - count(0));
-    assert_eq!(died_events as u32, 240 - count(0) - count(1));
+    // 120 plus the general in each regiment (T2-043).
+    assert!(count(0) < 121 && count(1) < 121, "no deaths in 2,000 ticks");
+    assert_eq!(kills(0), 121 - count(1));
+    assert_eq!(kills(1), 121 - count(0));
+    assert_eq!(died_events as u32, 242 - count(0) - count(1));
     check_invariants(&mut w);
 }
 
@@ -200,13 +201,14 @@ fn kill_credit_reconciles_with_the_enemy_losses() {
 fn an_emptied_regiment_stays_inert() {
     let setup = two_sides(40);
     let mut w = BattleWorld::new(&setup, regs()).unwrap();
-    let victims = kill_first(&mut w, 1, 40);
-    assert_eq!(victims.len(), 40);
+    // 41: the general rides with the regiment (T2-043) and dies with it.
+    let victims = kill_first(&mut w, 1, 41);
+    assert_eq!(victims.len(), 41);
     for _ in 0..200 {
         w.step(&[]);
     }
     assert_eq!(w.regiment_count(), 2);
-    assert_eq!(w.soldier_count(), 40);
+    assert_eq!(w.soldier_count(), 41, "40 plus side 0's general");
     let e = regiment_entity(&w, 1);
     assert!(w.ecs().get::<Regiment>(e).unwrap().soldiers.is_empty());
     let f = w.ecs().get::<FormationState>(e).unwrap();
@@ -232,12 +234,12 @@ fn front_rank_gaps_close_after_deaths() {
         w.step(&[]);
     }
     let f = w.ecs().get::<FormationState>(e).unwrap();
-    assert_eq!(f.slots.len(), 50);
+    assert_eq!(f.slots.len(), 51, "50 plus the general");
     assert!(f.assignment.iter().all(|a| a.is_some()), "unfilled slots");
     let mut taken: Vec<u16> = f.assignment.iter().map(|a| a.unwrap()).collect();
     taken.sort_unstable();
     taken.dedup();
-    assert_eq!(taken.len(), 50, "two soldiers share a slot");
+    assert_eq!(taken.len(), 51, "two soldiers share a slot");
     let front = f.slots.iter().filter(|s| s.rank == 0).count();
     let filled_front = f
         .assignment

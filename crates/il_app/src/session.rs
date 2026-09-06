@@ -307,9 +307,10 @@ mod tests {
                 player: PlayerId(0),
                 deployment_zone: 0,
                 general: GeneralSetup {
-                    unit_type: cid("rome:hastati"),
+                    unit_type: cid("rome:general"),
                     rank: 1,
                     name_key: String::new(),
+                    bodyguard: None,
                 },
                 regiments: vec![RegimentSetup {
                     id: 1,

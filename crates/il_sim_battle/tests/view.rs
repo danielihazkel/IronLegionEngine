@@ -12,19 +12,19 @@ fn view_iterates_soldiers_and_regiments_in_id_order() {
     let world = common::world(60);
     let view = world.view();
     assert_read_only(&view);
-    assert_eq!(view.soldier_count(), 120);
+    assert_eq!(view.soldier_count(), 122, "60 a side plus the generals");
     assert_eq!(view.regiment_count(), 2);
 
     let ordered: Vec<SoldierId> = view.soldiers().map(|s| s.id).collect();
     let expected: Vec<SoldierId> = world.soldier_ids().collect();
     assert_eq!(ordered, expected);
-    assert_eq!(view.soldiers_unordered().count(), 120);
+    assert_eq!(view.soldiers_unordered().count(), 122);
 
     let regs: Vec<_> = view.regiments().collect();
     assert!(regs.windows(2).all(|w| w[0].id < w[1].id));
     assert_eq!(regs[0].side, 0);
     assert_eq!(regs[1].side, 1);
-    assert_eq!(regs[0].soldier_count, 60);
+    assert_eq!(regs[0].soldier_count, 61, "60 plus the general");
 
     let first = ordered[0];
     let row = view.soldier(first).expect("lookup by id");

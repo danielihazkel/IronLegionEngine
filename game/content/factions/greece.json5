@@ -5,7 +5,7 @@
   culture: "hellenic",
   colour_primary: "#3a6fb0",
   colour_secondary: "#e8e2c8",
-  units: ["greece:hoplite"],
+  units: ["greece:hoplite", "greece:general"],
   ai_profile: "rome:default_ai",
   tech_tree: "greece:hellenic_tree",
 }

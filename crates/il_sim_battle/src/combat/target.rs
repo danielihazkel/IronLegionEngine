@@ -284,7 +284,7 @@ fn recount(world: &mut World, emit: bool) {
     };
     for entity in regiment_entities {
         // The first fighter's target names the charged regiment.
-        let (rid, engaged, struck, running, unit, soldiers) = {
+        let (rid, engaged, struck, running, soldiers) = {
             let Some(regiment) = world.get::<Regiment>(entity) else {
                 continue;
             };
@@ -315,7 +315,6 @@ fn recount(world: &mut World, emit: bool) {
                 engaged,
                 struck,
                 running,
-                regiment.unit,
                 regiment.soldiers.clone(),
             )
         };
@@ -339,8 +338,7 @@ fn recount(world: &mut World, emit: bool) {
             mass = Some(mass_mult);
         }
         if let Some(mult) = mass {
-            let base = world.resource::<Regs>().0.units.get(unit).mass;
-            set_mass(world, &soldiers, base * mult);
+            set_mass(world, &soldiers, mult);
         }
         if !emit {
             continue;
@@ -386,13 +384,19 @@ fn recount(world: &mut World, emit: bool) {
     }
 }
 
-/// `Body.m` of every listed soldier (SIM-CMBT-015 charge push).
-fn set_mass(world: &mut World, soldiers: &[SoldierId], m: S) {
+/// `Body.m` of every listed soldier: its own unit's mass times `mult`
+/// (SIM-CMBT-015 charge push; the general keeps its own mass, T2-043).
+fn set_mass(world: &mut World, soldiers: &[SoldierId], mult: S) {
     for &sid in soldiers {
-        if let Some(e) = world.resource::<Ids>().soldier_entity(sid)
-            && let Some(mut body) = world.get_mut::<Body>(e)
-        {
-            body.m = m;
+        let Some(e) = world.resource::<Ids>().soldier_entity(sid) else {
+            continue;
+        };
+        let Some(unit) = world.get::<Soldier>(e).map(|s| s.unit) else {
+            continue;
+        };
+        let base = world.resource::<Regs>().0.units.get(unit).mass;
+        if let Some(mut body) = world.get_mut::<Body>(e) {
+            body.m = base * mult;
         }
     }
 }
@@ -415,12 +419,12 @@ pub fn rebuild_charge_mass(world: &mut World) {
         if !charging {
             continue;
         }
-        let (unit, soldiers) = {
-            let r = world.get::<Regiment>(entity).expect("regiment");
-            (r.unit, r.soldiers.clone())
-        };
-        let base = world.resource::<Regs>().0.units.get(unit).mass;
-        set_mass(world, &soldiers, base * mult);
+        let soldiers = world
+            .get::<Regiment>(entity)
+            .expect("regiment")
+            .soldiers
+            .clone();
+        set_mass(world, &soldiers, mult);
     }
 }
 

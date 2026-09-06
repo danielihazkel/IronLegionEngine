@@ -50,7 +50,7 @@ pub const PHASE1_STAGES: std::ops::RangeInclusive<usize> = 2..=7;
 
 const MAP_ID: &str = "rome:test_field";
 const UNIT_TYPES: [&str; 3] = ["rome:hastati", "rome:velites", "greece:hoplite"];
-const GENERAL_UNIT: &str = "rome:hastati";
+const GENERAL_UNIT: &str = "rome:general";
 /// Regiments per row; 12 × 60 m fits the 800 m map with a margin.
 const COLUMNS: u32 = 12;
 const X_ORIGIN: f32 = 70.0;
@@ -279,6 +279,7 @@ pub fn generate_scenario(soldiers: u32) -> anyhow::Result<Scenario> {
                 unit_type: cid(GENERAL_UNIT),
                 rank: 1,
                 name_key: "rome.generals.placeholder".to_owned(),
+                bodyguard: None,
             },
             regiments: (0..regiments)
                 .map(|i| RegimentSetup {
@@ -692,7 +693,7 @@ mod tests {
     fn generated_scenario_has_the_expected_shape() {
         let s = generate_scenario(2_000).unwrap();
         assert_eq!(s.setup.sides[0].regiments.len(), 10);
-        assert_eq!(s.setup.soldier_total(), 2_000);
+        assert_eq!(s.setup.soldier_total(), 2_001, "plus the general (T2-043)");
         let s = generate_scenario(20_000).unwrap();
         let regs = &s.setup.sides[0].regiments;
         assert_eq!(regs.len(), 100);

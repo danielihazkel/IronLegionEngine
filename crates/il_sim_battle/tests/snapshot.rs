@@ -15,9 +15,9 @@ fn round_trip_preserves_hash_and_continues_identically() {
     let snap = original.snapshot();
     assert_eq!(snap.version, SNAPSHOT_VERSION);
     assert_eq!(snap.tick, Tick(37));
-    assert_eq!(snap.soldiers.len(), 400);
+    assert_eq!(snap.soldiers.len(), 402, "400 plus two generals");
     assert_eq!(snap.regiments.len(), 2);
-    assert_eq!(snap.ids.soldiers_next, 400);
+    assert_eq!(snap.ids.soldiers_next, 402);
 
     let bytes = snap.to_bytes();
     let decoded = Snapshot::from_bytes(&bytes).unwrap();
@@ -40,7 +40,11 @@ fn round_trip_preserves_hash_and_continues_identically() {
     }
     // Ids keep ascending from the snapshotted counters.
     let ids: Vec<SoldierId> = restored.soldier_ids().collect();
-    assert_eq!(ids.last(), Some(&SoldierId(399)));
+    assert_eq!(
+        ids.last(),
+        Some(&SoldierId(401)),
+        "400 soldiers and two generals"
+    );
     assert_eq!(restored.regiment_ids().last(), Some(RegimentId(1)));
 }
 

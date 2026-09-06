@@ -18,7 +18,10 @@ use crate::components::{
     SoldierState,
 };
 use crate::events::BattleEvent;
-use crate::resources::{Clock, Events, FlowFields, Ids, NavGridRes, SpatialGridRes};
+use crate::resources::{
+    Clock, Events, FlowFields, Ids, MoraleShocks, NavGridRes, Shock, ShockKind, Sides,
+    SpatialGridRes,
+};
 use crate::spatial::Entry;
 
 /// The casualty ring slot of a tick (SIM-MOR-010: a five-second window
@@ -86,9 +89,49 @@ pub fn resolve_deaths(world: &mut World) {
         {
             c.kills = c.kills.saturating_add(1);
         }
+        // SIM-GEN-003 (T2-043): the side's general fell.
+        let side = world
+            .resource::<Ids>()
+            .regiment_entity(regiment)
+            .and_then(|re| world.get::<Regiment>(re))
+            .map(|r| r.side);
+        if let Some(side) = side
+            && world
+                .resource::<Sides>()
+                .0
+                .get(usize::from(side))
+                .is_some_and(|s| s.general == Some(*victim) && !s.general_dead)
+        {
+            general_died(world, side, *victim, tick);
+        }
     }
 
     remove_soldiers(world, &dead_ids);
+}
+
+/// SIM-GEN-003 / SIM-MOR-014: marks the side's general dead, queues the
+/// death shock for every regiment of the side (ascending; applied at the
+/// next tick's Stage 14, halved for Shaken or worse then) and emits
+/// `GeneralDied`. The aura ends with the flag (`melee_gate`).
+fn general_died(world: &mut World, side: u8, soldier: SoldierId, tick: Tick) {
+    world.resource_mut::<Sides>().0[usize::from(side)].general_dead = true;
+    let regiments: Vec<RegimentId> = world
+        .resource::<Ids>()
+        .regiment_entities
+        .iter()
+        .filter(|(_, e)| world.get::<Regiment>(*e).is_some_and(|r| r.side == side))
+        .map(|(id, _)| *id)
+        .collect();
+    for regiment in regiments {
+        world.resource_mut::<MoraleShocks>().0.push(Shock {
+            regiment,
+            kind: ShockKind::GeneralDeath,
+        });
+    }
+    world
+        .resource_mut::<Events>()
+        .0
+        .push(tick, BattleEvent::GeneralDied { side, soldier });
 }
 
 /// SIM-FORM-021: takes `victim` out of its regiment's soldier list and the

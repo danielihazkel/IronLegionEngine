@@ -4,13 +4,13 @@
 use std::sync::Arc;
 
 use bevy_ecs::prelude::*;
-use il_core::{Angle, S, Scalar, Tick, V2};
+use il_core::{Angle, S, Scalar, SoldierId, Tick, V2};
 use il_data::{ContentId, Handle, Registries, UnitType};
 
 use crate::components::{
-    Anchor, Attackers, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, Health,
-    MeleeState, Morale, MoraleState, Order, Path, Pos, PrevFacing, PrevPos, RangedState, Rank,
-    Regiment, RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
+    Anchor, Attackers, Body, Combat, Facing, FatigueC, Fire, FormationState, Fsm, GeneralTag,
+    Health, MeleeState, Morale, MoraleState, Order, Path, Pos, PrevFacing, PrevPos, RangedState,
+    Rank, Regiment, RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
 };
 use crate::formation::{effective_ranks, layout_slots, slot_world};
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
@@ -29,6 +29,12 @@ pub enum SetupError {
     UnknownUnitType { side: usize, unit_type: ContentId },
     #[error("side {side}: general unit type {unit_type} is unknown")]
     UnknownGeneralUnitType { side: usize, unit_type: ContentId },
+    #[error("side {side}: general unit type {unit_type} is not of category general (SIM-GEN-001)")]
+    GeneralCategory { side: usize, unit_type: ContentId },
+    #[error("side {side}: bodyguard regiment {id} is not one of the side's regiments")]
+    UnknownBodyguard { side: usize, id: u32 },
+    #[error("side {side}: a side needs a regiment for its general to ride with")]
+    NoBodyguard { side: usize },
     #[error("side {side}: regiment {regiment} has zero soldiers")]
     EmptyRegiment { side: usize, regiment: u32 },
     #[error("side {side}: regiment {regiment} names unknown formation {formation}")]
@@ -86,13 +92,26 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
         if side > usize::from(u8::MAX) {
             return Err(SetupError::TooManySides { side });
         }
-        // "each side has a general": the general's unit type must resolve.
-        // The general is not spawned until T2-043.
-        if !regs.units.contains(&s.general.unit_type) {
+        // "each side has a general" (SIM-GEN-001, T2-043): a unit of
+        // category `general` riding with one of the side's regiments.
+        let Some(general_unit) = regs.units.lookup(&s.general.unit_type) else {
             return Err(SetupError::UnknownGeneralUnitType {
                 side,
                 unit_type: s.general.unit_type.clone(),
             });
+        };
+        if regs.units.get(general_unit).category != il_data::UnitCategory::General {
+            return Err(SetupError::GeneralCategory {
+                side,
+                unit_type: s.general.unit_type.clone(),
+            });
+        }
+        match s.general.bodyguard {
+            Some(id) if !s.regiments.iter().any(|r| r.id == id) => {
+                return Err(SetupError::UnknownBodyguard { side, id });
+            }
+            None if s.regiments.is_empty() => return Err(SetupError::NoBodyguard { side }),
+            _ => {}
         }
         if !map.deployment.iter().any(|d| d.side == s.deployment_zone) {
             return Err(SetupError::MissingDeploymentZone {
@@ -144,12 +163,17 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
     Ok(())
 }
 
+/// Spawns one regiment; with `general`, the side's general rides with it as
+/// one extra soldier in the last slot (SIM-GEN-001, T2-043). Returns the
+/// general's id.
 pub(crate) fn spawn_regiment(
     world: &mut World,
     side: u8,
     setup: &RegimentSetup,
     unit: Handle<UnitType>,
-) {
+    general: Option<(&crate::interface::GeneralSetup, Handle<UnitType>)>,
+) -> Option<SoldierId> {
+    let count = setup.count + u16::from(general.is_some());
     let (radius, mass, hp, morale_base, category, template, slots, ranks, ammo) = {
         let regs = world.resource::<Regs>();
         let u = regs.0.units.get(unit);
@@ -159,9 +183,9 @@ pub(crate) fn spawn_regiment(
             .and_then(|id| regs.0.formations.lookup(id))
             .unwrap_or_else(|| u.default_formation());
         let t = regs.0.formations.get(template);
-        let ranks = effective_ranks(t, setup.count, None);
-        let mut slots = Vec::with_capacity(usize::from(setup.count));
-        layout_slots(t, setup.count, ranks, u.soldier_radius, &mut slots);
+        let ranks = effective_ranks(t, count, None);
+        let mut slots = Vec::with_capacity(usize::from(count));
+        layout_slots(t, count, ranks, u.soldier_radius, &mut slots);
         (
             u.soldier_radius,
             u.mass,
@@ -195,7 +219,7 @@ pub(crate) fn spawn_regiment(
                 side,
                 setup_id: setup.id,
                 unit,
-                soldiers: Vec::with_capacity(usize::from(setup.count)),
+                soldiers: Vec::with_capacity(usize::from(count)),
             },
             anchor,
             // SIM-MOR-001: `morale_base × (1 + exp_bonus × experience)`, and
@@ -206,7 +230,7 @@ pub(crate) fn spawn_regiment(
                 let m = (morale_base
                     * (S::ONE + rules.exp_bonus * S::from_i32(i32::from(setup.experience.min(9)))))
                 .clamp(S::ZERO, S::from_i32(100));
-                let mut morale = Morale::new(m, setup.count);
+                let mut morale = Morale::new(m, count);
                 morale.state = morale_state(m, MoraleState::Steady, rules);
                 morale
             },
@@ -229,26 +253,46 @@ pub(crate) fn spawn_regiment(
         .regiment_entities
         .push((rid, regiment_entity));
 
-    let mut soldier_ids = Vec::with_capacity(usize::from(setup.count));
+    let mut soldier_ids = Vec::with_capacity(usize::from(count));
+    let mut general_id = None;
     for (i, slot) in slots.iter().enumerate() {
-        // SIM-FORM-001: soldiers start on their slots.
+        // SIM-FORM-001: soldiers start on their slots. The general takes the
+        // last slot with its own unit type and `hp × hp_mult` (SIM-GEN-001).
         let p = slot_world(&anchor, slot);
         let sid = world.resource_mut::<Ids>().soldiers.alloc();
+        let is_general = general.is_some() && i + 1 == slots.len();
+        let (s_unit, s_category, s_radius, s_mass, s_hp) = match (is_general, general) {
+            (true, Some((_, g_unit))) => {
+                let regs = world.resource::<Regs>();
+                let g = regs.0.units.get(g_unit);
+                (
+                    g_unit,
+                    g.category,
+                    g.soldier_radius,
+                    g.mass,
+                    g.hp * regs.0.rules.general.hp_mult,
+                )
+            }
+            _ => (unit, category, radius, mass, hp),
+        };
         let entity = world
             .spawn((
                 Soldier {
                     id: sid,
                     regiment: rid,
-                    unit,
-                    category,
+                    unit: s_unit,
+                    category: s_category,
                 },
                 Pos { p },
                 PrevPos { p },
                 Vel::default(),
                 Facing { theta: facing },
                 PrevFacing { theta: facing },
-                Body { r: radius, m: mass },
-                Health { hp },
+                Body {
+                    r: s_radius,
+                    m: s_mass,
+                },
+                Health { hp: s_hp },
                 FatigueC { f: fatigue },
                 SlotRef {
                     slot: Some(i as u16),
@@ -265,7 +309,10 @@ pub(crate) fn spawn_regiment(
                 Attackers::default(),
             ))
             .id();
-        if let Some(ammo) = ammo {
+        if is_general && let Some((g, _)) = general {
+            world.entity_mut(entity).insert(GeneralTag { rank: g.rank });
+            general_id = Some(sid);
+        } else if let Some(ammo) = ammo {
             world
                 .entity_mut(entity)
                 .insert(RangedState { ammo, cooldown: 0 });
@@ -280,6 +327,7 @@ pub(crate) fn spawn_regiment(
         .get_mut::<Regiment>(regiment_entity)
         .expect("just spawned")
         .soldiers = soldier_ids;
+    general_id
 }
 
 impl BattleWorld {
@@ -309,9 +357,28 @@ impl BattleWorld {
             })
             .collect();
         for (side, s) in setup.sides.iter().enumerate() {
+            let bodyguard = s
+                .general
+                .bodyguard
+                .or_else(|| s.regiments.first().map(|r| r.id));
+            let general_unit = regs
+                .units
+                .lookup(&s.general.unit_type)
+                .expect("validated above");
             for r in &s.regiments {
                 let unit = regs.units.lookup(&r.unit_type).expect("validated above");
-                spawn_regiment(&mut w.world, side as u8, r, unit);
+                let general = (bodyguard == Some(r.id)).then_some((&s.general, general_unit));
+                if let Some(gid) = spawn_regiment(&mut w.world, side as u8, r, unit, general) {
+                    let rid = w
+                        .world
+                        .resource::<Ids>()
+                        .regiment_entities
+                        .last()
+                        .map(|(id, _)| *id);
+                    let state = &mut w.world.resource_mut::<Sides>().0[side];
+                    state.general = Some(gid);
+                    state.general_regiment = rid;
+                }
             }
         }
         // Reinforcement groups are validated but spawn only in T2-070.

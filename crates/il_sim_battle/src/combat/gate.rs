@@ -11,8 +11,8 @@
 use bevy_ecs::prelude::*;
 use il_core::{RegimentId, S, Scalar};
 
-use crate::components::{Anchor, Morale, MoraleState, Order, OrderKind, Pos, Regiment};
-use crate::resources::{AnchorGridRes, Ids, MeleeGateRes, Regs};
+use crate::components::{Anchor, GeneralTag, Morale, MoraleState, Order, OrderKind, Pos, Regiment};
+use crate::resources::{AnchorGridRes, Ids, MeleeGateRes, Regs, Sides};
 use crate::spatial::Entry;
 
 /// Regiments that may take or hold melee targets: Idle or attacking, not
@@ -90,9 +90,51 @@ pub fn melee_gate(world: &mut World) {
         });
     }
 
+    // SIM-GEN-002 (T2-043): each side's aura circle this tick.
+    let auras: Vec<Option<(il_core::V2, S)>> = {
+        let g = &world.resource::<Regs>().0.rules.general;
+        let ids = world.resource::<Ids>();
+        world
+            .resource::<Sides>()
+            .0
+            .iter()
+            .map(|s| {
+                if s.general_dead {
+                    return None;
+                }
+                let ge = ids.soldier_entity(s.general?)?;
+                let suspended = s
+                    .general_regiment
+                    .and_then(|r| ids.regiment_entity(r))
+                    .and_then(|re| world.get::<Morale>(re))
+                    .is_some_and(|m| {
+                        matches!(m.state, MoraleState::Routing | MoraleState::Shattered)
+                    });
+                if suspended {
+                    return None;
+                }
+                let rank = world.get::<GeneralTag>(ge)?.rank;
+                let pos = world.get::<Pos>(ge)?.p;
+                let radius = g.aura_radius
+                    + g.aura_per_rank * S::from_i32(i32::from(rank.saturating_sub(1)));
+                Some((pos, radius))
+            })
+            .collect()
+    };
+    let in_aura: Vec<bool> = (0..n)
+        .map(|i| {
+            auras
+                .get(usize::from(side[i]))
+                .copied()
+                .flatten()
+                .is_some_and(|(pos, radius)| anchors[i].distance(pos) <= radius)
+        })
+        .collect();
+
     let mut gate = world.resource_mut::<MeleeGateRes>();
     gate.side = side;
     gate.may_fight = may;
     gate.near_enemy = near;
     gate.extent = extent;
+    gate.in_aura = in_aura;
 }

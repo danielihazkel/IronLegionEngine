@@ -76,6 +76,9 @@ pub enum BattleEvent {
         regiment: RegimentId,
         pos: V2,
     },
+    /// The side's general died (SIM-GEN-003, T2-043): the aura is gone and
+    /// every regiment of the side takes the death shock next tick.
+    GeneralDied { side: u8, soldier: SoldierId },
 }
 
 impl Event for BattleEvent {}

@@ -38,9 +38,10 @@ fn side(player: u8, regiments: Vec<RegimentSetup>) -> SideSetup {
         player: PlayerId(player),
         deployment_zone: 0,
         general: GeneralSetup {
-            unit_type: cid("rome:hastati"),
+            unit_type: cid("rome:general"),
             rank: 1,
             name_key: String::new(),
+            bodyguard: None,
         },
         regiments,
         reinforcements: vec![],
@@ -66,11 +67,19 @@ fn two_sides(count: u16) -> BattleSetup {
 #[test]
 fn two_sides_of_500_spawn_1000_soldiers_with_ascending_ids() {
     let w = BattleWorld::new(&two_sides(500), regs()).unwrap();
-    assert_eq!(w.soldier_count(), 1000);
+    assert_eq!(
+        w.soldier_count(),
+        1002,
+        "500 a side plus the generals (T2-043)"
+    );
     assert_eq!(w.regiment_count(), 2);
     let ids: Vec<SoldierId> = w.soldier_ids().collect();
     assert_eq!(ids.first(), Some(&SoldierId(0)));
-    assert_eq!(ids.last(), Some(&SoldierId(999)));
+    assert_eq!(
+        ids.last(),
+        Some(&SoldierId(1001)),
+        "1,000 soldiers and two generals"
+    );
     assert!(ids.windows(2).all(|w| w[0] < w[1]));
     assert_eq!(w.tick(), Tick::ZERO);
     assert_eq!(w.setup().map(|s| s.seed), Some(42));
@@ -83,7 +92,7 @@ fn over_cap_is_rejected() {
     assert_eq!(
         err,
         SetupError::OverCap {
-            count: 40_000,
+            count: 40_002,
             cap: SOLDIER_CAP
         }
     );
@@ -96,7 +105,7 @@ fn over_cap_is_rejected() {
     });
     assert!(matches!(
         BattleWorld::new(&setup, regs()).unwrap_err(),
-        SetupError::OverCap { count: 33_000, .. }
+        SetupError::OverCap { count: 33_002, .. }
     ));
 }
 
