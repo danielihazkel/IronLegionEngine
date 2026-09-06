@@ -51,7 +51,11 @@ fn acquire(world: &World, from: il_core::V2, side: u8, radius: il_core::S) -> Op
         let Some(r) = world.get::<Regiment>(e.entity) else {
             continue;
         };
-        if r.side == side || r.soldiers.is_empty() {
+        // SIM-VIS-004 (T2-060): hidden regiments are not acquired.
+        if r.side == side
+            || r.soldiers.is_empty()
+            || !crate::visibility::sees_regiment(world, side, e.id)
+        {
             continue;
         }
         let d = e.pos.distance_sq(from);

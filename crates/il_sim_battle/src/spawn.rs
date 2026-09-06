@@ -394,6 +394,8 @@ impl BattleWorld {
         // Reinforcement groups are validated but spawn only in T2-070.
         w.set_setup(setup.clone());
         w.rebuild_derived();
+        // SIM-VIS-004 (T2-060): every side's mask from the spawn positions.
+        crate::visibility::recompute_all(&mut w.world);
         w.refresh_hash();
         Ok(w)
     }

@@ -2,7 +2,8 @@
 //! is under the cursor or inside a box, decided on `BattleView` soldier
 //! positions projected through a closure the app builds from its camera.
 //! Only the local player's regiments are ever returned (TDD §11 "own
-//! faction only"); there is no fog in Phase 1, so "visible" means on screen.
+//! side only"), which a side always sees (SIM-VIS-004, T2-060), so
+//! "visible" here means on screen.
 
 use std::collections::BTreeSet;
 

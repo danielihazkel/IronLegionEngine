@@ -349,6 +349,7 @@ impl App {
                 (Action::DebugSpatial, &mut flags.spatial_cells),
                 (Action::DebugMorale, &mut flags.morale),
                 (Action::DebugFlow, &mut flags.flow),
+                (Action::DebugLos, &mut flags.los),
             ] {
                 if input.pressed(b, action) {
                     *flag = !*flag;
@@ -700,10 +701,19 @@ impl App {
             screen,
             selected: &self.selection.regiments,
             corpses: session.corpses(),
+            // SIM-VIS-004 (T2-060): the local player's fog of war.
+            observer_side: session.observer_side(),
         };
         build_snapshot(&session.world.view(), &input, &mut self.snapshot);
         self.lines.clear();
         deployment_outlines(session.world.map(), &camera, screen, &mut self.lines);
+        il_render::ghost_markers(
+            session.world.map(),
+            &self.snapshot.ghosts,
+            &camera,
+            screen,
+            &mut self.lines,
+        );
         // Projectiles as short lifted segments (T2-031, plan decision 9).
         for p in &self.snapshot.projectiles {
             let a = camera.world_to_screen(Vec2::from(p.a), p.height, screen);

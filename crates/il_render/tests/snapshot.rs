@@ -45,6 +45,7 @@ fn input(
         screen: SCREEN,
         selected,
         corpses: &[],
+        observer_side: None,
     }
 }
 
@@ -111,4 +112,43 @@ fn snapshot_culls_to_the_camera_and_marks_selection() {
     assert!(near.regiments[0].selected && !near.regiments[1].selected);
     assert!(near.soldiers.iter().any(|s| s.selected));
     assert!(near.soldiers.iter().all(|s| !s.moving));
+}
+
+#[test]
+fn fog_hides_a_regiments_soldiers_and_leaves_a_ghost() {
+    // T2-060: with an observer side, a regiment that side does not see
+    // draws no soldiers and, while remembered, one ghost at its last anchor.
+    let mut world = world();
+    let hidden_id = world.view().regiments().nth(1).unwrap().id;
+    {
+        let ecs = world.ecs_mut();
+        ecs.resource_mut::<il_sim_battle::Visibility>().masks[0][1] = false;
+    }
+    world.recompute_hash();
+    let view = world.view();
+    let selected = BTreeSet::new();
+    let camera = Camera::new(Vec2::new(320.0, 150.0));
+    let mut all = RenderSnapshot::default();
+    build_snapshot(&view, &input(camera, 0.0, &selected), &mut all);
+    let mut fogged = RenderSnapshot::default();
+    let mut fog_input = input(camera, 0.0, &selected);
+    fog_input.observer_side = Some(0);
+    build_snapshot(&view, &fog_input, &mut fogged);
+    assert_eq!(all.soldiers.len(), 14, "no observer: everything drawn");
+    assert!(all.ghosts.is_empty());
+    assert_eq!(
+        fogged.soldiers.len(),
+        7,
+        "the hidden regiment's seven are gone"
+    );
+    assert!(fogged.soldiers.iter().all(|s| s.side == 0));
+    assert!(fogged.regiments[0].visible && !fogged.regiments[1].visible);
+    assert_eq!(
+        fogged.ghosts.len(),
+        1,
+        "remembered from the spawn-time sighting"
+    );
+    assert_eq!(fogged.ghosts[0].id, hidden_id);
+    assert_eq!(fogged.ghosts[0].count, 7);
+    assert_eq!(fogged.counts.visible_soldiers, 7);
 }

@@ -80,6 +80,17 @@ impl BattleSession {
         self.local_player
     }
 
+    /// The first side the local player owns: whose fog of war the window
+    /// shows (T2-060); `None` for a spectator.
+    pub fn observer_side(&self) -> Option<u8> {
+        self.world
+            .view()
+            .sides()
+            .iter()
+            .position(|s| s.player == self.local_player)
+            .map(|i| i as u8)
+    }
+
     pub fn paused(&self) -> bool {
         self.paused
     }

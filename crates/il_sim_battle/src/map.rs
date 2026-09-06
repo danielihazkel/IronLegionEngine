@@ -39,6 +39,9 @@ pub struct LoadedMap {
     pub height_rows: u32,
     /// Row-major from `y = 0`, `height_cols × height_rows`, metres.
     pub heights: Vec<S>,
+    /// Mean of `heights` (SIM-VIS-001 `h_mean_map`, T2-060), a fixed-order
+    /// sum at load.
+    pub mean_height: S,
     /// Metres per zone raster cell (`movement.zone_cell`).
     pub zone_cell: S,
     pub zone_cols: u32,
@@ -190,12 +193,14 @@ impl LoadedMap {
             });
         }
         let scale = def.heightmap.scale;
-        let heights = def
+        let heights: Vec<S> = def
             .heightmap
             .samples
             .iter()
             .map(|&raw| S::from_i32(i32::from(raw)) * scale)
             .collect();
+        let mean_height = heights.iter().fold(S::ZERO, |acc, h| acc + *h)
+            / S::from_i32(heights.len().max(1) as i32);
 
         let mut zone_handles = Vec::with_capacity(def.zones.len() + 1);
         zone_handles.push(
@@ -239,6 +244,7 @@ impl LoadedMap {
             height_cols,
             height_rows,
             heights,
+            mean_height,
             zone_cell,
             zone_cols,
             zone_rows,
@@ -266,6 +272,7 @@ impl LoadedMap {
             height_cols: 2,
             height_rows: 2,
             heights: vec![S::ZERO; 4],
+            mean_height: S::ZERO,
             zone_cell: cell,
             zone_cols: 1,
             zone_rows: 1,

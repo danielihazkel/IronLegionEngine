@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::query::QueryState;
-use il_core::{Angle, ProjectileId, RegimentId, S, SoldierId, Tick, V2};
+use il_core::{Angle, ProjectileId, RegimentId, S, Scalar, SoldierId, Tick, V2};
 use il_data::{
     Ability, FormationTemplate, Handle, ProjectileArc, Registries, UnitCategory, UnitType,
 };
@@ -29,6 +29,7 @@ use crate::resources::{
     SpatialGridRes,
 };
 use crate::spatial::SpatialGrid;
+use crate::visibility::{Seen, Visibility};
 
 type SoldierData = (
     &'static Soldier,
@@ -370,6 +371,66 @@ impl<'w> BattleView<'w> {
     pub fn formation_state(&self, id: RegimentId) -> Option<&'w FormationState> {
         let entity = self.world.resource::<Ids>().regiment_entity(id)?;
         self.world.get::<FormationState>(entity)
+    }
+
+    /// SIM-VIS-004 (T2-060): whether `side` currently sees the regiment.
+    pub fn visible(&self, side: u8, id: RegimentId) -> bool {
+        crate::visibility::sees_regiment(self.world, side, id)
+    }
+
+    /// The regiments `side` currently sees, ascending id (its own included).
+    pub fn visible_regiments(&self, side: u8) -> impl Iterator<Item = RegimentId> + 'w {
+        let world = self.world;
+        world
+            .resource::<Ids>()
+            .regiment_entities
+            .iter()
+            .enumerate()
+            .filter(move |(i, _)| world.resource::<Visibility>().sees(side, *i))
+            .map(|(_, (id, _))| *id)
+    }
+
+    /// SIM-VIS-005: what `side` last saw of a regiment it does not see now.
+    pub fn seen(&self, side: u8, id: RegimentId) -> Option<Seen> {
+        let i = self.world.resource::<Ids>().regiment_index(id)?;
+        self.world
+            .resource::<Visibility>()
+            .memory
+            .get(usize::from(side))?
+            .get(i)
+            .copied()
+            .flatten()
+    }
+
+    /// SIM-VIS-001: the regiment's line-of-sight radius now (the overlay).
+    pub fn los_radius(&self, id: RegimentId) -> S {
+        let Some(entity) = self.world.resource::<Ids>().regiment_entity(id) else {
+            return S::ZERO;
+        };
+        let (Some(r), Some(a)) = (
+            self.world.get::<Regiment>(entity),
+            self.world.get::<Anchor>(entity),
+        ) else {
+            return S::ZERO;
+        };
+        let regs = self.regs();
+        let map = self.map();
+        let (zone_los, _) = map
+            .zone_at(a.pos)
+            .map_or((S::ONE, false), |h| (regs.zones.get(h).los_mult, false));
+        let status_los = self
+            .world
+            .get::<Statuses>(entity)
+            .map_or(S::ONE, |s| s.mults.los_radius);
+        crate::visibility::los_radius(
+            regs.units.get(r.unit).los_radius,
+            zone_los,
+            map.height_at(a.pos),
+            map.mean_height,
+            status_los,
+            &regs.rules.visibility,
+            &regs.rules.combat,
+        )
     }
 
     /// The regiment's ability slots with their cooldowns (SIM-ABIL-003,

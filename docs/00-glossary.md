@@ -112,7 +112,7 @@ Terms are grouped by area. A term in *italics* inside a definition is itself def
 | **Withdraw** | A player order to leave the field in good order via the own map edge. |
 | **Pursuit phase** | Sub-phase after one side has entirely routed or withdrawn; remaining pursuers inflict casualties per pursuit rules until the timer ends. |
 | **Line of sight** | Whether a Regiment can see a point given distance, elevation, and occluding terrain. |
-| **Fog of war** | Per-Faction visibility: enemy Regiments are shown only when inside an allied Regiment's line of sight. |
+| **Fog of war** | Per-side visibility: enemy Regiments are shown only when inside one of the side's Regiments' line of sight (or within the conceal radius in a forest). |
 
 ## Campaign
 

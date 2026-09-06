@@ -177,13 +177,16 @@ fn regiment_mean_refreshes_every_ten_ticks() {
 #[test]
 fn fatigue_is_deterministic_across_threads_and_restore() {
     let setup = common::two_sides(120);
+    // An attack-move rather than `AttackRegiment`: at 200 m on ground below
+    // the map's mean height the hastati's sight radius is about 184 m
+    // (SIM-VIS-001, T2-060), so the enemy is still hidden at tick 1.
     let commands = [Command {
         tick: Tick(1),
         player: PlayerId(0),
         seq: 0,
-        kind: CommandKind::AttackRegiment {
+        kind: CommandKind::AttackMove {
             regiments: vec![RegimentId(0)],
-            target: RegimentId(1),
+            target: V2::new(S::from_i32(500), S::from_i32(150)),
         },
     }];
     let mut w = BattleWorld::new(&setup, common::regs()).unwrap();

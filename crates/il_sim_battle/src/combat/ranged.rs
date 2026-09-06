@@ -67,9 +67,9 @@ pub struct Shot {
 #[derive(Resource, Default)]
 pub struct Shots(pub Mutex<Vec<Shot>>);
 
-/// SIM-VIS-004 placeholder until T2-060: every regiment is visible.
-fn visible(_side: u8, _target: RegimentId) -> bool {
-    true
+/// SIM-VIS-004 (T2-060): whether `side` sees `target`.
+fn visible(world: &World, side: u8, target: RegimentId) -> bool {
+    crate::visibility::sees_regiment(world, side, target)
 }
 
 /// SIM-PROJ-009 (plan decision 11): whether the segment `a → b` passes
@@ -181,7 +181,7 @@ pub fn ranged_target(world: &mut World) {
         // Plan decision 13: an ordered target that is gone hands the
         // regiment back to fire-at-will.
         if let FireMode::Target(t) = mode
-            && (!alive_regiment(world, t) || !visible(side, t))
+            && (!alive_regiment(world, t) || !visible(world, side, t))
         {
             mode = FireMode::FireAtWill;
             current = None;
@@ -215,7 +215,9 @@ pub fn ranged_target(world: &mut World) {
                     let mut best: Option<(u32, RegimentId)> = None;
                     // The current target is counted first so an equal count
                     // keeps it (SIM-PROJ-001 "preferring the current target").
-                    if let Some(t) = current {
+                    if let Some(t) = current
+                        && visible(world, side, t)
+                    {
                         let c = annulus(world, t);
                         if c >= 1 {
                             best = Some((c, t));
@@ -229,7 +231,7 @@ pub fn ranged_target(world: &mut World) {
                             let enemy = world
                                 .get::<Regiment>(e.entity)
                                 .is_some_and(|r| r.side != side && !r.soldiers.is_empty());
-                            if !enemy || !visible(side, e.id) {
+                            if !enemy || !visible(world, side, e.id) {
                                 continue;
                             }
                             let hi = ranged.range

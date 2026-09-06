@@ -484,6 +484,10 @@ fn validate_and_apply(
                 if side == target_side {
                     return Err(RejectReason::InvalidTarget(*target));
                 }
+                // SIM-VIS-004 (T2-060): a hidden enemy cannot be named.
+                if !crate::visibility::sees_regiment(world, side, *target) {
+                    return Err(RejectReason::NotVisible(*target));
+                }
             }
             for entity in entities {
                 // SIM-MOR-025: switching targets while engaged is a
@@ -698,6 +702,10 @@ fn validate_and_apply(
                     let side = world.get::<Regiment>(*entity).expect("validated").side;
                     if side == target_side {
                         return Err(RejectReason::InvalidTarget(*target));
+                    }
+                    // SIM-VIS-004 (T2-060): a hidden enemy cannot be named.
+                    if !crate::visibility::sees_regiment(world, side, *target) {
+                        return Err(RejectReason::NotVisible(*target));
                     }
                 }
             }

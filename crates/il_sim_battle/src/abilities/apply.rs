@@ -11,7 +11,6 @@ use crate::events::BattleEvent;
 use crate::movement::regiment::anchor_moves;
 use crate::resources::{AnchorGridRes, Events, Ids, MapRes, Regs};
 use crate::spatial::Entry;
-use crate::visibility::Visibility;
 
 /// Validates and applies `UseAbility` for `entity` (already known to exist,
 /// be owned by the player and not be routing). Checks, in order: the
@@ -82,7 +81,7 @@ pub fn use_ability(
                 return Err(fail(AbilityFail::BadTarget));
             }
             // SIM-VIS-004: enemies must be visible to the user's side.
-            if !wanted_ally && !visible(world, side, *t) {
+            if !wanted_ally && !crate::visibility::sees_regiment(world, side, *t) {
                 return Err(fail(AbilityFail::BadTarget));
             }
             if !in_range(t_pos) {
@@ -175,12 +174,4 @@ fn regiments_within(world: &World, centre: V2, radius: S) -> Vec<(Entity, u8)> {
             (!r.soldiers.is_empty()).then_some((e.entity, r.side))
         })
         .collect()
-}
-
-/// SIM-VIS-004 hook (T2-060): whether `side` sees regiment `target`.
-fn visible(world: &World, side: u8, target: RegimentId) -> bool {
-    world
-        .resource::<Ids>()
-        .regiment_index(target)
-        .is_none_or(|i| world.resource::<Visibility>().sees(side, i))
 }

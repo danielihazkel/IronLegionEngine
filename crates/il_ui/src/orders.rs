@@ -231,7 +231,12 @@ fn nearest_regiment(view: &BattleView, me: &RegimentRow, ally: bool) -> Option<R
         dx * dx + dy * dy
     };
     view.regiments()
-        .filter(|r| r.id != me.id && (r.side == me.side) == ally && r.soldier_count > 0)
+        .filter(|r| {
+            r.id != me.id
+                && (r.side == me.side) == ally
+                && r.soldier_count > 0
+                && (ally || view.visible(me.side, r.id))
+        })
         .min_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal))
         .map(|r| r.id)
 }

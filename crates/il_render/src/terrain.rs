@@ -244,6 +244,37 @@ pub fn deployment_outlines(map: &LoadedMap, camera: &Camera, screen: Vec2, lines
 }
 
 /// Projects a world point sitting on the terrain.
+/// Grey diamonds with a facing tick at the last known anchors of
+/// remembered enemy regiments (SIM-VIS-005, T2-060).
+pub fn ghost_markers(
+    map: &LoadedMap,
+    ghosts: &[crate::snapshot::GhostInst],
+    camera: &Camera,
+    screen: Vec2,
+    lines: &mut LineScene,
+) {
+    const GHOST: [u8; 4] = [190, 190, 190, 200];
+    for g in ghosts {
+        let c = Vec2::from(g.pos);
+        let r = 3.0;
+        let corners = [
+            c + Vec2::new(0.0, r),
+            c + Vec2::new(r, 0.0),
+            c - Vec2::new(0.0, r),
+            c - Vec2::new(r, 0.0),
+        ]
+        .map(|p| project(map, camera, screen, p));
+        lines.polyline(&corners, GHOST, true);
+        let angle = f32::from(g.facing8) * core::f32::consts::TAU / 8.0;
+        let tip = c + Vec2::new(angle.cos(), angle.sin()) * (r * 2.0);
+        lines.segment(
+            project(map, camera, screen, c),
+            project(map, camera, screen, tip),
+            GHOST,
+        );
+    }
+}
+
 pub fn project(map: &LoadedMap, camera: &Camera, screen: Vec2, p: Vec2) -> Vec2 {
     let h = map.height_at(V2::from_f32_data(p.x, p.y)).to_f32_render();
     camera.world_to_screen(p, h, screen)

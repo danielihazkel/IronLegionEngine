@@ -38,12 +38,13 @@ use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 /// edges started coming from the deployment zones and routers fled; and in
 /// T2-043 when the generals began riding with their bodyguards; and in
 /// T2-050 when the milestone 4 fields (battle flow, side flags, energy,
-/// cooldowns, statuses, withdrawn, visibility masks) joined the layout).
+/// cooldowns, statuses, withdrawn, visibility masks) joined the layout; and
+/// in T2-060 when the visibility masks were first filled).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x5e72_8219_d51c_c1e4;
+const GOLDEN_FRESH: u64 = 0xd700_5b76_faa8_f806;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x08f6_07d3_007e_a8d1;
+const GOLDEN_1000: u64 = 0xeb4e_72bf_6fac_55ee;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 

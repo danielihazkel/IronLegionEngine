@@ -27,4 +27,4 @@ pub use snapshot::{
     Corpse, EntityCounts, RegimentBlock, RenderSnapshot, SnapshotInput, SoldierInst, build_snapshot,
 };
 pub use sprite::{SpriteBatch, SpriteInstance, SpriteScene};
-pub use terrain::{TerrainMesh, TerrainVertex, deployment_outlines, ground_height};
+pub use terrain::{TerrainMesh, TerrainVertex, deployment_outlines, ghost_markers, ground_height};

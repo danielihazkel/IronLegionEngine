@@ -67,6 +67,7 @@ Developer keys (`dev` feature, on by default):
 | `F9` | spatial grid cells |
 | `F10` | morale: a ring per regiment coloured by state (green steady, yellow unsettled, orange shaken, red-orange broken, red routing, grey shattered), one extra ring per fatigue state above fresh, and a morale bar (T2-041) |
 | `F11` | escape flow field of the selected regiment's side (side 0 with nothing selected): one arrow per nav cell toward that side's escape edge (T2-042) |
+| `Ctrl+F5` | line of sight (T2-060): a ring at each regiment's `los_radius` for the selected regiment's side and a red X on every enemy anchor that side cannot see |
 
 ## 4. The M4 check: drag ten regiments into a line
 
@@ -103,6 +104,10 @@ cargo run --release -p il_app -- tests/scenarios/bands/melee_cavalry_rear_charge
 ```
 
 The file scripts a hastati line fighting velites and, forty seconds in, Persian cavalry charging the hastati from behind. Expect: the charge shock and the rear attacks turn the hastati's `F10` ring red within a few seconds, the line dissolves and the soldiers run south for their edge, the cavalry chase them at the gallop and cut some down, and any hastati that get clear of the enemy by fifty metres with their morale back above thirty stop, turn to face the enemy and reform. `F11` draws the escape field the routers follow. Each side's general rides inside its first regiment (or the one named by `general.bodyguard` in the file, T2-043); `F10` also draws the general's aura circle.
+
+### 4d. The hill check (Phase 2, T2-060)
+
+The window shows your side's fog of war: enemy regiments you cannot see are not drawn, and one you saw earlier leaves a grey diamond with a facing tick at its last known anchor for twenty seconds (`visibility.memory_ticks`). Run any scenario and march a regiment behind the south-east hill of `rome:test_field` (around x 600, y 460) or into the forest in the south-west: the enemy vanishes as the crest or the trees come between you, and reappears within half a second of cresting the hill or closing to 25 m of the trees. `Ctrl+F5` draws your regiments' sight rings and marks the enemies you cannot see; an attack or fire order on a hidden regiment is refused (`NotVisible` in the event panel), and archers at will do not shoot what they cannot see.
 
 ## 5. Headless tools (`il_cli`)
 

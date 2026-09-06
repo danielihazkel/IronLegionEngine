@@ -24,6 +24,9 @@ pub struct DebugFlags {
     pub morale: bool,
     /// Escape flow field arrows of `flow_side` (T2-042).
     pub flow: bool,
+    /// Line-of-sight rings of `flow_side`'s regiments and marks on the
+    /// enemies it cannot see (T2-060).
+    pub los: bool,
 }
 
 impl DebugFlags {
@@ -35,6 +38,7 @@ impl DebugFlags {
             || self.spatial_cells
             || self.morale
             || self.flow
+            || self.los
     }
 }
 
@@ -44,6 +48,8 @@ const GRID: [u8; 4] = [255, 255, 255, 40];
 const PATH: [u8; 4] = [255, 230, 80, 220];
 const NARROW: [u8; 4] = [255, 90, 200, 240];
 const ANCHOR: [u8; 4] = [255, 255, 255, 230];
+const LOS: [u8; 4] = [120, 200, 255, 160];
+const HIDDEN: [u8; 4] = [255, 80, 80, 230];
 /// Morale overlay colours by state: steady, unsettled, shaken, broken,
 /// routing, shattered.
 const MORALE: [[u8; 4]; 6] = [
@@ -103,6 +109,30 @@ pub fn build_debug_lines(
                     lines.segment(proj(c - d), proj(tip), tint);
                     lines.circle(proj(tip), 2.0, 4, tint);
                 }
+            }
+        }
+    }
+
+    if flags.los {
+        // SIM-VIS-001 radii of the observer side's regiments and an X on
+        // every enemy anchor it does not see (SIM-VIS-004).
+        for r in view.regiments() {
+            if r.soldier_count == 0 {
+                continue;
+            }
+            let c = v2(r.anchor_pos);
+            if r.side == flow_side {
+                let radius = view.los_radius(r.id).to_f32_render();
+                let px = (proj(c + Vec2::new(radius, 0.0)) - proj(c)).length();
+                lines.circle(proj(c), px.max(1.0), 48, LOS);
+            } else if !view.visible(flow_side, r.id) {
+                let d = 4.0;
+                lines.segment(proj(c - Vec2::splat(d)), proj(c + Vec2::splat(d)), HIDDEN);
+                lines.segment(
+                    proj(c + Vec2::new(-d, d)),
+                    proj(c + Vec2::new(d, -d)),
+                    HIDDEN,
+                );
             }
         }
     }

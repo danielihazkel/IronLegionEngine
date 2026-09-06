@@ -23,6 +23,7 @@ use crate::morale::{fatigue_tick, morale_tick, regiment_fatigue_mean};
 use crate::movement::{collision_resolve, integrate, regiment_follow_path, soldier_steer};
 use crate::nav::serve_path_requests;
 use crate::spatial::rebuild_spatial_grids;
+use crate::visibility::visibility_update;
 
 /// The stages, in execution order. Doubles as the label of each stage's
 /// schedule and as the system set inside it.
@@ -139,7 +140,6 @@ impl StageObserver for NoopObserver {
 // Placeholder systems, one per stage without real systems yet, so every
 // stage shows up in the profiler with its own timing.
 fn stage_ai() {}
-fn stage_visibility() {}
 fn stage_battle_flow() {}
 
 fn stage_schedule(stage: Stage) -> Schedule {
@@ -162,7 +162,7 @@ fn stage_schedule(stage: Stage) -> Schedule {
         Stage::Integrate => s.add_systems(integrate.in_set(stage)),
         Stage::SpatialGrid => s.add_systems(rebuild_spatial_grids.in_set(stage)),
         Stage::Collision => s.add_systems(collision_resolve.in_set(stage)),
-        Stage::Visibility => s.add_systems(stage_visibility.in_set(stage)),
+        Stage::Visibility => s.add_systems(visibility_update.in_set(stage)),
         Stage::Targeting => s.add_systems(
             (melee_gate, ranged_target, melee_target, melee_recount)
                 .chain()

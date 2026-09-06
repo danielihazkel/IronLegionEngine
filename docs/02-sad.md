@@ -234,7 +234,7 @@ Stage 4  SoldierSteering      seek slot / flow field, separation, obstacle avoid
 Stage 5  Integrate            position += velocity * dt; clamp to map
 Stage 6  SpatialGrid          rebuild buckets from positions
 Stage 7  Collision            circle-circle push resolution (deterministic pairs order)
-Stage 8  Visibility           regiment LOS, fog of war per faction
+Stage 8  Visibility           regiment LOS, fog of war per side (T2-060)
 Stage 9  Targeting            melee target selection, ranged target selection
 Stage 10 Combat               attack cycles, hit rolls, damage, projectile spawn
 Stage 11 Projectiles          landing checks, delayed damage (arcs are closed-form from the launch data)

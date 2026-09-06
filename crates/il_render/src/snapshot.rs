@@ -67,6 +67,19 @@ pub struct RegimentBlock {
     pub facing8: u8,
     pub count: u32,
     pub selected: bool,
+    /// Seen by the observer side (T2-060); hidden regiments draw no soldiers.
+    pub visible: bool,
+}
+
+/// A remembered enemy regiment the observer no longer sees (SIM-VIS-005,
+/// T2-060): drawn as a grey marker at its last known anchor.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GhostInst {
+    pub id: RegimentId,
+    pub side: u8,
+    pub pos: [f32; 2],
+    pub facing8: u8,
+    pub count: u16,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -86,6 +99,8 @@ pub struct RenderSnapshot {
     pub regiments: Vec<RegimentBlock>,
     /// Projectiles inside the view (T2-031).
     pub projectiles: Vec<ProjectileInst>,
+    /// Remembered enemy regiments inside the view (T2-060).
+    pub ghosts: Vec<GhostInst>,
     pub counts: EntityCounts,
 }
 
@@ -98,6 +113,7 @@ impl Default for RenderSnapshot {
             soldiers: Vec::new(),
             regiments: Vec::new(),
             projectiles: Vec::new(),
+            ghosts: Vec::new(),
             counts: EntityCounts::default(),
         }
     }
@@ -112,6 +128,8 @@ pub struct SnapshotInput<'a> {
     pub selected: &'a BTreeSet<RegimentId>,
     /// Corpses to draw (T2-022).
     pub corpses: &'a [Corpse],
+    /// The side whose fog of war applies (T2-060); `None` draws everything.
+    pub observer_side: Option<u8>,
 }
 
 fn v2(p: il_core::V2) -> Vec2 {
@@ -127,6 +145,7 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
     out.soldiers.clear();
     out.regiments.clear();
     out.projectiles.clear();
+    out.ghosts.clear();
 
     // Regiment table first: side and selection per regiment, ascending id so
     // soldiers can binary-search it.
@@ -138,6 +157,7 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
             facing8: r.anchor_facing.to_facing8(),
             count: r.soldier_count,
             selected: input.selected.contains(&r.id),
+            visible: input.observer_side.is_none_or(|o| view.visible(o, r.id)),
         });
     }
 
@@ -154,11 +174,17 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
         if p.x < min.x || p.y < min.y || p.x > max.x || p.y > max.y {
             continue;
         }
-        let (side, selected) = out
+        let (side, selected, visible) = out
             .regiments
             .binary_search_by_key(&s.regiment, |b| b.id)
-            .map(|i| (out.regiments[i].side, out.regiments[i].selected))
-            .unwrap_or((u8::MAX, false));
+            .map(|i| {
+                let b = &out.regiments[i];
+                (b.side, b.selected, b.visible)
+            })
+            .unwrap_or((u8::MAX, false, true));
+        if !visible {
+            continue;
+        }
         out.soldiers.push(SoldierInst {
             pos: p.to_array(),
             height: crate::terrain::ground_height(map, p),
@@ -185,6 +211,28 @@ pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut Render
             selected: false,
             corpse: true,
         });
+    }
+    // Ghosts (SIM-VIS-005): the observer's memory of hidden regiments.
+    if let Some(o) = input.observer_side {
+        for b in &out.regiments {
+            if b.visible {
+                continue;
+            }
+            let Some(seen) = view.seen(o, b.id) else {
+                continue;
+            };
+            let p = v2(seen.pos);
+            if p.x < min.x || p.y < min.y || p.x > max.x || p.y > max.y {
+                continue;
+            }
+            out.ghosts.push(GhostInst {
+                id: b.id,
+                side: b.side,
+                pos: p.to_array(),
+                facing8: seen.facing.to_facing8(),
+                count: seen.count,
+            });
+        }
     }
     // Projectiles: the arc is closed-form from the launch data, so the
     // renderer evaluates it at the interpolated time `tick − 1 + alpha`.
