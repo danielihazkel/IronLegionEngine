@@ -1568,6 +1568,7 @@ dependencies = [
  "il_core",
  "il_data",
  "il_render",
+ "il_save",
  "il_sim_battle",
  "il_ui",
  "winit",
@@ -1593,6 +1594,7 @@ dependencies = [
  "clap",
  "il_core",
  "il_data",
+ "il_save",
  "il_sim_battle",
  "png",
  "serde",
@@ -1643,6 +1645,15 @@ dependencies = [
 [[package]]
 name = "il_save"
 version = "0.1.0"
+dependencies = [
+ "il_core",
+ "il_data",
+ "il_sim_battle",
+ "postcard",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+]
 
 [[package]]
 name = "il_sim_battle"

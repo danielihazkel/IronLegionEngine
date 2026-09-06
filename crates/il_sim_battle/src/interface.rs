@@ -195,6 +195,12 @@ impl ScriptedCommands {
         self.commands.len() - self.next
     }
 
+    /// The commands not yet taken, in order (a battle save keeps them so
+    /// the loaded battle's script continues; T2-101).
+    pub fn remaining_commands(&self) -> &[Command] {
+        &self.commands[self.next..]
+    }
+
     pub fn is_empty(&self) -> bool {
         self.commands.is_empty()
     }

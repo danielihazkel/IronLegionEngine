@@ -505,9 +505,10 @@ flowchart LR
 
 ### APP — integration
 
-- [ ] **T2-101 Replay recording** · S · Refs REQ-SAVE-005 (early), TDD §14 `Replay`
+- [x] **T2-101 Replay recording** · S · Refs REQ-SAVE-005 (early), TDD §14 `Replay`
   Record `BattleSetup` plus the per-tick command stream and per-tick hashes to `replays/<timestamp>.ilrp` during every battle (Phase 3 adds checkpoints and the viewer). `il_cli replay --verify` re-simulates and compares hashes.
   **Done when** a replay of a full AI-versus-AI battle verifies.
+  Done 2026-09-06: `il_save` (the ILSV container: JSON header with engine and schema versions, mods, content and mod-list hashes, a UTC timestamp and `compression: "none"`; postcard `Replay` and `BattleSave` bodies; `verify`), the session as recorder (fed commands and the engine AI's kept apart, plan I1, so playback and verification run with the AI on and match bit for bit; one hash per tick), `il_app` writes `replays/<stem>-<stamp>.ilrp` once per battle at Ended, Quit, a load over it and the window closing, `--replay` watch-only playback with the hash check in the title, quick save/load (`Ctrl+S`/`Ctrl+L`, `saves/quick.ilsv`; REQ-SAVE-006 on the Phase 2 list), `Transition::LoadSave`; `il_cli replay [--verify] [--force]` and `autoresolve --record-replay`; the nightly records `ai_skirmish_300` to its end and verifies it on eight threads. Tests: `il_save` unit tests, `crates/il_app/src/session.rs` (a recording verifies on 1 and 8 threads, a corrupted hash names its tick, save at 400 / load / hashes to 800 equal and the loaded replay verifies from 0, playback), `crates/il_cli/tests/replay.rs`. Casualties on the HUD now derive from the regiment rows so they survive a load. `ai_skirmish_300` to its end (release, 1 thread): see the nightly job's log.
 
 ### TEST — scenarios and performance
 

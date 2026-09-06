@@ -147,7 +147,17 @@
       duration: "Duration {time}",
       side: "Side {side}",
       line: "{survivors} survivors · {killed} killed · {fled} fled · general {fate} · loot {loot}",
+      replay: "Replay saved to {path}",
       back: "Back to the menu",
+    },
+    // Replays and battle saves (T2-101).
+    replay: {
+      saved: "Quick save written to {path}",
+      save_failed: "Quick save failed: {error}",
+      not_now: "Quick save is not possible now (the battle ended or this is a playback)",
+      title_ok: "replay OK",
+      title_mismatch: "replay MISMATCH at tick {tick}",
+      title_playing: "replay {tick}/{ticks}",
     },
     fate: { alive: "alive", wounded: "wounded", dead: "dead", captured: "captured" },
     morale: {

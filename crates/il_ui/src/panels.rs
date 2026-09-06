@@ -180,6 +180,8 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
 /// The result screen model (T2-070; the full screen is T2-091).
 pub struct ResultModel<'a> {
     pub result: &'a il_sim_battle::BattleResult,
+    /// Where the battle's replay was written (T2-101), if it was.
+    pub replay_path: Option<&'a str>,
     pub locale: &'a Locale,
 }
 
@@ -231,6 +233,9 @@ pub fn result_window(ctx: &egui::Context, model: &ResultModel<'_>) -> bool {
                         ui.end_row();
                     }
                 });
+            if let Some(path) = model.replay_path {
+                ui.label(l.fmt("il.result.replay", &[("path", &path)]));
+            }
             if ui.button(l.get("il.result.back")).clicked() {
                 back = true;
             }

@@ -29,3 +29,11 @@ jobs:
 
       - name: Run the bands (50 seeds each)
         run: cargo test --release -p il_tests --test scenarios -- --ignored --nocapture
+
+      # T2-101 (REQ-SAVE-005): record a full AI-versus-AI battle and verify
+      # its replay by re-simulation on eight threads. Nothing binary is
+      # committed; this is the `tests/replays/` of TDD §17.
+      - name: Record and verify a replay
+        run: |
+          cargo run --release -p il_cli -- autoresolve tests/scenarios/ai_skirmish_300.json5 --record-replay target/nightly.ilrp
+          cargo run --release -p il_cli -- replay target/nightly.ilrp --verify --threads 8

@@ -4,16 +4,22 @@
 //! Speed multipliers scale the accumulator, never the tick length. Pause sets
 //! the multiplier to zero and is also recorded as a `Pause` command so replays
 //! and peers see it (SIM-DET-008). Events and rejected commands are routed
-//! to a ring the developer panel shows (T1-070 routing stub; audio and the
-//! HUD subscribe in their phases).
+//! to a ring the developer panel shows (T1-070 routing stub; audio subscribes
+//! in its phase). The session is also the replay recorder (T2-101, plan I1):
+//! it keeps what it fed the sim, what the engine AI produced and every tick's
+//! hash, can snapshot itself into a battle save and continue from one, and
+//! can play a recording back with the AI on, checking every hash.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
-use il_core::{PlayerId, Scalar, TICK_SECONDS, Tick};
+use il_core::{PlayerId, Scalar, StateHash, TICK_SECONDS, Tick};
+use il_data::Registries;
 use il_render::Corpse;
+use il_save::{BattleSave, Replay, SaveError};
 use il_sim_battle::{
-    BattleEvent, BattleWorld, Command, CommandKind, NoopObserver, ScriptedCommands, StageObserver,
-    StepOutput,
+    BattleEvent, BattlePhase, BattleSetup, BattleWorld, Command, CommandKind, NoopObserver,
+    ScriptedCommands, Snapshot, StageObserver, StepOutput,
 };
 use il_ui::EventLine;
 
@@ -27,6 +33,18 @@ pub const MAX_CATCHUP_TICKS: u32 = 4;
 /// Events kept for the developer panel.
 pub const EVENT_RING: usize = 256;
 
+/// Live play, or the watch-only playback of a recording (plan decision 18).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SessionMode {
+    Live,
+    Replay {
+        /// The recorded hash per tick, tick 1 first.
+        expected: Vec<StateHash>,
+        /// The first tick whose hash differed from the recording.
+        mismatch: Option<Tick>,
+    },
+}
+
 pub struct BattleSession {
     pub world: BattleWorld,
     accumulator: f64,
@@ -39,8 +57,13 @@ pub struct BattleSession {
     pending: Vec<Command>,
     /// The scenario's scripted stream, fed tick by tick (T1-081).
     script: ScriptedCommands,
-    /// Every command handed to the sim, in order: the replay-to-be (T2-101).
+    /// Every command handed to the sim, in order: the replay (T2-101).
     command_log: Vec<Command>,
+    /// Every command the engine AI produced (`StepOutput.ai_commands`),
+    /// kept apart from the fed ones (plan I1).
+    ai_log: Vec<Command>,
+    /// One state hash per completed tick.
+    hashes: Vec<StateHash>,
     /// The last `EVENT_RING` events and rejections, oldest first.
     events: VecDeque<EventLine>,
     /// Fallen soldiers kept for `combat.corpse_ticks` (T2-022, SIM-CORE-008).
@@ -49,17 +72,9 @@ pub struct BattleSession {
     result: Option<il_sim_battle::BattleResult>,
     /// Players whose sides go to the engine AI at tick 1 (`--ai`, T2-081).
     ai_players: Vec<PlayerId>,
-    /// Per side, the soldiers lost so far, tallied from the events
-    /// (T2-090, plan decision 11): the casualties line reads these.
-    casualties: Vec<SideCasualties>,
-}
-
-/// One side's running losses (T2-090); `alive` comes from the view.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct SideCasualties {
-    pub killed: u32,
-    pub fled: u32,
-    pub withdrawn: u32,
+    mode: SessionMode,
+    /// The scenario file's stem, for the replay's file name.
+    scenario_stem: String,
 }
 
 impl BattleSession {
@@ -80,12 +95,134 @@ impl BattleSession {
             pending: Vec::new(),
             script,
             command_log: Vec::new(),
+            ai_log: Vec::new(),
+            hashes: Vec::new(),
             events: VecDeque::with_capacity(EVENT_RING),
             corpses: Vec::new(),
             result: None,
             ai_players,
-            casualties: Vec::new(),
+            mode: SessionMode::Live,
+            scenario_stem: String::from("battle"),
         }
+    }
+
+    /// Names the replay file after the scenario.
+    pub fn with_stem(mut self, stem: impl Into<String>) -> Self {
+        self.scenario_stem = stem.into();
+        self
+    }
+
+    pub fn scenario_stem(&self) -> &str {
+        &self.scenario_stem
+    }
+
+    /// Playback of a recording (plan decision 18): the setup's world, the
+    /// fed commands as the script, the AI on (plan I1), no local commands.
+    pub fn from_replay(
+        replay: Replay,
+        regs: Arc<Registries>,
+        threads: usize,
+    ) -> Result<Self, SaveError> {
+        let mut world =
+            BattleWorld::new(&replay.setup, regs).map_err(|e| SaveError::Setup(e.to_string()))?;
+        world.set_threads(threads.max(1));
+        let mut s = Self::new(
+            world,
+            PlayerId(0),
+            ScriptedCommands::new(replay.commands),
+            Vec::new(),
+        );
+        s.mode = SessionMode::Replay {
+            expected: replay.hashes,
+            mismatch: None,
+        };
+        Ok(s)
+    }
+
+    /// Continues a battle save (plan I12, REQ-SAVE-006): the snapshot's
+    /// world, the logs and hashes so far, the script's remainder.
+    pub fn from_save(
+        save: BattleSave,
+        regs: Arc<Registries>,
+        threads: usize,
+    ) -> Result<Self, SaveError> {
+        let snapshot =
+            Snapshot::from_bytes(&save.snapshot).map_err(|e| SaveError::Decode(e.to_string()))?;
+        let mut world =
+            BattleWorld::restore(&snapshot, regs).map_err(|e| SaveError::Decode(e.to_string()))?;
+        world.set_threads(threads.max(1));
+        let mut s = Self::new(
+            world,
+            save.local_player,
+            ScriptedCommands::new(save.script),
+            Vec::new(),
+        );
+        s.next_seq = save
+            .replay
+            .commands
+            .iter()
+            .filter(|c| c.player == save.local_player)
+            .map(|c| c.seq.wrapping_add(1))
+            .max()
+            .unwrap_or(0);
+        s.command_log = save.replay.commands;
+        s.ai_log = save.replay.ai_commands;
+        s.hashes = save.replay.hashes;
+        s.scenario_stem = save.scenario_stem;
+        Ok(s)
+    }
+
+    pub fn mode(&self) -> &SessionMode {
+        &self.mode
+    }
+
+    pub fn is_replay(&self) -> bool {
+        matches!(self.mode, SessionMode::Replay { .. })
+    }
+
+    /// Playback: every recorded tick has been stepped.
+    pub fn replay_finished(&self) -> bool {
+        match &self.mode {
+            SessionMode::Replay { expected, .. } => self.hashes.len() >= expected.len(),
+            SessionMode::Live => false,
+        }
+    }
+
+    /// Playback: the first tick that disagreed with the recording.
+    pub fn replay_mismatch(&self) -> Option<Tick> {
+        match &self.mode {
+            SessionMode::Replay { mismatch, .. } => *mismatch,
+            SessionMode::Live => None,
+        }
+    }
+
+    /// The recording so far (T2-101); `None` for a world without a setup.
+    pub fn replay(&self) -> Option<Replay> {
+        Some(Replay {
+            setup: self.world.setup()?.clone(),
+            commands: self.command_log.clone(),
+            ai_commands: self.ai_log.clone(),
+            hashes: self.hashes.clone(),
+            checkpoints: Vec::new(),
+            ended_tick: (self.world.phase() == BattlePhase::Ended).then(|| self.world.tick().0),
+        })
+    }
+
+    /// A battle save of this moment (plan I12); `None` without a setup.
+    pub fn save(&self) -> Option<BattleSave> {
+        Some(BattleSave {
+            snapshot: self.world.snapshot().to_bytes(),
+            replay: self.replay()?,
+            script: self.script.remaining_commands().to_vec(),
+            local_player: self.local_player,
+            scenario_stem: self.scenario_stem.clone(),
+        })
+    }
+
+    /// The setup the world was built from (Rematch, T2-091).
+    #[allow(dead_code, reason = "the result screen's Rematch arrives with T2-091")]
+    pub fn setup(&self) -> Option<&BattleSetup> {
+        self.world.setup()
     }
 
     /// The battle's result once the phase is Ended (T2-070).
@@ -93,15 +230,16 @@ impl BattleSession {
         self.result.as_ref()
     }
 
-    /// Per side, the soldiers killed, fled and withdrawn so far (T2-090).
-    pub fn casualties(&self) -> &[SideCasualties] {
-        &self.casualties
-    }
-
     /// `Surrender` for every side the local player owns (T2-090, pause
     /// menu; SIM-FLOW-017).
     pub fn surrender(&mut self) {
         self.queue(CommandKind::Surrender);
+    }
+
+    /// A line for the developer panel (quick save and load notes, T2-101).
+    pub fn note(&mut self, text: String) {
+        let tick = self.world.tick();
+        self.push_event(tick, text);
     }
 
     pub fn speed(&self) -> f32 {
@@ -145,8 +283,12 @@ impl BattleSession {
         Tick(self.world.tick().0 + 1 + self.input_delay)
     }
 
-    /// Queues a command from the local player for the next tick.
+    /// Queues a command from the local player for the next tick. A
+    /// playback accepts none (the recording is the only input).
     pub fn queue(&mut self, kind: CommandKind) {
+        if self.is_replay() {
+            return;
+        }
         let command = Command {
             tick: self.target_tick(),
             player: self.local_player,
@@ -177,12 +319,16 @@ impl BattleSession {
             self.accumulator = cap;
         }
         let mut outputs = Vec::new();
-        // SIM-FLOW-010 (T2-070): nothing moves after the end.
-        while self.accumulator >= TICK && self.world.phase() != il_sim_battle::BattlePhase::Ended {
+        // SIM-FLOW-010 (T2-070): nothing moves after the end; a playback
+        // stops at the recording's end (plan I14).
+        while self.accumulator >= TICK
+            && self.world.phase() != BattlePhase::Ended
+            && !self.replay_finished()
+        {
             outputs.push(self.step_once(observer));
             self.accumulator -= TICK;
         }
-        if self.world.phase() == il_sim_battle::BattlePhase::Ended {
+        if self.world.phase() == BattlePhase::Ended || self.replay_finished() {
             self.accumulator = 0.0;
         }
         outputs
@@ -211,45 +357,30 @@ impl BattleSession {
         }
         self.command_log.extend(now.iter().cloned());
         let out = self.world.step_observed(&now, observer);
-        // Networking Spec §2.7: the AI's commands for the next tick join the
-        // log (a replay may feed them with the AI off, T2-101).
-        self.command_log.extend(out.ai_commands.iter().cloned());
+        // Networking Spec §2.7: the AI's commands for the next tick are
+        // kept apart from the fed ones (T2-101, plan I1).
+        self.ai_log.extend(out.ai_commands.iter().cloned());
+        let index = self.hashes.len();
+        self.hashes.push(out.hash);
+        if let SessionMode::Replay { expected, mismatch } = &mut self.mode
+            && mismatch.is_none()
+            && expected.get(index).is_some_and(|h| *h != out.hash)
+        {
+            *mismatch = Some(next);
+        }
         self.route_events(next, &out);
         out
     }
 
     /// Event routing (SAD §6.1): every event goes to the developer ring;
-    /// `SoldierDied` also leaves a corpse (audio and the HUD subscribe in
-    /// their phases).
+    /// `SoldierDied` also leaves a corpse (audio subscribes in its phase).
     fn route_events(&mut self, tick: Tick, out: &StepOutput) {
         let corpse_ticks = u32::from(self.world.registries().rules.combat.corpse_ticks);
         self.corpses
             .retain(|c| tick.0.saturating_sub(c.died.0) < corpse_ticks);
-        let sides = self.world.view().sides().len();
-        if self.casualties.len() < sides {
-            self.casualties.resize(sides, SideCasualties::default());
-        }
         for e in &out.events {
             if let BattleEvent::Ended { result } = e {
                 self.result = Some((**result).clone());
-            }
-            // T2-090: the casualties line's tallies (the regiment row
-            // outlives its last soldier, so the side is always known).
-            let lost = match e {
-                BattleEvent::SoldierDied { regiment, .. } => Some((*regiment, 0)),
-                BattleEvent::SoldierFled { regiment, .. } => Some((*regiment, 1)),
-                BattleEvent::SoldierWithdrew { regiment, .. } => Some((*regiment, 2)),
-                _ => None,
-            };
-            if let Some((regiment, kind)) = lost
-                && let Some(side) = self.world.view().regiment(regiment).map(|r| r.side)
-                && let Some(c) = self.casualties.get_mut(usize::from(side))
-            {
-                match kind {
-                    0 => c.killed += 1,
-                    1 => c.fled += 1,
-                    _ => c.withdrawn += 1,
-                }
             }
             if let BattleEvent::SoldierDied { regiment, pos, .. } = e
                 && corpse_ticks > 0
@@ -298,8 +429,19 @@ impl BattleSession {
         (self.accumulator / TICK).clamp(0.0, 0.999_999) as f32
     }
 
+    /// The commands fed to the sim so far.
     pub fn command_log(&self) -> &[Command] {
         &self.command_log
+    }
+
+    /// The commands the engine AI produced so far.
+    pub fn ai_log(&self) -> &[Command] {
+        &self.ai_log
+    }
+
+    /// One hash per completed tick.
+    pub fn hashes(&self) -> &[StateHash] {
+        &self.hashes
     }
 }
 
@@ -308,6 +450,7 @@ mod tests {
     use super::*;
     use il_data::Registries;
     use il_sim_battle::BattlePhase;
+    use std::path::Path;
     use std::sync::Arc;
 
     fn session() -> BattleSession {
@@ -323,6 +466,7 @@ mod tests {
         assert_eq!(s.world.tick(), Tick(1));
         assert_eq!(s.advance(TICK * 2.0).len(), 2);
         assert_eq!(s.world.tick(), Tick(3));
+        assert_eq!(s.hashes().len(), 3);
     }
 
     #[test]
@@ -385,12 +529,16 @@ mod tests {
         assert_eq!(s.events().len(), EVENT_RING);
     }
 
+    fn game_regs() -> Arc<Registries> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
+        il_cli::load_registries(&root).unwrap_or_else(|e| panic!("{e:#}"))
+    }
+
     /// A session over the flagship content with one five-man regiment.
     fn game_session() -> BattleSession {
         use il_data::ContentId;
         use il_sim_battle::{BattleSetup, GeneralSetup, RegimentSetup, SideSetup};
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
-        let regs = il_cli::load_registries(&root).unwrap_or_else(|e| panic!("{e:#}"));
+        let regs = game_regs();
         let cid = |s: &str| ContentId::new(s).unwrap();
         let setup = BattleSetup {
             map_id: cid("rome:test_field"),
@@ -428,8 +576,24 @@ mod tests {
         BattleSession::new(world, PlayerId(0), ScriptedCommands::default(), Vec::new())
     }
 
+    /// The AI-versus-AI skirmish of the determinism corpus, as a session.
+    fn skirmish_session(regs: Arc<Registries>) -> BattleSession {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../tests/scenarios/ai_skirmish_300.json5");
+        let scenario = il_cli::load_scenario(&path).unwrap();
+        let world = BattleWorld::new(&scenario.setup, regs).unwrap();
+        BattleSession::new(world, PlayerId(0), scenario.script(), Vec::new())
+            .with_stem("ai_skirmish_300")
+    }
+
+    fn run_to(s: &mut BattleSession, tick: u32) {
+        while s.world.tick().0 < tick {
+            s.advance(TICK);
+        }
+    }
+
     /// T2-081: `--ai` hands the listed players' sides to the engine at
-    /// tick 1 and the AI's commands join the log.
+    /// tick 1 and the AI's commands join the AI log (T2-101).
     #[test]
     fn ai_players_are_transferred_at_tick_one_and_logged() {
         let mut s = game_session();
@@ -448,14 +612,15 @@ mod tests {
             s.world.view().sides()[0].player == PlayerId::ENGINE_AI,
             "side 0 belongs to the engine"
         );
-        // Whatever tick 1's Stage 1 decided for the new side is logged for
-        // tick 2 (a lone regiment with nobody in sight decides nothing).
-        let logged_ai = s
-            .command_log()
-            .iter()
-            .filter(|c| c.player == PlayerId::ENGINE_AI && c.tick == Tick(2))
-            .count();
-        assert_eq!(logged_ai, outs[0].ai_commands.len());
+        // Whatever tick 1's Stage 1 decided for the new side is in the AI
+        // log for tick 2 (a lone regiment with nobody in sight decides nothing).
+        assert_eq!(s.ai_log().len(), outs[0].ai_commands.len());
+        assert!(
+            s.command_log()
+                .iter()
+                .all(|c| c.player != PlayerId::ENGINE_AI
+                    || matches!(c.kind, CommandKind::TransferControl { .. }))
+        );
     }
 
     #[test]
@@ -498,91 +663,114 @@ mod tests {
         assert!(s.advance(TICK).is_empty());
         assert_eq!(s.advance(TICK).len(), 1);
     }
-}
 
-#[cfg(test)]
-mod casualty_tests {
-    use super::*;
-    use il_core::{RegimentId, SoldierId, V2};
-
-    /// T2-090 (decision 11): deaths, flights and withdrawals are tallied per
-    /// side from the events.
+    /// T2-101 (plan I1): a recording of an AI-driven battle holds the fed
+    /// commands, the AI's commands apart, one hash per tick, and verifies
+    /// by re-simulation with the AI on.
     #[test]
-    fn casualties_are_tallied_per_side_from_events() {
-        use il_data::ContentId;
-        use il_sim_battle::{BattleSetup, GeneralSetup, RegimentSetup, SideSetup};
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
-        let regs = il_cli::load_registries(&root).unwrap_or_else(|e| panic!("{e:#}"));
-        let cid = |s: &str| ContentId::new(s).unwrap();
-        let side = |player: u8, zone: u8, id: u32, x: f32| SideSetup {
-            faction: cid("rome:rome"),
-            player: PlayerId(player),
-            deployment_zone: zone,
-            general: GeneralSetup {
-                unit_type: cid("rome:general"),
-                rank: 1,
-                name_key: String::new(),
-                bodyguard: None,
-            },
-            regiments: vec![RegimentSetup {
-                id,
-                unit_type: cid("rome:hastati"),
-                count: 5,
-                experience: 0,
-                fatigue: 0.0,
-                formation: None,
-                position: Some([x, 150.0]),
-                facing_deg: Some(0.0),
-            }],
-            reinforcements: vec![],
-            ai_profile: None,
-        };
-        let setup = BattleSetup {
-            map_id: cid("rome:test_field"),
-            seed: 1,
-            weather: Default::default(),
-            time_of_day: 12,
-            time_limit_ticks: 48_000,
-            reveal_deployment: false,
-            sides: vec![side(0, 0, 1, 300.0), side(1, 1, 2, 500.0)],
-            victory: Default::default(),
-        };
-        let world = BattleWorld::new(&setup, regs).unwrap();
-        let mut s = BattleSession::new(world, PlayerId(0), ScriptedCommands::default(), Vec::new());
-        let pos = V2::from_f32_data(300.0, 150.0);
-        let out = StepOutput {
-            hash: s.world.hash(),
-            events: vec![
-                BattleEvent::SoldierDied {
-                    id: SoldierId(0),
-                    regiment: RegimentId(0),
-                    killer: None,
-                    pos,
-                },
-                BattleEvent::SoldierDied {
-                    id: SoldierId(1),
-                    regiment: RegimentId(0),
-                    killer: None,
-                    pos,
-                },
-                BattleEvent::SoldierFled {
-                    id: SoldierId(2),
-                    regiment: RegimentId(0),
-                    pos,
-                },
-                BattleEvent::SoldierWithdrew {
-                    id: SoldierId(7),
-                    regiment: RegimentId(1),
-                    pos,
-                },
-            ],
-            rejected: Vec::new(),
-            ai_commands: Vec::new(),
-        };
-        s.route_events(Tick(1), &out);
-        let c = s.casualties();
-        assert_eq!(c.len(), 2);
-        assert_eq!((c[0].killed, c[0].fled, c[0].withdrawn), (2, 1, 0));
-        assert_eq!((c[1].killed, c[1].fled, c[1].withdrawn), (0, 0, 1));
+    fn a_recording_verifies_and_a_corrupted_hash_names_its_tick() {
+        let regs = game_regs();
+        let mut s = skirmish_session(regs.clone());
+        s.set_paused(true);
+        s.set_paused(false);
+        run_to(&mut s, 200);
+        let replay = s.replay().expect("the world has a setup");
+        assert_eq!(replay.ticks(), 200);
+        assert!(replay.ended_tick.is_none());
+        assert!(
+            !replay.ai_commands.is_empty(),
+            "two engine sides decide something in 200 ticks"
+        );
+        assert!(
+            replay
+                .commands
+                .iter()
+                .all(|c| c.player != PlayerId::ENGINE_AI),
+            "the AI's commands are not in the fed log"
+        );
+        assert_eq!(
+            replay
+                .commands
+                .iter()
+                .filter(|c| matches!(c.kind, CommandKind::Pause))
+                .count(),
+            2
+        );
+        let report = il_save::verify(&replay, regs.clone(), 1).unwrap();
+        assert!(report.ok(), "{report:?}");
+        assert_eq!(report.ticks, 200);
+        // The same recording verifies on eight threads too.
+        assert!(il_save::verify(&replay, regs.clone(), 8).unwrap().ok());
+        let mut broken = replay.clone();
+        broken.hashes[149] = StateHash(broken.hashes[149].0 ^ 1);
+        let report = il_save::verify(&broken, regs, 1).unwrap();
+        let d = report.divergence.expect("divergence found");
+        assert_eq!(d.tick, Tick(150));
+        assert_eq!(report.ticks, 150);
+    }
+
+    /// T2-101 (plan decision 14, REQ-SAVE-006): saving at tick 400 and
+    /// loading in a fresh session gives the same hashes to tick 800 as the
+    /// uninterrupted run, and the loaded session's replay covers the whole
+    /// battle from tick 0.
+    #[test]
+    fn save_and_load_keep_the_hash_sequence() {
+        let regs = game_regs();
+        let mut s = skirmish_session(regs.clone());
+        run_to(&mut s, 400);
+        let save = s.save().expect("the world has a setup");
+        assert_eq!(save.replay.ticks(), 400);
+        assert_eq!(save.scenario_stem, "ai_skirmish_300");
+        let bytes = save.to_bytes();
+        run_to(&mut s, 800);
+        let uninterrupted: Vec<StateHash> = s.hashes()[400..].to_vec();
+
+        let loaded = BattleSave::from_bytes(&bytes).unwrap();
+        let mut l = BattleSession::from_save(loaded, regs.clone(), 1).unwrap();
+        assert_eq!(l.world.tick(), Tick(400));
+        assert_eq!(l.hashes().len(), 400);
+        assert_eq!(l.scenario_stem(), "ai_skirmish_300");
+        run_to(&mut l, 800);
+        assert_eq!(
+            l.hashes()[400..],
+            uninterrupted[..],
+            "the hash sequence changed across save and load"
+        );
+        let replay = l.replay().unwrap();
+        assert_eq!(replay.ticks(), 800);
+        assert!(il_save::verify(&replay, regs, 1).unwrap().ok());
+    }
+
+    /// T2-101 (plan decision 18): a playback feeds the recording, accepts
+    /// no local commands, stops at the recording's end and notices a hash
+    /// that differs.
+    #[test]
+    fn playback_replays_the_recording_and_checks_every_hash() {
+        let regs = game_regs();
+        let mut s = skirmish_session(regs.clone());
+        run_to(&mut s, 120);
+        let replay = s.replay().unwrap();
+        let mut p = BattleSession::from_replay(replay.clone(), regs.clone(), 1).unwrap();
+        assert!(p.is_replay());
+        p.queue(CommandKind::Surrender);
+        run_to(&mut p, 120);
+        assert!(p.replay_finished());
+        assert_eq!(p.replay_mismatch(), None);
+        assert_eq!(p.hashes(), replay.hashes.as_slice());
+        assert!(
+            p.advance(TICK * 3.0).is_empty(),
+            "stops at the recording's end"
+        );
+        assert!(
+            p.command_log()
+                .iter()
+                .all(|c| !matches!(c.kind, CommandKind::Surrender)),
+            "no local command in a playback"
+        );
+        let mut broken = replay;
+        broken.hashes[59] = StateHash(broken.hashes[59].0 ^ 1);
+        let mut p = BattleSession::from_replay(broken, regs, 1).unwrap();
+        run_to(&mut p, 120);
+        assert_eq!(p.replay_mismatch(), Some(Tick(60)));
     }
 }

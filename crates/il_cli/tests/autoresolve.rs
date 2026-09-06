@@ -20,6 +20,7 @@ fn options(max_ticks: Option<u32>) -> AutoresolveOptions {
         content_root: root().join("game"),
         mods: Vec::new(),
         ai: AiPlayers::None,
+        record_replay: None,
     }
 }
 

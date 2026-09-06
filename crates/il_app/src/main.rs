@@ -8,6 +8,7 @@ mod app;
 mod battle_ui;
 mod bench;
 mod profiler;
+mod replay_io;
 mod session;
 mod state;
 
@@ -50,6 +51,16 @@ struct Args {
     /// T2-081): `--ai 1` makes any two-player scenario a fight against it.
     #[arg(long = "ai")]
     ai: Vec<u8>,
+    /// Watch a recorded battle (`.ilrp`) instead of playing one (T2-101):
+    /// no orders are taken; the title reports the hash check.
+    #[arg(long)]
+    replay: Option<PathBuf>,
+    /// Where replays are written at the end of every battle (T2-101).
+    #[arg(long, default_value = "replays")]
+    replays_dir: PathBuf,
+    /// Where the quick save lives (`quick.ilsv`; Ctrl+S / Ctrl+L, T2-101).
+    #[arg(long, default_value = "saves")]
+    saves_dir: PathBuf,
 }
 
 /// With the `dev` feature the app watches the mod folders and swaps
@@ -97,15 +108,22 @@ fn main() -> anyhow::Result<()> {
         threads: args.threads,
         bench_sprites: args.bench_sprites,
         ai: args.ai.iter().map(|p| il_core::PlayerId(*p)).collect(),
+        replays_dir: args.replays_dir.clone(),
+        saves_dir: args.saves_dir.clone(),
     };
-    let state = match &args.scenario {
-        Some(path) => AppState::Battle(Box::new(start_battle(
+    let state = match (&args.replay, &args.scenario) {
+        (Some(replay), _) => AppState::Battle(Box::new(replay_io::load_replay(
+            replay,
+            regs.clone(),
+            args.threads,
+        )?)),
+        (None, Some(path)) => AppState::Battle(Box::new(start_battle(
             path,
             regs.clone(),
             args.threads,
             launch.ai.clone(),
         )?)),
-        None => {
+        (None, None) => {
             let mut mods = vec![args.content_root.clone()];
             mods.extend(args.mods.iter().cloned());
             AppState::MainMenu(MenuState::scan(&args.scenarios_dir, mods))

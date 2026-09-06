@@ -1,0 +1,15 @@
+# il_save is the file layer for saves and replays (SAD §5.2, TDD §14; T2-101):
+# it writes and reads the ILSV container and stamps headers with the wall
+# clock, so the filesystem and `SystemTime::now` are allowed here. The sim
+# rules still hold (no fused multiply-add, no `Instant`, no `HashMap`).
+
+disallowed-methods = [
+  { path = "f32::mul_add", reason = "REQ-TECH-010: fused multiply-add rounds once; use Scalar::mul_add_rounded" },
+  { path = "f64::mul_add", reason = "REQ-TECH-010: fused multiply-add rounds once; use Scalar::mul_add_rounded" },
+  { path = "std::time::Instant::now", reason = "SIM-DET-006: no wall-clock in the sim; time is ticks" },
+]
+
+disallowed-types = [
+  { path = "std::collections::HashMap", reason = "SIM-DET-003: iteration order is unspecified; use BTreeMap or an id-sorted Vec" },
+  { path = "std::collections::HashSet", reason = "SIM-DET-003: iteration order is unspecified; use BTreeSet or an id-sorted Vec" },
+]

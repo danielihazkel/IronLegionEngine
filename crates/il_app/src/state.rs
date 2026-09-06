@@ -46,6 +46,9 @@ impl MenuState {
 pub enum Transition {
     /// Main menu: start the custom battle in this scenario file.
     StartBattle(PathBuf),
+    /// Continue the battle save at this path (quick load or the load
+    /// screen, T2-101); from a battle the session is replaced.
+    LoadSave(PathBuf),
     /// Battle: back to the main menu (the session is dropped).
     QuitToMenu,
 }
@@ -69,19 +72,31 @@ impl AppState {
         }
     }
 
-    /// Applies a transition. `start` builds the session for a scenario; on
-    /// failure the menu stays up and shows the error. `menu` rebuilds the
-    /// menu when a battle quits.
+    /// Applies a transition. `start` builds the session for a scenario and
+    /// `load` one for a battle save; on failure the menu comes up with the
+    /// error. `menu` rebuilds the menu when a battle quits.
     pub fn apply(
         self,
         transition: Transition,
         start: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
+        load: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
         menu: impl FnOnce() -> MenuState,
     ) -> Self {
         match (self, transition) {
             (AppState::MainMenu(mut m), Transition::StartBattle(path)) => match start(&path) {
                 Ok(session) => AppState::Battle(Box::new(session)),
                 Err(e) => {
+                    m.error = Some(format!("{}: {e:#}", path.display()));
+                    AppState::MainMenu(m)
+                }
+            },
+            (state, Transition::LoadSave(path)) => match load(&path) {
+                Ok(session) => AppState::Battle(Box::new(session)),
+                Err(e) => {
+                    let mut m = match state {
+                        AppState::MainMenu(m) => m,
+                        AppState::Battle(_) => menu(),
+                    };
                     m.error = Some(format!("{}: {e:#}", path.display()));
                     AppState::MainMenu(m)
                 }
@@ -128,11 +143,12 @@ mod tests {
         let state = state.apply(
             Transition::StartBattle(PathBuf::from("a.json5")),
             session,
+            failing,
             menu,
         );
         assert!(state.is_battle());
         assert!(state.session().is_some());
-        let state = state.apply(Transition::QuitToMenu, session, menu);
+        let state = state.apply(Transition::QuitToMenu, session, session, menu);
         assert!(!state.is_battle());
         match state {
             AppState::MainMenu(m) => assert_eq!(m, menu()),
@@ -144,6 +160,7 @@ mod tests {
     fn a_failed_start_stays_in_the_menu_with_the_error() {
         let state = AppState::MainMenu(menu()).apply(
             Transition::StartBattle(PathBuf::from("missing.json5")),
+            failing,
             failing,
             menu,
         );
@@ -162,17 +179,50 @@ mod tests {
 
     #[test]
     fn mismatched_transitions_are_ignored() {
-        let state = AppState::MainMenu(menu()).apply(Transition::QuitToMenu, session, menu);
+        let state =
+            AppState::MainMenu(menu()).apply(Transition::QuitToMenu, session, session, menu);
         assert!(!state.is_battle());
         let battle = AppState::Battle(Box::new(session(Path::new("x")).unwrap()));
         let tick = battle.session().unwrap().world.tick();
         let battle = battle.apply(
             Transition::StartBattle(PathBuf::from("b.json5")),
             failing,
+            failing,
             menu,
         );
         assert!(battle.is_battle());
         assert_eq!(battle.session().unwrap().world.tick(), tick);
+    }
+
+    /// T2-101: a load replaces the battle or leaves the menu; a failed load
+    /// lands in the menu with the error either way.
+    #[test]
+    fn a_load_replaces_the_session_and_a_failed_load_reports_in_the_menu() {
+        let from_menu = AppState::MainMenu(menu()).apply(
+            Transition::LoadSave(PathBuf::from("quick.ilsv")),
+            failing,
+            session,
+            menu,
+        );
+        assert!(from_menu.is_battle());
+        let battle = AppState::Battle(Box::new(session(Path::new("x")).unwrap()));
+        let replaced = battle.apply(
+            Transition::LoadSave(PathBuf::from("quick.ilsv")),
+            failing,
+            session,
+            menu,
+        );
+        assert!(replaced.is_battle());
+        let failed = replaced.apply(
+            Transition::LoadSave(PathBuf::from("gone.ilsv")),
+            failing,
+            failing,
+            menu,
+        );
+        match failed {
+            AppState::MainMenu(m) => assert!(m.error.unwrap().contains("gone.ilsv")),
+            AppState::Battle(_) => panic!("a failed load must not keep a battle"),
+        }
     }
 
     #[test]

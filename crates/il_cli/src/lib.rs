@@ -8,6 +8,7 @@ pub mod bands;
 pub mod bench;
 pub mod genart;
 pub mod genmap;
+pub mod replay;
 pub mod validate;
 
 use std::io::Write;

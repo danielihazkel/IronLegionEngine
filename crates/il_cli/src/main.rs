@@ -28,6 +28,30 @@ enum Command {
     Bands(BandsArgs),
     /// Run a scenario headless to its end and print the BattleResult as JSON (T2-071).
     Autoresolve(AutoresolveArgs),
+    /// Print a replay's header, or re-simulate it and compare every hash (T2-101).
+    Replay(ReplayArgs),
+}
+
+#[derive(Args)]
+struct ReplayArgs {
+    /// A replay file (`.ilrp`) written by il_app or `autoresolve --record-replay`.
+    file: PathBuf,
+    /// Re-simulate with the loaded content and report the first divergent
+    /// tick (exit 1); without it only the header prints.
+    #[arg(long)]
+    verify: bool,
+    /// Worker threads for the re-simulation; 1 runs the single-threaded executor.
+    #[arg(long, default_value_t = 1)]
+    threads: usize,
+    /// Mod root with mod.json5 and content/.
+    #[arg(long, default_value = "game")]
+    content_root: PathBuf,
+    /// Extra mod roots loaded after the game, in order.
+    #[arg(long = "mod")]
+    mods: Vec<PathBuf>,
+    /// Verify even when the loaded content's hash differs from the replay's.
+    #[arg(long)]
+    force: bool,
 }
 
 #[derive(Args)]
@@ -54,6 +78,9 @@ struct AutoresolveArgs {
     /// scripted commands are dropped), `none` (scripted run) or `1,2`.
     #[arg(long, default_value = "all")]
     ai: String,
+    /// Write the battle's replay (`.ilrp`) here (T2-101).
+    #[arg(long)]
+    record_replay: Option<PathBuf>,
 }
 
 #[derive(Args)]
@@ -261,6 +288,7 @@ fn main() -> anyhow::Result<()> {
                 content_root: a.content_root,
                 mods: a.mods,
                 ai: il_cli::autoresolve::AiPlayers::parse(&a.ai)?,
+                record_replay: a.record_replay,
             };
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();
@@ -268,6 +296,24 @@ fn main() -> anyhow::Result<()> {
             if !ended {
                 eprintln!("the battle did not end within the tick cap");
                 std::process::exit(2);
+            }
+            Ok(())
+        }
+        Command::Replay(a) => {
+            let opts = il_cli::replay::ReplayOptions {
+                file: a.file,
+                verify: a.verify,
+                threads: a.threads,
+                content_root: a.content_root,
+                mods: a.mods,
+                force: a.force,
+            };
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            let outcome = il_cli::replay::replay(&opts, &mut lock)?;
+            let code = outcome.exit_code();
+            if code != 0 {
+                std::process::exit(code);
             }
             Ok(())
         }

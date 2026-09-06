@@ -63,6 +63,8 @@ pub struct AutoresolveOptions {
     pub mods: Vec<PathBuf>,
     /// Players handed to the engine at tick 1 (default every player).
     pub ai: AiPlayers,
+    /// Write the battle's replay here (T2-101; the nightly verifies it).
+    pub record_replay: Option<PathBuf>,
 }
 
 /// The default tick cap of a scenario (plan I29).
@@ -130,15 +132,47 @@ pub fn autoresolve(
         })
         .collect();
 
+    let mut fed: Vec<Command> = Vec::new();
+    let mut ai_commands: Vec<Command> = Vec::new();
+    let mut hashes = Vec::new();
     while world.phase() != BattlePhase::Ended && world.tick().0 < max_ticks {
         let next = world.tick().next();
         let mut commands = script.take_for(next);
         if next == Tick(1) {
             commands.extend(transfers.iter().cloned());
         }
-        world.step(&commands);
+        let out = world.step(&commands);
+        if opts.record_replay.is_some() {
+            fed.extend(commands);
+            ai_commands.extend(out.ai_commands);
+            hashes.push(out.hash);
+        }
     }
     let ended = world.phase() == BattlePhase::Ended;
+    if let Some(path) = &opts.record_replay {
+        let replay = il_save::Replay {
+            setup: scenario.setup.clone(),
+            commands: fed,
+            ai_commands,
+            hashes,
+            checkpoints: Vec::new(),
+            ended_tick: ended.then(|| world.tick().0),
+        };
+        let stem = opts
+            .scenario
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let header = il_save::header_for(
+            world.registries(),
+            il_save::SaveKind::Replay,
+            il_save::REPLAY_VERSION,
+            Some(replay.ticks()),
+            format!("{stem}: autoresolve, {} sides", scenario.setup.sides.len()),
+        );
+        il_save::write(path, &header, &replay.to_bytes())
+            .with_context(|| format!("writing the replay {}", path.display()))?;
+    }
     let result = world.result();
     let text = serde_json::to_string_pretty(&result)?;
     match &opts.json {

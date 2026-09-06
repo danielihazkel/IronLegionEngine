@@ -81,6 +81,10 @@ pub struct Launch {
     pub bench_sprites: bool,
     /// Players handed to the engine AI at tick 1 (`--ai`, T2-081).
     pub ai: Vec<PlayerId>,
+    /// Where replays are written (T2-101, plan decision 17).
+    pub replays_dir: PathBuf,
+    /// Where the quick save lives (T2-101, plan decision 14).
+    pub saves_dir: PathBuf,
 }
 
 pub struct App {
@@ -116,6 +120,10 @@ pub struct App {
     ui_scale_user: f32,
     /// The egui zoom factor last applied (decision 7).
     zoom_applied: f32,
+    /// This battle's replay has been written (once per battle, T2-101).
+    replay_written: bool,
+    /// The replay file the last write produced (shown on the result window).
+    last_replay: Option<PathBuf>,
     started: Instant,
     last_frame: Option<Instant>,
     frames: u32,
@@ -143,12 +151,11 @@ pub fn start_battle(
     let scenario = il_cli::load_scenario(path)?;
     let mut world = BattleWorld::new(&scenario.setup, regs).map_err(|e| anyhow!("{e}"))?;
     world.set_threads(threads);
-    Ok(BattleSession::new(
-        world,
-        PlayerId(0),
-        scenario.script(),
-        ai,
-    ))
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "battle".to_string());
+    Ok(BattleSession::new(world, PlayerId(0), scenario.script(), ai).with_stem(stem))
 }
 
 fn speed_mode(run: bool) -> SpeedMode {
@@ -195,6 +202,8 @@ impl App {
             battle_ui: BattleUi::default(),
             ui_scale_user: 1.0,
             zoom_applied: 1.0,
+            replay_written: false,
+            last_replay: None,
             started: Instant::now(),
             last_frame: None,
             frames: 0,
@@ -242,7 +251,60 @@ impl App {
         self.scene = SpriteScene::default();
         self.lines.clear();
         self.battle_ui = BattleUi::default();
+        self.replay_written = false;
         self.load_terrain();
+    }
+
+    /// Writes the battle's replay once (T2-101, decision 17): at the end,
+    /// on quit, on a load over it and on the window closing. A playback
+    /// records nothing.
+    fn write_replay_now(&mut self) {
+        let Some(session) = self.state.session() else {
+            return;
+        };
+        if self.replay_written || session.is_replay() || session.hashes().is_empty() {
+            return;
+        }
+        self.replay_written = true;
+        let Some(replay) = session.replay() else {
+            return;
+        };
+        match crate::replay_io::write_replay(
+            &self.launch.replays_dir,
+            session.scenario_stem(),
+            &self.regs,
+            &replay,
+        ) {
+            Ok(path) => {
+                eprintln!("replay written to {}", path.display());
+                self.last_replay = Some(path);
+            }
+            Err(e) => eprintln!("replay not written: {e:#}"),
+        }
+    }
+
+    /// Ctrl+S (decision 14, plan I13): the quick save, refused after the
+    /// end and in a playback.
+    fn quick_save(&mut self) {
+        let path = self.launch.saves_dir.join(crate::replay_io::QUICK_SAVE);
+        let regs = self.regs.clone();
+        let Some(session) = self.state.session_mut() else {
+            return;
+        };
+        let l = &regs.locale;
+        if session.is_replay() || session.world.phase() == BattlePhase::Ended {
+            let text = l.get("il.replay.not_now").to_string();
+            session.note(text);
+            return;
+        }
+        let Some(save) = session.save() else {
+            return;
+        };
+        let text = match crate::replay_io::write_save(&path, &regs, &save) {
+            Ok(()) => l.fmt("il.replay.saved", &[("path", &path.display())]),
+            Err(e) => l.fmt("il.replay.save_failed", &[("error", &format!("{e:#}"))]),
+        };
+        session.note(text);
     }
 
     /// Opens or closes the pause menu (decision 10): opening pauses, closing
@@ -405,6 +467,14 @@ impl App {
             } else {
                 self.toggle_pause_menu();
             }
+        }
+        // T2-101: the quick save and load.
+        if self.input.pressed(&self.bindings, Action::QuickSave) {
+            self.quick_save();
+        }
+        if self.input.pressed(&self.bindings, Action::QuickLoad) {
+            let path = self.launch.saves_dir.join(crate::replay_io::QUICK_SAVE);
+            self.transition = Some(Transition::LoadSave(path));
         }
         let b = &self.bindings;
         let input = &self.input;
@@ -884,6 +954,9 @@ impl App {
             self.apply_selection_input();
             self.apply_order_input();
             self.advance_battle(dt);
+            if self.state.session().is_some_and(|s| s.result().is_some()) {
+                self.write_replay_now();
+            }
             self.build_battle_scene(screen, time);
         }
 
@@ -931,7 +1004,7 @@ impl App {
                         paused: session.paused(),
                         speed: session.speed(),
                         run: self.run,
-                        commands: session.command_log().len(),
+                        commands: session.command_log().len() + session.ai_log().len(),
                         locale: &self.regs.locale,
                     };
                     let locale = &self.regs.locale;
@@ -976,6 +1049,7 @@ impl App {
                     };
                     let pause_open = self.battle_ui.pause_open;
                     let armed = self.battle_ui.armed;
+                    let replay_path = self.last_replay.as_ref().map(|p| p.display().to_string());
                     let minimap = &mut self.battle_ui.minimap;
                     let mut hud_click = None;
                     let mut card_clicks = Vec::new();
@@ -1007,8 +1081,14 @@ impl App {
                         }
                         // T2-070: the result window once the battle ended.
                         if let Some(result) = session.result() {
-                            result_back =
-                                il_ui::result_window(ctx, &il_ui::ResultModel { result, locale });
+                            result_back = il_ui::result_window(
+                                ctx,
+                                &il_ui::ResultModel {
+                                    result,
+                                    replay_path: replay_path.as_deref(),
+                                    locale,
+                                },
+                            );
                         }
                     });
                     ui_out = Some(out);
@@ -1092,7 +1172,12 @@ impl App {
         let Some(transition) = self.transition.take() else {
             return;
         };
+        // Leaving a battle writes its replay first (T2-101, decision 17).
+        if matches!(transition, Transition::QuitToMenu | Transition::LoadSave(_)) {
+            self.write_replay_now();
+        }
         let regs = self.regs.clone();
+        let regs_load = regs.clone();
         let threads = self.launch.threads;
         let ai = self.launch.ai.clone();
         let menu = self.menu();
@@ -1100,10 +1185,37 @@ impl App {
         self.state = state.apply(
             transition,
             |path| start_battle(path, regs, threads, ai),
+            |path| crate::replay_io::load_save(path, regs_load, threads),
             || menu,
         );
         self.reset_battle_state();
         self.refresh_title();
+    }
+
+    /// ` — replay 120/600`, ` — replay OK` or ` — replay MISMATCH at tick
+    /// N` in a playback (decision 18).
+    fn replay_suffix(&self) -> String {
+        let Some(session) = self.state.session() else {
+            return String::new();
+        };
+        let l = &self.regs.locale;
+        match session.mode() {
+            crate::session::SessionMode::Live => String::new(),
+            crate::session::SessionMode::Replay { expected, .. } => {
+                let text = match session.replay_mismatch() {
+                    Some(tick) => l.fmt("il.replay.title_mismatch", &[("tick", &tick.0)]),
+                    None if session.replay_finished() => l.get("il.replay.title_ok").to_string(),
+                    None => l.fmt(
+                        "il.replay.title_playing",
+                        &[
+                            ("tick", &session.world.tick().0 as &dyn Display),
+                            ("ticks", &expected.len()),
+                        ],
+                    ),
+                };
+                format!(" — {text}")
+            }
+        }
     }
 
     fn refresh_title(&mut self) {
@@ -1151,6 +1263,7 @@ impl App {
                     ],
                 ) + &debug_suffix(self.debug)
                     + &ai_suffix(&session.world.view(), self.debug)
+                    + &self.replay_suffix()
             }
         };
         window.set_title(&title);
@@ -1287,7 +1400,10 @@ impl ApplicationHandler for App {
         };
         self.input.on_window_event(&event, consumed);
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.write_replay_now();
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
                 if let Some(r) = self.renderer.as_mut() {
                     r.resize(size.width, size.height);

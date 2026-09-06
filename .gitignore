@@ -20,3 +20,7 @@ Cargo.lock.bak
 *.swp
 .DS_Store
 Thumbs.db
+
+# Battle replays and the quick save written by il_app (T2-101)
+/replays/
+/saves/

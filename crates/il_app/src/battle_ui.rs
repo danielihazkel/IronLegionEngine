@@ -278,19 +278,26 @@ pub fn command_model<'a>(
     }
 }
 
-/// The casualties line's rows: alive from the view, losses from the
-/// session's tallies (decision 11).
+/// The casualties line's rows (decision 11), from the regiment rows: alive
+/// is the soldier count, fled the fled plus the withdrawn, killed what is
+/// left of the initial strength (as `result::compute` counts it). Read
+/// from the rows rather than tallied from events so a loaded battle
+/// (T2-101) shows the same numbers.
 pub fn tallies(session: &BattleSession) -> Vec<SideTally> {
     let view = session.world.view();
     let regs = view.regs();
     let l = &regs.locale;
-    let mut alive = vec![0u32; view.sides().len()];
+    let mut totals = vec![(0u32, 0u32, 0u32); view.sides().len()];
     for r in view.regiments() {
-        if let Some(a) = alive.get_mut(usize::from(r.side)) {
-            *a += r.soldier_count;
+        if let Some(t) = totals.get_mut(usize::from(r.side)) {
+            let fled = u32::from(r.fled) + u32::from(r.withdrawn);
+            t.0 += r.soldier_count;
+            t.1 += u32::from(r.initial)
+                .saturating_sub(r.soldier_count)
+                .saturating_sub(fled);
+            t.2 += fled;
         }
     }
-    let losses = session.casualties();
     view.sides()
         .iter()
         .enumerate()
@@ -300,13 +307,12 @@ pub fn tallies(session: &BattleSession) -> Vec<SideTally> {
                 .lookup(&s.faction)
                 .map(|h| l.get(&regs.factions.get(h).name_key).to_string())
                 .unwrap_or_else(|| l.fmt("il.result.side", &[("side", &i)]));
-            let c = losses.get(i).copied().unwrap_or_default();
             SideTally {
                 name,
                 tint: side_tint(i as u8),
-                alive: alive[i],
-                killed: c.killed,
-                fled: c.fled + c.withdrawn,
+                alive: totals[i].0,
+                killed: totals[i].1,
+                fled: totals[i].2,
             }
         })
         .collect()

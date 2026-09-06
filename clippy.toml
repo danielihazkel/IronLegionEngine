@@ -1,6 +1,6 @@
 # Applies to every crate without its own clippy.toml: the simulation crates
 # (il_core, il_ai, il_sim_battle, il_sim_campaign, game_rules) and the test and
-# bench packages. il_data, il_cli and il_app carry local files that re-allow
+# bench packages. il_data, il_save, il_cli and il_app carry local files that re-allow
 # the filesystem. SAD §5.2, §9.1; TDD §18; SIM-DET-006.
 
 disallowed-methods = [

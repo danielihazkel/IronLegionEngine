@@ -9,6 +9,7 @@ license.workspace = true
 il_core.workspace = true
 il_data.workspace = true
 il_sim_battle.workspace = true
+il_save.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 serde.workspace = true

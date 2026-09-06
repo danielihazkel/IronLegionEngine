@@ -23,6 +23,8 @@ cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --thread
 - `--ai <player>` hands that player's sides to the engine AI at tick 1, repeatable (T2-081): `--ai 1` turns any two-player scenario into a fight against the AI. The engine's sides deploy and confirm by themselves; the AI's commands join the command count in the title.
 - `--show-keys` shows localisation keys instead of text, to spot a label that bypasses the locale.
 - `--content-root <folder>` points at a different game root (default `game`).
+- `--replay <file.ilrp>` watches a recorded battle instead of playing one (T2-101): no orders are taken, the camera, pause and speed still work, and the title shows `replay 120/600`, then `replay OK` or `replay MISMATCH at tick N`.
+- `--replays-dir <folder>` (default `replays`) is where every battle's replay lands, `--saves-dir <folder>` (default `saves`) where the quick save lives (§4g).
 
 A regiment with a `position` in the file starts deployed there; a side whose every regiment has one skips the deployment phase, and when every side does the battle opens in the Battle phase (that is every file under `tests/scenarios/` except `phases_all_four.json5`). Leave the positions out and the battle opens in Deployment: the regiments stand in a battle line at their zone centre, right-click or right-drag moves the selection inside the zone (a red `OutsideDeploymentZone` in the event panel otherwise), the command card's "Deploy the army as…" picker re-lays the whole army in a group formation, `Enter` or the Confirm button next to the phase label starts the battle. A battle ends in a result window (winner, duration, per side survivors, killed, fled, the general's fate, loot) with a button back to the menu; the sim stops stepping then (T2-070).
 
@@ -65,6 +67,7 @@ Every key comes from `game/content/input/bindings.json5`; a mod may rebind any o
 | Pause | `Space`, or the HUD button |
 | Speed | `Ctrl+=` / `Ctrl+-` or the numpad `+` / `-`, or the HUD buttons |
 | Pause menu: resume, surrender, quit to the menu | `Escape`, or the HUD's Menu button (T2-090; the battle pauses while it is open) |
+| Quick save / quick load | `Ctrl+S` writes `saves/quick.ilsv`, `Ctrl+L` continues from it (T2-101; the event panel confirms the write) |
 
 Only your own regiments (player 0 in the scenarios) can be selected. A single selected regiment that is right-dragged gets its rank count from the drag width; two or more get a battle line. The selection card at the bottom lists each selected regiment's soldiers, formation, order, morale (value and state), fatigue state (fresh, active, tired, exhausted; T2-040), the ability slots with their cooldowns and the active status effects with their remaining seconds (T2-050). A refused ability (on cooldown, engaged, out of range) shows in the event panel.
 
@@ -149,6 +152,25 @@ Put the keyboard aside. Expect, in order:
 
 Things that would be wrong: a button that does nothing visible, a click on a card that also orders a move, an attack-move that goes off on the first click of the button, a minimap block for a hoplite regiment you cannot see, and a `--show-keys` run (`cargo run -p il_app -- <scenario> --show-keys`) that shows any English word instead of an `il.*` key.
 
+### 4g. Save, load and replay (Phase 2, T2-101)
+
+```
+cargo run --release -p il_app -- tests/scenarios/bands/melee_hoplites_vs_hastati.json5 --ai 1
+```
+
+1. A minute in, press `Ctrl+S`: the event panel (`F12`) prints `Quick save written to saves\quick.ilsv`. Fight on for a while, then press `Ctrl+L`: the battle jumps back to the saved moment with the same clock, cards and casualties, and continues; the replay of the battle you left is written to `replays/` first (the terminal prints its path).
+2. Let the battle end (or Surrender from the pause menu): the result window names the replay file it wrote, `replays/melee_hoplites_vs_hastati-<date>-<time>.ilrp`.
+3. Verify it headless and watch it:
+
+```
+cargo run --release -p il_cli -- replay replays/<file>.ilrp --verify --threads 8
+cargo run --release -p il_app -- --replay replays/<file>.ilrp
+```
+
+Expect `verified N ticks` from the first, and the same battle unfolding on its own in the second with `replay N/N` counting up in the title and `replay OK` at the end; a `MISMATCH` would mean the simulation no longer reproduces its own recording, which is a determinism bug. The replay of a battle you quick-loaded verifies from tick 0 too: the save carries the commands and hashes up to the save point.
+
+Things that would be wrong: a quick load that changes the clock, the casualties line or any soldier's place compared with the moment of the save; a replay that verifies headless but shows `MISMATCH` in the app (or the reverse); an order accepted during a playback.
+
 ## 5. Headless tools (`il_cli`)
 
 ```
@@ -158,6 +180,8 @@ cargo run -p il_cli -- validate game/ --deny-warnings --verbose
 cargo run --release -p il_cli -- bench --soldiers 2000 --baseline benches/baseline.json
 cargo run --release -p il_cli -- bands tests/scenarios/bands --seeds 50 --jobs 8
 cargo run -p il_cli -- autoresolve tests/scenarios/phases_all_four.json5
+cargo run --release -p il_cli -- autoresolve tests/scenarios/ai_skirmish_300.json5 --record-replay target/skirmish.ilrp
+cargo run --release -p il_cli -- replay target/skirmish.ilrp --verify --threads 8
 cargo run -p il_cli -- genmap
 cargo run -p il_cli -- genart
 ```
@@ -167,6 +191,7 @@ cargo run -p il_cli -- genart
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers, `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release.
 - `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), kill a side's general at a tick through `bands.harness: [{ tick, kill_general }]` (row 7, T2-043), and a `mean_loss_matches` or `mean_loss_below` row compares two files' mean losses after both have run (`volley_testudo.json5` must lose at most 60 % of `volley_velites_vs_hastati.json5`, T2-050).
 - `autoresolve <scenario.json5>` runs the scenario to its end (or `--max-ticks`) with the engine AI commanding every side (`--ai all`, the default; the file's scripted commands are dropped with a note) and prints the `BattleResult` as JSON (`--json F` writes it to a file); `--ai none` replays the scripted commands instead, `--ai 1` hands over player 1 only; exit code 2 when the battle did not end (T2-082). The AI band rows `ai_vs_passive` and `ai_vs_charge` (20 seeds each, the Phase 2 exit criterion) run with the others under `bands`.
+- `autoresolve --record-replay <file>` also writes the battle's replay; `replay <file> --verify` re-simulates a replay (from the app or from `autoresolve`) with the loaded content and prints `verified N ticks`, or the first divergent tick with both hashes and exit code 1 (T2-101). Without `--verify` it prints the file's header (engine and schema versions, mods, content hash, time written, tick count). A replay written by different content is refused unless `--force`; `--threads 8` proves the recording on the parallel executor. The nightly workflow records `ai_skirmish_300` to its end and verifies it.
 - `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
 
 Criterion micro-benches:
@@ -207,4 +232,5 @@ CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of both 
 - `docs/07-tasks-phase-0-2.md`: the task list and exit checklists.
 - `docs/evidence/phase1/`: the target machine spec and the profiler screenshot.
 - `benches/baseline.json`: stage timings on the target machine.
+- `replays/` and `saves/` under the working directory (ignored by git): every battle's replay and the quick save (T2-101).
 - `game/`: the flagship game as a mod; `game/content/rules/*.json5` hold every engine tunable.
