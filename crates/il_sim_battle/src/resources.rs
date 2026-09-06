@@ -381,11 +381,14 @@ pub struct BattleFlow {
     pub pursuit_start: Tick,
     /// The winning side once the phase is Ended.
     pub winner: Option<u8>,
+    /// Tick the phase became Ended (T2-071); `Tick::ZERO` before.
+    pub ended_at: Tick,
 }
 impl_hashable_struct!(BattleFlow {
     battle_start,
     pursuit_start,
-    winner
+    winner,
+    ended_at
 });
 
 /// The setup this battle was built from; stored in snapshots so restore can

@@ -586,6 +586,25 @@ Three Phase 1 kinds without a section of their own; their schemas are the refere
 - **Zone types** (`zone-type.schema.json`, Simulation Spec §5.4): `id`, `name_key`, `move_mult`, `move_cost` (≥ 1.0), `colour` (terrain palette) required; optional `passable` (default true), `crossing` (a river cell under a crossing zone is passable: fords and bridges are zone polygons over the river), `los_mult`, `conceal`, `fatigue_mult`, `formation_integrity_mult` (read from Phase 2). Maps reference zone types by Content ID in `base_zone` and `zones[].type`; the game ships `rome:open|road|forest|marsh|rock|ford|bridge`.
 - **Sprite sets** (`sprite-set.schema.json`, TDD §10): `id`, `atlas` (PNG path under `assets_root`), `frame_w`, `frame_h`, `facings` (rows, 8), `columns`, `origin` (ground point in frame pixels), `anims` (name → columns and rate). Units reference them through `sprite_set`; `il_cli genart` regenerates the placeholder sheets and tables.
 
+### 4.13 Scenario files — a `BattleSetup` on disk
+
+A scenario file (`tests/scenarios/*.json5`, `il_cli run`, `il_cli autoresolve`, the main menu's custom battle; REQ-SIM-063, Simulation Spec SIM-FLOW-019) is a `BattleSetup` object with an optional `commands` list; band files add a `bands` block (§15.3 of the Simulation Spec). Regiment ids are the 0-based spawn order across sides (side 0's regiments first), not the file's `id` fields.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `map_id` | id | required | Map Content ID |
+| `seed` | i | required | RNG seed |
+| `weather`, `time_of_day` | enum, i | `clear`, 12 | Inert until Phase 4 |
+| `time_limit_ticks` | i | 48000 | Battle timer (SIM-FLOW-012) |
+| `reveal_deployment` | bool | false | Full visibility during the deployment (SIM-VIS-006) |
+| `victory.timeout_winner` | i | | The side that wins on the timer; without it the rules policy decides (SIM-FLOW-013) |
+| `sides[].faction`, `player` | id, i | required | Owner player id; 255 is the engine AI (deploys and confirms by itself) |
+| `sides[].deployment_zone` | i | 0 | Index of the map's deployment polygon |
+| `sides[].general` | object | required | `{ unit_type, rank (1), name_key, bodyguard (the first regiment's id) }` |
+| `sides[].regiments[]` | object | required | `{ id, unit_type, count, experience (0), fatigue (0), formation (the unit's first), position, facing_deg }`; a `position` pre-deploys the regiment (a fully placed side starts confirmed, a fully placed battle starts in the Battle phase), otherwise it is auto-placed at the zone centre and awaits `Deploy` |
+| `sides[].reinforcements[]` | object | `[]` | `{ arrival_tick (since the Battle phase began), edge ("north" … as the map lists for the zone), regiments }` (SIM-FLOW-016) |
+| `commands[]` | object | `[]` | `{ tick, player, seq, kind }`, `kind` an externally tagged `CommandKind` (`{ Move: {...} }`, `"ConfirmDeployment"`), applied at Stage 0 of `tick` |
+
 ## 5. Tier 2 Lua
 
 ### 5.1 Sandbox setup

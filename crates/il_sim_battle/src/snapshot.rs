@@ -45,7 +45,8 @@ use crate::world::{BattleWorld, InstallMapError};
 ///    `cooldowns` and `statuses`, `SideState` gained `surrendered` and
 ///    `reinforcements_spawned`, the battle-flow timers replaced `timer`,
 ///    and the per-side visibility masks and memory are stored.
-pub const SNAPSHOT_VERSION: u32 = 7;
+/// 8: `BattleFlow.ended_at` (T2-071).
+pub const SNAPSHOT_VERSION: u32 = 8;
 
 /// A ranged regiment's `Fire` component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

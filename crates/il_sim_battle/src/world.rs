@@ -278,6 +278,12 @@ impl BattleWorld {
     /// query states behind it are cached and refreshed by `step`.
     /// SIM-GEN-004: the side's general's fate given whether the side lost
     /// (T2-043; `BattleResult` decides `lost` in T2-071).
+    /// SIM-FLOW-018 (T2-071, plan decision 23): the result as it stands now;
+    /// `winner` is set only once the phase is Ended.
+    pub fn result(&self) -> crate::interface::BattleResult {
+        crate::result::compute(&self.world)
+    }
+
     pub fn general_fate(&self, side: u8, lost: bool) -> crate::interface::GeneralFate {
         crate::morale::general_fate(&self.world, side, lost)
     }
@@ -366,11 +372,12 @@ mod tests {
     /// Golden: the hash of an empty world at seed 42 after 0, 1 and 2 ticks.
     /// Changes whenever the hash layout or the RNG seeding changes
     /// (re-baselined in T2-040 when the morale shock queue joined the
-    /// layout, and in T2-050 when the battle flow and visibility masks did).
+    /// layout, in T2-050 when the battle flow and visibility masks did, and
+    /// in T2-071 when `BattleFlow.ended_at` did).
     const GOLDEN: [u64; 3] = [
-        0x3981_1060_1ede_d138,
-        0xfcf5_8e8f_2e3e_b393,
-        0x3c6b_e55b_2721_5c17,
+        0xd81d_a497_5bbf_bd08,
+        0xf6eb_b5a6_1995_2d4b,
+        0x9e75_7269_52cd_5ef0,
     ];
 
     #[test]

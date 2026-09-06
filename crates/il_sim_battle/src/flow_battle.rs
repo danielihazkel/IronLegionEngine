@@ -366,6 +366,7 @@ fn set_phase(world: &mut World, to: BattlePhase, tick: Tick) {
         .0
         .push(tick, BattleEvent::PhaseChanged { from, to });
     if to == BattlePhase::Ended {
+        world.resource_mut::<BattleFlow>().ended_at = tick;
         let result = crate::result::compute(world);
         world.resource_mut::<Events>().0.push(
             tick,

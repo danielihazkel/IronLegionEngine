@@ -526,7 +526,8 @@ pub fn run_seed(
                 }
             }
         }
-        let done = now.contains(&0);
+        // A side annihilated on the field, or the battle over (T2-071).
+        let done = now.contains(&0) || world.phase() == il_sim_battle::BattlePhase::Ended;
         counts.push(now);
         fled_counts.push(fled_now);
         if done {

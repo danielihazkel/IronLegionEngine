@@ -3,6 +3,7 @@
 //! The `run` subcommand lives here so integration tests can drive it
 //! in-process; `main.rs` is a thin clap wrapper.
 
+pub mod autoresolve;
 pub mod bands;
 pub mod bench;
 pub mod genart;

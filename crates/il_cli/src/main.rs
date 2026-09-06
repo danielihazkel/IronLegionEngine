@@ -26,6 +26,30 @@ enum Command {
     Validate(ValidateArgs),
     /// Run the scenario outcome bands over many seeds and print the table (T2-110).
     Bands(BandsArgs),
+    /// Run a scenario headless to its end and print the BattleResult as JSON (T2-071).
+    Autoresolve(AutoresolveArgs),
+}
+
+#[derive(Args)]
+struct AutoresolveArgs {
+    /// Scenario file: a BattleSetup plus optional scripted commands.
+    scenario: PathBuf,
+    /// Stop after this many ticks even if the battle has not ended (exit 2);
+    /// default: the time limit plus the deployment timeout and the pursuit.
+    #[arg(long)]
+    max_ticks: Option<u32>,
+    /// Worker threads; 1 runs the single-threaded executor.
+    #[arg(long, default_value_t = 1)]
+    threads: usize,
+    /// Write the JSON here instead of stdout.
+    #[arg(long)]
+    json: Option<PathBuf>,
+    /// Mod root with mod.json5 and content/.
+    #[arg(long, default_value = "game")]
+    content_root: PathBuf,
+    /// Extra mod roots loaded after the game, in order.
+    #[arg(long = "mod")]
+    mods: Vec<PathBuf>,
 }
 
 #[derive(Args)]
@@ -221,6 +245,24 @@ fn main() -> anyhow::Result<()> {
             let report = il_cli::bands::run_bands(&opts, &mut lock)?;
             if report.failed > 0 {
                 std::process::exit(1);
+            }
+            Ok(())
+        }
+        Command::Autoresolve(a) => {
+            let opts = il_cli::autoresolve::AutoresolveOptions {
+                scenario: a.scenario,
+                max_ticks: a.max_ticks,
+                threads: a.threads,
+                json: a.json,
+                content_root: a.content_root,
+                mods: a.mods,
+            };
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            let (_, ended) = il_cli::autoresolve::autoresolve(&opts, &mut lock)?;
+            if !ended {
+                eprintln!("the battle did not end within the tick cap");
+                std::process::exit(2);
             }
             Ok(())
         }

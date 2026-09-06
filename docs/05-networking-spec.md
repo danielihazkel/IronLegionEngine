@@ -314,7 +314,7 @@ Per local tick the session layer:
 |---|---|
 | Peer misses batches for `disconnect_timeout` (default 10 s, lobby option 5–60 s) | Host broadcasts `Control::PlayerDropped { player, at_tick }`. Every peer converts this into `Command::TransferControl { from: player, to: PlayerId(255), tick: at_tick + input_delay }` issued as `PlayerId(0)` so it is ordered identically. The dropped player's Regiments become AI-controlled. Ticks stalled waiting for the dropped player are unblocked by treating its batches as empty from `at_tick` on. |
 | Dropped peer reconnects within `rejoin_window` (default 120 s) | Handshake again; Host sends `Resync { snapshot_tick, snapshot }` (latest Host snapshot, taken every 100 ticks) plus all `CmdBatch` frames since `snapshot_tick`. Peer restores, replays Commands to the Host's current tick (fast-forward, no rendering), then the Host issues `TransferControl` back to the player. |
-| Host disconnects | The battle ends for everyone with `BattleResult::Aborted` unless host migration is implemented (OQ-N2). |
+| Host disconnects | The battle ends for everyone with a result that has no winner (`BattleWorld::result()` at the last agreed tick, `winner: None`; T2-071) unless host migration is implemented (OQ-N2). |
 | Peer leaves voluntarily | Same as timeout, immediate. |
 
 ### 4.6 End and BattleResult agreement

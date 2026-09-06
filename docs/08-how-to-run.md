@@ -27,6 +27,8 @@ A regiment with a `position` in the file starts deployed there; a side whose eve
 
 `move_reform_2000.json5` starts with ten regiments north of the river and a scripted command stream: at one second everyone runs south over the bridge and the ford, later some change formation, wheel, form a battle line and march back. `idle_1000.json5` is a thousand soldiers standing still. The band files under `tests/scenarios/bands/` are small fights (§4a, §4b).
 
+The scenario file format is in the Modding SDK §4.13.
+
 The window title is the quick telemetry line: tick, soldiers drawn, sim milliseconds per tick, speed, selection size, commands recorded, zoom, rotation.
 
 ## 3. Controls
@@ -120,6 +122,7 @@ cargo run -p il_cli -- run tests/scenarios/move_reform_2000.json5 --ticks 10000 
 cargo run -p il_cli -- validate game/ --deny-warnings --verbose
 cargo run --release -p il_cli -- bench --soldiers 2000 --baseline benches/baseline.json
 cargo run --release -p il_cli -- bands tests/scenarios/bands --seeds 50 --jobs 8
+cargo run -p il_cli -- autoresolve tests/scenarios/phases_all_four.json5
 cargo run -p il_cli -- genmap
 cargo run -p il_cli -- genart
 ```
@@ -128,6 +131,7 @@ cargo run -p il_cli -- genart
 - `validate` loads the mod roots you list and prints every diagnostic with file, line and column; exit code 1 on errors.
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers, `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release.
 - `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), kill a side's general at a tick through `bands.harness: [{ tick, kill_general }]` (row 7, T2-043), and a `mean_loss_matches` or `mean_loss_below` row compares two files' mean losses after both have run (`volley_testudo.json5` must lose at most 60 % of `volley_velites_vs_hastati.json5`, T2-050).
+- `autoresolve <scenario.json5>` runs the scenario to its end (or `--max-ticks`) with its scripted commands and prints the `BattleResult` as JSON (`--json F` writes it to a file); exit code 2 when the battle did not end. Until the battle AI lands (T2-082) a scenario without commands only ends by the time limit.
 - `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
 
 Criterion micro-benches:

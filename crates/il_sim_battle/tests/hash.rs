@@ -39,12 +39,13 @@ use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 /// T2-043 when the generals began riding with their bodyguards; and in
 /// T2-050 when the milestone 4 fields (battle flow, side flags, energy,
 /// cooldowns, statuses, withdrawn, visibility masks) joined the layout; and
-/// in T2-060 when the visibility masks were first filled).
+/// in T2-060 when the visibility masks were first filled; and in T2-071 when
+/// `BattleFlow.ended_at` joined the layout).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0xd700_5b76_faa8_f806;
+const GOLDEN_FRESH: u64 = 0x47b3_f39d_4615_8784;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0xeb4e_72bf_6fac_55ee;
+const GOLDEN_1000: u64 = 0xda06_40ce_114c_343b;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -616,6 +617,12 @@ fn every_hashed_field_changes_the_hash() {
         "pursuit start",
         Box::new(|w| {
             w.ecs_mut().resource_mut::<BattleFlow>().pursuit_start = Tick(3);
+        }),
+    ));
+    cases.push((
+        "ended at",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<BattleFlow>().ended_at = Tick(3);
         }),
     ));
     cases.push((
