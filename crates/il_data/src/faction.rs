@@ -1,10 +1,11 @@
-//! `Faction` (Modding SDK §4.3, `faction.schema.json`). Phase 1 keeps the
-//! campaign-side references (`ai_profile`, `tech_tree`) as ContentIds; their
-//! kinds arrive in Phase 2 and Phase 4.
+//! `Faction` (Modding SDK §4.3, `faction.schema.json`). `ai_profile`
+//! resolves to a handle since T2-080; `tech_tree` stays a ContentId until
+//! Phase 4 brings the kind.
 
 use il_core::{S, StateHasher};
 use serde::Deserialize;
 
+use crate::ai::AiProfile;
 use crate::content_id::ContentId;
 use crate::de::{Rgb, de_s, s};
 use crate::handle::Handle;
@@ -53,6 +54,9 @@ pub struct Faction {
     #[serde(default)]
     pub starting_provinces: Vec<String>,
     pub ai_profile: ContentId,
+    /// Resolved from `ai_profile` (T2-080).
+    #[serde(skip)]
+    pub ai_profile_handle: Option<Handle<AiProfile>>,
     #[serde(default)]
     pub diplomacy_personality: DiplomacyPersonality,
     pub tech_tree: ContentId,
@@ -79,6 +83,14 @@ impl ContentKind for Faction {
                     KindTag::Unit,
                 )),
             }
+        }
+        self.ai_profile_handle = lookup.handle::<AiProfile>(&self.ai_profile);
+        if self.ai_profile_handle.is_none() {
+            errors.push(ResolveError::new(
+                "ai_profile",
+                self.ai_profile.clone(),
+                KindTag::AiProfile,
+            ));
         }
     }
 

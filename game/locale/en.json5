@@ -4,6 +4,7 @@
 {
   rome: {
     mod: { name: "Iron Legion: Rome" },
+    ai: { default: { name: "Standard commander" } },
     units: {
       hastati: { name: "Hastati" },
       general: { name: "Roman general" },

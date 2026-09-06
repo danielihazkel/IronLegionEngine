@@ -3,8 +3,77 @@
 
 mod common;
 
-use il_core::{RegimentId, S, Scalar, SoldierId, Tick};
-use il_sim_battle::{BattleWorld, RestoreError, SNAPSHOT_VERSION, Snapshot};
+use il_core::{RegimentId, S, Scalar, SoldierId, Tick, V2};
+use il_sim_battle::{
+    AiState, ArmyPlan, Assignment, BattleWorld, Command, CommandKind, RestoreError, Role,
+    SNAPSHOT_VERSION, Snapshot, Stance,
+};
+
+/// T2-080: the AI outbox and plans are stored verbatim, and a restored
+/// outbox applies at the next tick exactly as the original one.
+#[test]
+fn ai_outbox_and_plans_survive_a_round_trip() {
+    let mut original = common::world(50);
+    for _ in 0..5 {
+        original.step(&[]);
+    }
+    let next = original.tick().next();
+    let regiment = original.regiment_ids().next().unwrap();
+    {
+        let mut ai = original.ecs_mut().resource_mut::<AiState>();
+        ai.outbox.push(Command {
+            tick: next,
+            player: il_core::PlayerId::ENGINE_AI,
+            seq: 0,
+            kind: CommandKind::Move {
+                regiments: vec![regiment],
+                target: V2::from_f32_data(320.0, 150.0),
+                facing: None,
+                speed: il_sim_battle::SpeedMode::Walk,
+            },
+        });
+        let plan = ArmyPlan {
+            stance: Stance::Attack,
+            stance_score: S::from_f32_data(0.7),
+            decided_at: Tick(5),
+            target: V2::from_f32_data(500.0, 150.0),
+            line_anchor: V2::from_f32_data(300.0, 150.0),
+            line_facing: il_core::Angle::default(),
+            line_width: S::from_i32(60),
+            formed: true,
+            assignments: vec![Assignment {
+                regiment,
+                role: Role::Flank {
+                    slot: V2::from_f32_data(1.0, 2.0),
+                    charge: Some(RegimentId(1)),
+                },
+            }],
+            charging: false,
+        };
+        ai.plans = vec![Some(plan), None];
+    }
+    original.recompute_hash();
+    let snap = original.snapshot();
+    assert_eq!(snap.ai.outbox.len(), 1);
+    assert_eq!(snap.ai.plans[0].as_ref().unwrap().stance, Stance::Attack);
+    let decoded = Snapshot::from_bytes(&snap.to_bytes()).unwrap();
+    let mut restored = BattleWorld::restore(&decoded, common::regs()).unwrap();
+    assert_eq!(restored.hash(), original.hash());
+    assert_eq!(
+        restored.ecs().resource::<AiState>(),
+        original.ecs().resource::<AiState>()
+    );
+    // The outbox is fed to Stage 0 of the next tick on both sides: the move
+    // is NotOwner (player 0 owns the regiment), rejected identically, and
+    // the outbox is empty afterwards (no side belongs to the engine).
+    let a = original.step(&[]);
+    let b = restored.step(&[]);
+    assert_eq!(a.hash, b.hash);
+    assert_eq!(a.rejected.len(), 1);
+    assert_eq!(a.rejected, b.rejected);
+    assert!(a.ai_commands.is_empty() && b.ai_commands.is_empty());
+    assert!(original.ecs().resource::<AiState>().outbox.is_empty());
+}
 
 #[test]
 fn round_trip_preserves_hash_and_continues_identically() {

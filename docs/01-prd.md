@@ -369,7 +369,7 @@ Simulation tick rate and render frame rate are independent. The simulation runs 
 | REQ-AI-004 | Campaign AI shall manage expansion, diplomacy, economy, recruitment, and army movement with a data-defined personality. | M | 4 |
 | REQ-AI-005 | AI decisions shall be issued as Commands and shall be deterministic. | M | 2 |
 | REQ-AI-006 | AI shall run within the sim tick budget by decision cadence (regiment AI every N ticks, staggered). | M | 2 |
-| REQ-AI-007 | Consideration weights and AI personalities shall be moddable in JSON5. | S | 6 |
+| REQ-AI-007 | Consideration weights and AI personalities shall be moddable in JSON5. | S | 6 (delivered early in T2-080: `content/ai/actions/`, `content/ai/profiles/`) |
 
 ## 20. Rendering
 

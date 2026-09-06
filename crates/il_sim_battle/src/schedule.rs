@@ -12,6 +12,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 
 use crate::abilities::ability_tick;
+use crate::ai::ai_decide;
 use crate::combat::{
     apply_outcomes, melee_attack, melee_gate, melee_recount, melee_target, projectile_stage,
     pursue_update, ranged_fire, ranged_spawn, ranged_target, resolve_deaths, resolve_fled,
@@ -99,16 +100,18 @@ impl Stage {
     }
 
     /// SIM-FLOW-010 (T2-070, plan I17): the stages a phase runs. Deployment
-    /// takes commands, keeps the grids and the fog current and watches the
-    /// confirmations; Ended takes only `Pause`/`SetSpeed` and hashes;
-    /// Battle and Pursuit run everything. Checked per stage in `step`, so
-    /// no system needs a phase guard.
+    /// takes commands, lets the AI place its sides (Stage 1, T2-080), keeps
+    /// the grids and the fog current and watches the confirmations; Ended
+    /// takes only `Pause`/`SetSpeed` and hashes; Battle and Pursuit run
+    /// everything. Checked per stage in `step`, so no system needs a phase
+    /// guard.
     pub fn runs_in(self, phase: crate::resources::BattlePhase) -> bool {
         use crate::resources::BattlePhase;
         match phase {
             BattlePhase::Deployment => matches!(
                 self,
                 Stage::ApplyCommands
+                    | Stage::Ai
                     | Stage::SpatialGrid
                     | Stage::Visibility
                     | Stage::BattleFlow
@@ -159,16 +162,12 @@ impl StageObserver for NoopObserver {
     fn end(&mut self, _stage: Stage) {}
 }
 
-// Placeholder systems, one per stage without real systems yet, so every
-// stage shows up in the profiler with its own timing.
-fn stage_ai() {}
-
 fn stage_schedule(stage: Stage) -> Schedule {
     let mut s = Schedule::new(stage);
     s.set_executor(SingleThreadedExecutor::new());
     match stage {
         Stage::ApplyCommands => s.add_systems(apply_commands.in_set(stage)),
-        Stage::Ai => s.add_systems(stage_ai.in_set(stage)),
+        Stage::Ai => s.add_systems(ai_decide.in_set(stage)),
         Stage::Formation => s.add_systems(
             (formation_layout, formation_apply, formation_integrity)
                 .chain()
@@ -226,5 +225,14 @@ mod tests {
         names.dedup();
         assert_eq!(names.len(), Stage::COUNT);
         assert_eq!(build_schedules().len(), Stage::COUNT);
+    }
+
+    #[test]
+    fn deployment_runs_the_ai_stage() {
+        use crate::resources::BattlePhase;
+        assert!(Stage::Ai.runs_in(BattlePhase::Deployment));
+        assert!(!Stage::Formation.runs_in(BattlePhase::Deployment));
+        assert!(!Stage::Ai.runs_in(BattlePhase::Ended));
+        assert!(Stage::Ai.runs_in(BattlePhase::Battle));
     }
 }

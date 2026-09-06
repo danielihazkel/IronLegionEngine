@@ -9,6 +9,7 @@ description = "Iron Legion headless battle simulation."
 [dependencies]
 il_core.workspace = true
 il_data.workspace = true
+il_ai.workspace = true
 bevy_ecs.workspace = true
 bevy_tasks.workspace = true
 serde.workspace = true

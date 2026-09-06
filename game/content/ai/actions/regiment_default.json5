@@ -1,0 +1,85 @@
+// The flagship regiment-level action set (Simulation Spec SIM-AI-021,
+// SIM-AI-022; schema docs/schemas/ai-action-set.schema.json; T2-080).
+// Actions compete inside their channel: movement (engage_nearest,
+// hold_position, fall_back, follow_centroid), formation (switch_formation),
+// fire (fire_at_will, hold_fire) and one channel per ability slot
+// (use_ability). Distances are metres through each consideration's
+// `scale`; morale and fatigue are fractions. Every number is *chosen*
+// (15.4) and tuned in T2-081/082.
+{
+  id: "rome:regiment_default",
+  scope: "regiment",
+  actions: [
+    // ---- movement --------------------------------------------------------
+    {
+      name: "engage_nearest", kind: "engage_nearest", base: 1.0,
+      considerations: [
+        { input: "distance_to_nearest_enemy", scale: 80, curve: { type: "linear", m: -1, b: 1 } },
+        { input: "strength_ratio", curve: { type: "logistic", k: 8, mid: 0.4 } },
+        { input: "engaged", curve: { type: "linear", m: 0.5, b: 0.5 } },
+      ],
+    },
+    {
+      name: "hold_position", kind: "hold_position", base: 0.5,
+      considerations: [ { input: "constant", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    {
+      name: "fall_back", kind: "fall_back", base: 1.2,
+      considerations: [
+        { input: "own_morale", curve: { type: "logistic", k: -12, mid: 0.35 } },
+        { input: "engaged", curve: { type: "linear", m: -0.5, b: 1 } },
+      ],
+    },
+    {
+      name: "follow_centroid", kind: "follow_centroid", base: 0.8,
+      considerations: [ { input: "constant", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    // ---- formation (SIM-AI-021: square against cavalry, phalanx when
+    // engaged frontally, line otherwise) ----------------------------------
+    {
+      name: "square", kind: "switch_formation", layout: "square", base: 1.5, threshold: 0.5,
+      considerations: [
+        { input: "cavalry_approaching", scale: 60, curve: { type: "linear", m: 1, b: 0 } },
+        { input: "infantry_threat", scale: 60, curve: { type: "linear", m: -1, b: 1 } },
+      ],
+    },
+    {
+      name: "phalanx", kind: "switch_formation", layout: "phalanx", base: 1.2, threshold: 0.5,
+      considerations: [ { input: "engaged_frontal", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    {
+      name: "line", kind: "switch_formation", layout: "line", base: 0.6, threshold: 0.5,
+      considerations: [ { input: "constant", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    // ---- fire ------------------------------------------------------------
+    {
+      name: "fire_at_will", kind: "fire_at_will", base: 0.8,
+      considerations: [ { input: "constant", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    {
+      name: "hold_fire", kind: "hold_fire", base: 1.0,
+      considerations: [ { input: "friendly_in_line_of_fire", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    // ---- abilities (one channel per slot; several actions may name one
+    // ability, an OR of their conditions) ----------------------------------
+    {
+      name: "testudo", kind: "use_ability", ability: "rome:testudo", base: 1.0, threshold: 0.5,
+      considerations: [
+        { input: "enemy_ranged_in_range", curve: { type: "step", threshold: 0.5 } },
+        { input: "engaged", curve: { type: "linear", m: -1, b: 1 } },
+      ],
+    },
+    {
+      name: "shield_wall_ranged", kind: "use_ability", ability: "greece:shield_wall", base: 1.0, threshold: 0.5,
+      considerations: [ { input: "enemy_ranged_in_range", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    {
+      name: "shield_wall_melee", kind: "use_ability", ability: "greece:shield_wall", base: 1.0, threshold: 0.5,
+      considerations: [ { input: "engaged_frontal", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    {
+      name: "war_cry", kind: "use_ability", ability: "persia:war_cry", base: 1.0, threshold: 0.5,
+      considerations: [ { input: "distance_to_nearest_enemy", scale: 60, curve: { type: "linear", m: -1, b: 1 } } ],
+    },
+  ],
+}

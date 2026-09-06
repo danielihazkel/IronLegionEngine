@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/ai-action-set.schema.json",
+  "title": "Iron Legion AI action set",
+  "description": "The candidate actions of one utility-AI decision scope (content/ai/actions/*.json5; Simulation Spec SIM-AI-001, SIM-AI-010, SIM-AI-021, Modding SDK 4.8). Each action is scored base x product of its considerations' curves over normalised inputs and competes inside its channel (movement, formation, fire, one per ability slot; army: stance); the highest score of at least `threshold` wins, ties by list order. The loader also checks that every action and input belongs to the set's scope and that `use_ability` names an existing ability.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "scalar": { "type": "number", "minimum": -1000000, "maximum": 1000000 },
+    "input": {
+      "enum": [
+        "constant",
+        "distance_to_nearest_enemy", "strength_ratio", "enemy_share", "own_morale", "own_fatigue",
+        "engaged", "engaged_frontal", "is_flank_exposed", "enemy_flank_open", "cavalry_approaching",
+        "infantry_threat", "enemy_ranged_in_range", "enemy_in_own_range", "friendly_in_line_of_fire",
+        "outnumbered", "slot_error", "ammo",
+        "army_strength_ratio", "army_morale_mean", "army_fatigue_mean", "terrain_advantage",
+        "time_remaining", "aggression", "casualty_fraction", "enemy_visible"
+      ],
+      "description": "The closed input vocabulary; `constant` is 1, the regiment inputs need scope `regiment`, the army inputs scope `army` (Simulation Spec 13.3 and 13.2 tables)."
+    },
+    "curve": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "m"],
+          "properties": {
+            "type": { "const": "linear" },
+            "m": { "$ref": "#/$defs/scalar", "description": "Slope." },
+            "b": { "$ref": "#/$defs/scalar", "default": 0, "description": "Intercept." }
+          },
+          "description": "sat(m * x + b)."
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type"],
+          "properties": {
+            "type": { "const": "quadratic" },
+            "k": { "$ref": "#/$defs/scalar", "default": 1 }
+          },
+          "description": "sat(k * x * x)."
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "k", "mid"],
+          "properties": {
+            "type": { "const": "logistic" },
+            "k": { "$ref": "#/$defs/scalar", "description": "Steepness; negative decreases." },
+            "mid": { "$ref": "#/$defs/scalar", "description": "The x at which the curve is 0.5." }
+          },
+          "description": "Algebraic sigmoid 0.5 + 0.5 * t / (1 + |t|) with t = k * (x - mid) (no exponential, bit-exact everywhere)."
+        },
+        {
+          "type": "object", "additionalProperties": false, "required": ["type", "threshold"],
+          "properties": {
+            "type": { "const": "step" },
+            "threshold": { "$ref": "#/$defs/scalar" }
+          },
+          "description": "1 when x >= threshold, else 0."
+        }
+      ]
+    },
+    "consideration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["input", "curve"],
+      "properties": {
+        "input": { "$ref": "#/$defs/input" },
+        "scale": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000, "default": 1, "description": "The raw input value that maps to x = 1; the raw value is divided by it and clamped to 0..1. Inputs that are already fractions leave it at 1." },
+        "curve": { "$ref": "#/$defs/curve" }
+      }
+    },
+    "actionCommon": {
+      "name": { "type": "string", "pattern": "^[a-z0-9_]+$", "description": "Unique within the set; shown by the debug overlay." },
+      "base": { "type": "number", "minimum": 0, "maximum": 1000, "default": 1, "description": "Score before the considerations." },
+      "threshold": { "type": "number", "minimum": 0, "maximum": 1000, "default": 0, "description": "The action wins its channel only with a score of at least this; a channel whose best action falls short does nothing." },
+      "noise": { "type": "number", "minimum": 0, "maximum": 1, "default": 0, "description": "score *= 1 + noise * (2u - 1) with u drawn from the AI stream; 0 draws nothing." },
+      "considerations": { "type": "array", "default": [], "items": { "$ref": "#/$defs/consideration" } }
+    },
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "$ref": "#/$defs/actionCommon/name" },
+        "kind": {
+          "enum": [
+            "engage_nearest", "hold_position", "fall_back", "follow_centroid",
+            "use_ability", "switch_formation", "fire_at_will", "hold_fire",
+            "attack", "defend", "hold", "retreat"
+          ],
+          "description": "What the action does when it wins (plan decision 8). Regiment scope: the movement channel (engage_nearest, hold_position, fall_back, follow_centroid), the ability channels (use_ability), the formation channel (switch_formation), the fire channel (fire_at_will, hold_fire). Army scope: the stance channel (attack, defend, hold, retreat)."
+        },
+        "ability": { "$ref": "#/$defs/contentId", "description": "use_ability only: the ability this action may use (the slot's ability must match)." },
+        "layout": { "enum": ["line", "column", "square", "wedge", "phalanx", "loose", "custom"], "description": "switch_formation only: the unit's template with this layout is chosen." },
+        "base": { "$ref": "#/$defs/actionCommon/base" },
+        "threshold": { "$ref": "#/$defs/actionCommon/threshold" },
+        "noise": { "$ref": "#/$defs/actionCommon/noise" },
+        "considerations": { "$ref": "#/$defs/actionCommon/considerations" }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "use_ability" } } }, "then": { "required": ["ability"] } },
+        { "if": { "properties": { "kind": { "const": "switch_formation" } } }, "then": { "required": ["layout"] } }
+      ]
+    },
+    "listOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$append": { "type": "array" },
+        "$remove": { "type": "array" },
+        "$replace": { "type": "array" }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "scope", "actions"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"] },
+    "$delete": { "const": true },
+    "$from": { "$ref": "#/$defs/contentId" },
+    "deprecated": { "type": "string" },
+    "id": { "$ref": "#/$defs/contentId" },
+    "scope": { "enum": ["regiment", "army"], "description": "Which decision maker uses the set." },
+    "actions": {
+      "oneOf": [
+        { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/action" } },
+        { "$ref": "#/$defs/listOp" }
+      ]
+    }
+  }
+}

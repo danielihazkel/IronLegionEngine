@@ -33,6 +33,10 @@ pub struct StepOutput {
     pub events: Vec<BattleEvent>,
     /// Commands Stage 0 refused, with the reason.
     pub rejected: Vec<(Command, RejectReason)>,
+    /// Commands the battle AI queued at Stage 1 for the next tick
+    /// (SIM-CMD-005, T2-080): the replay log takes them; a replay that
+    /// feeds them back calls `set_ai_enabled(false)`.
+    pub ai_commands: Vec<Command>,
 }
 
 /// Side of the placeholder map of [`BattleWorld::empty`], metres.
@@ -111,6 +115,8 @@ impl BattleWorld {
         world.insert_resource(crate::resources::MoraleShocks::default());
         world.insert_resource(crate::resources::BattleFlow::default());
         world.insert_resource(crate::visibility::Visibility::default());
+        world.insert_resource(crate::ai::AiState::default());
+        world.insert_resource(crate::ai::AiEnabled::default());
         world.insert_resource(MapRes(Arc::new(flat_map)));
         // Dimensioned by the Stage 6 system once the map and rules are known.
         let flat = S::from_i32(FLAT_MAP_SIZE);
@@ -215,7 +221,11 @@ impl BattleWorld {
     ) -> StepOutput {
         self.tick = self.tick.next();
         self.world.resource_mut::<Clock>().tick = self.tick;
-        self.world.resource_mut::<CommandInbox>().0 = commands.to_vec();
+        // SIM-CMD-005 (T2-080): the AI's commands for this tick join the
+        // player's and go through the same Stage 0 validation.
+        let mut inbox = commands.to_vec();
+        inbox.append(&mut self.world.resource_mut::<crate::ai::AiState>().outbox);
+        self.world.resource_mut::<CommandInbox>().0 = inbox;
 
         for (schedule, stage) in self.schedules.iter_mut().zip(Stage::ALL) {
             observer.begin(stage);
@@ -233,7 +243,20 @@ impl BattleWorld {
             hash: self.world.resource::<LastHash>().0,
             events: core::mem::take(&mut self.world.resource_mut::<StepEvents>().0),
             rejected: core::mem::take(&mut self.world.resource_mut::<Rejected>().0),
+            ai_commands: self.world.resource::<crate::ai::AiState>().outbox.clone(),
         }
+    }
+
+    /// Whether Stage 1 decides for the engine's sides (plan decision 15).
+    /// Off, the sides owned by `PlayerId(255)` stand still unless the
+    /// caller feeds the commands a previous run logged in
+    /// `StepOutput::ai_commands`. Not part of the state hash.
+    pub fn set_ai_enabled(&mut self, enabled: bool) {
+        self.world.resource_mut::<crate::ai::AiEnabled>().0 = enabled;
+    }
+
+    pub fn ai_enabled(&self) -> bool {
+        self.world.resource::<crate::ai::AiEnabled>().0
     }
 
     /// Completed ticks; the next `step` simulates `tick() + 1`.
@@ -372,12 +395,13 @@ mod tests {
     /// Golden: the hash of an empty world at seed 42 after 0, 1 and 2 ticks.
     /// Changes whenever the hash layout or the RNG seeding changes
     /// (re-baselined in T2-040 when the morale shock queue joined the
-    /// layout, in T2-050 when the battle flow and visibility masks did, and
-    /// in T2-071 when `BattleFlow.ended_at` did).
+    /// layout, in T2-050 when the battle flow and visibility masks did, in
+    /// T2-071 when `BattleFlow.ended_at` did, and in T2-080 when the AI
+    /// state did).
     const GOLDEN: [u64; 3] = [
-        0xd81d_a497_5bbf_bd08,
-        0xf6eb_b5a6_1995_2d4b,
-        0x9e75_7269_52cd_5ef0,
+        0xdd14_4262_7e93_61dd,
+        0xcd8d_3fa8_4ba7_90ac,
+        0xba99_4008_8ca2_3854,
     ];
 
     #[test]
@@ -438,6 +462,20 @@ mod tests {
             .flat_map(|s| [(true, *s), (false, *s)])
             .collect();
         assert_eq!(rec.0, expected);
+    }
+
+    /// T2-080: without a side owned by the engine nothing is queued, and
+    /// the switch keeps Stage 1 quiet without touching the hash.
+    #[test]
+    fn ai_outbox_is_empty_without_engine_sides_and_switch_is_not_state() {
+        let mut w = empty_world();
+        let out = w.step(&[]);
+        assert!(out.ai_commands.is_empty());
+        assert!(w.ai_enabled());
+        let h = w.hash();
+        w.set_ai_enabled(false);
+        assert!(!w.ai_enabled());
+        assert_eq!(w.recompute_hash(), h);
     }
 
     #[test]

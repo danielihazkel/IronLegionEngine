@@ -45,6 +45,7 @@ fn side(player: u8, regiments: Vec<RegimentSetup>) -> SideSetup {
         },
         regiments,
         reinforcements: vec![],
+        ai_profile: None,
     }
 }
 
@@ -138,6 +139,27 @@ fn map_and_placement_are_validated() {
     let w = BattleWorld::new(&setup, regs()).expect("the far corner is on the map");
     assert_eq!(w.map().width, S::from_i32(800));
     assert_eq!(w.map().zone_handles.len(), 7);
+}
+
+/// T2-080 (plan decision 12): a side's profile override must exist.
+#[test]
+fn unknown_ai_profile_override_is_rejected() {
+    let mut setup = two_sides(10);
+    setup.sides[1].ai_profile = Some(cid("rome:nope"));
+    assert!(matches!(
+        BattleWorld::new(&setup, regs()),
+        Err(SetupError::UnknownAiProfile { side: 1, .. })
+    ));
+    setup.sides[1].ai_profile = Some(cid("rome:default_ai"));
+    let w = BattleWorld::new(&setup, regs()).unwrap();
+    assert_eq!(
+        w.setup().unwrap().sides[1]
+            .ai_profile
+            .as_ref()
+            .unwrap()
+            .as_str(),
+        "rome:default_ai"
+    );
 }
 
 #[test]

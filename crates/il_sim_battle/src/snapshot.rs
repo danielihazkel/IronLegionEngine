@@ -12,7 +12,8 @@ use il_core::{Angle, IdAllocator, RegimentId, S, SoldierId, Tick, V2};
 use il_data::{ContentId, Registries};
 use serde::{Deserialize, Serialize};
 
-use crate::command::{FireMode, SpeedMode};
+use crate::ai::{AiState, ArmyPlan};
+use crate::command::{Command, FireMode, SpeedMode};
 use crate::components::{
     Anchor, Attackers, Body, Combat, Cooldowns, DEATHS_RING, Energy, Facing, FatigueC, Fire,
     FormationState, Fsm, GeneralTag, Health, MeleeState, Morale, MoraleState, Order, OrderKind,
@@ -46,7 +47,9 @@ use crate::world::{BattleWorld, InstallMapError};
 ///    `reinforcements_spawned`, the battle-flow timers replaced `timer`,
 ///    and the per-side visibility masks and memory are stored.
 /// 8: `BattleFlow.ended_at` (T2-071).
-pub const SNAPSHOT_VERSION: u32 = 8;
+/// 9: the battle AI's state (T2-080): the command outbox for the next tick
+///    and one optional army plan per side.
+pub const SNAPSHOT_VERSION: u32 = 9;
 
 /// A ranged regiment's `Fire` component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -170,6 +173,15 @@ pub struct Snapshot {
     pub visibility: Vec<Vec<bool>>,
     /// Per side, per regiment index: last sightings (stored, not hashed).
     pub memory: Vec<Vec<Option<Seen>>>,
+    /// The AI's outbox and plans (T2-080).
+    pub ai: AiSnap,
+}
+
+/// `AiState` as stored (T2-080).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct AiSnap {
+    pub outbox: Vec<Command>,
+    pub plans: Vec<Option<ArmyPlan>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -365,6 +377,13 @@ impl BattleWorld {
             flow: *world.resource::<BattleFlow>(),
             visibility: world.resource::<Visibility>().masks.clone(),
             memory: world.resource::<Visibility>().memory.clone(),
+            ai: {
+                let ai = world.resource::<AiState>();
+                AiSnap {
+                    outbox: ai.outbox.clone(),
+                    plans: ai.plans.clone(),
+                }
+            },
         }
     }
 
@@ -632,6 +651,9 @@ impl BattleWorld {
             let mut vis = w.world.resource_mut::<Visibility>();
             vis.masks = snapshot.visibility.clone();
             vis.memory = snapshot.memory.clone();
+            let mut ai = w.world.resource_mut::<AiState>();
+            ai.outbox = snapshot.ai.outbox.clone();
+            ai.plans = snapshot.ai.plans.clone();
         }
 
         w.set_setup(snapshot.setup.clone());

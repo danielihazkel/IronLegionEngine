@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use crate::ability::Ability;
+use crate::ai::{AiActionSet, AiProfile};
 use crate::content_id::ContentId;
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::faction::Faction;
@@ -387,6 +388,8 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
     let maps = merge_kind::<MapDef>(set, &mut sources, &mut diags);
     let sprite_sets = merge_kind::<SpriteSet>(set, &mut sources, &mut diags);
     let abilities = merge_kind::<Ability>(set, &mut sources, &mut diags);
+    let ai_action_sets = merge_kind::<AiActionSet>(set, &mut sources, &mut diags);
+    let ai_profiles = merge_kind::<AiProfile>(set, &mut sources, &mut diags);
     let movement = merge_singleton_file(set, "rules", "movement", &mut sources, &mut diags);
     let formation_rules = merge_singleton_file(set, "rules", "formation", &mut sources, &mut diags);
     let combat_rules = merge_singleton_file(set, "rules", "combat", &mut sources, &mut diags);
@@ -437,6 +440,8 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
     let (maps_ok, maps_order) = pass1!(maps, maps);
     let (sprites_ok, sprites_order) = pass1!(sprite_sets, sprite_sets);
     let (abilities_ok, abilities_order) = pass1!(abilities, abilities);
+    let (sets_ok, sets_order) = pass1!(ai_action_sets, ai_action_sets);
+    let (profiles_ok, profiles_order) = pass1!(ai_profiles, ai_profiles);
 
     // Pass 2: deserialise and resolve.
     let movement: Option<MovementRules> = build_singleton(
@@ -558,6 +563,9 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
             )
         };
     }
+    // Action sets first: profiles check the scope of the sets they name.
+    let ai_action_sets = pass2!(ai_action_sets, sets_ok, sets_order, ai_action_sets);
+    lookup.register_action_set_scopes(ai_action_sets.iter().map(|(_, s)| (s.id.clone(), s.scope)));
     let mut regs = Registries {
         units: pass2!(units, units_ok, units_order, units),
         formations: pass2!(formations, formations_ok, formations_order, formations),
@@ -567,6 +575,8 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
         maps: pass2!(maps, maps_ok, maps_order, maps),
         sprite_sets: pass2!(sprite_sets, sprites_ok, sprites_order, sprite_sets),
         abilities: pass2!(abilities, abilities_ok, abilities_order, abilities),
+        ai_action_sets,
+        ai_profiles: pass2!(ai_profiles, profiles_ok, profiles_order, ai_profiles),
         rules,
         input,
         locale,
@@ -759,7 +769,42 @@ mod tests {
             .lookup(&ContentId::new("rome:hastati").unwrap())
             .unwrap();
         let hastati = regs.units.get(h);
-        assert_eq!(hastati.formations.len(), 3);
+        assert_eq!(
+            hastati.formations.len(),
+            4,
+            "line, column, loose, square (T2-080)"
+        );
+        // T2-080: the AI kinds and the faction's resolved profile.
+        assert_eq!(regs.ai_action_sets.len(), 2);
+        assert_eq!(regs.ai_profiles.len(), 1);
+        let profile = regs.ai_profiles.get(
+            regs.ai_profiles
+                .lookup(&ContentId::new("rome:default_ai").unwrap())
+                .unwrap(),
+        );
+        assert_eq!(
+            regs.ai_action_sets
+                .id_of(profile.army_set.unwrap())
+                .as_str(),
+            "rome:army_default"
+        );
+        assert_eq!(
+            regs.ai_action_sets
+                .id_of(profile.regiment_set.unwrap())
+                .as_str(),
+            "rome:regiment_default"
+        );
+        let rome = regs.factions.get(
+            regs.factions
+                .lookup(&ContentId::new("rome:rome").unwrap())
+                .unwrap(),
+        );
+        assert_eq!(
+            regs.ai_profiles
+                .id_of(rome.ai_profile_handle.unwrap())
+                .as_str(),
+            "rome:default_ai"
+        );
         assert_eq!(
             regs.formations.id_of(hastati.default_formation()).as_str(),
             "rome:line"
@@ -830,7 +875,7 @@ mod tests {
         .unwrap();
         std::fs::write(
             game.join("content/factions/z_last.json5"),
-            r##"{ id: "rome:late", name_key: "rome.factions.late.name", culture: "latin", colour_primary: "#000000", colour_secondary: "#ffffff", units: ["rome:zed", "rome:hastati"], ai_profile: "rome:x", tech_tree: "rome:y" }"##,
+            r##"{ id: "rome:late", name_key: "rome.factions.late.name", culture: "latin", colour_primary: "#000000", colour_secondary: "#ffffff", units: ["rome:zed", "rome:hastati"], ai_profile: "rome:default_ai", tech_tree: "rome:y" }"##,
         )
         .unwrap();
         let regs = load_roots(&[game]).unwrap_or_else(|e| panic!("{e}"));

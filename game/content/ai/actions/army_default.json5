@@ -1,0 +1,37 @@
+// The flagship army-level action set (Simulation Spec SIM-AI-010; schema
+// docs/schemas/ai-action-set.schema.json; T2-080). One channel, stance:
+// the highest score of at least `threshold` wins, and a new stance must
+// beat the current one by the profile's `stance_margin` (retreat excepted).
+// Every number is *chosen* (15.4) and tuned in T2-082.
+{
+  id: "rome:army_default",
+  scope: "army",
+  actions: [
+    {
+      name: "attack", kind: "attack", base: 1.0,
+      considerations: [
+        { input: "army_strength_ratio", curve: { type: "logistic", k: 6, mid: 0.45 } },
+        { input: "aggression", curve: { type: "linear", m: 0.5, b: 0.5 } },
+        { input: "army_morale_mean", curve: { type: "linear", m: 0.5, b: 0.5 } },
+      ],
+    },
+    {
+      name: "defend", kind: "defend", base: 0.8,
+      considerations: [
+        { input: "terrain_advantage", curve: { type: "linear", m: 1, b: 0 } },
+        { input: "enemy_visible", curve: { type: "linear", m: 0.5, b: 0.5 } },
+      ],
+    },
+    {
+      name: "hold", kind: "hold", base: 0.4,
+      considerations: [ { input: "constant", curve: { type: "step", threshold: 0.5 } } ],
+    },
+    {
+      name: "retreat", kind: "retreat", base: 1.0,
+      considerations: [
+        { input: "army_strength_ratio", curve: { type: "logistic", k: -10, mid: 0.3 } },
+        { input: "casualty_fraction", curve: { type: "logistic", k: 8, mid: 0.5 } },
+      ],
+    },
+  ],
+}

@@ -43,6 +43,7 @@ pub fn side(player: u8, regiments: Vec<RegimentSetup>) -> SideSetup {
         },
         regiments,
         reinforcements: vec![],
+        ai_profile: None,
     }
 }
 

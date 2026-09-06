@@ -54,6 +54,8 @@ pub enum SetupError {
     UnknownReinforcementEdge { side: usize, edge: il_data::MapEdge },
     #[error("side {side}: the map defines no deployment polygon for zone {zone}")]
     MissingDeploymentZone { side: usize, zone: u8 },
+    #[error("side {side}: unknown AI profile {id}")]
+    UnknownAiProfile { side: usize, id: ContentId },
     #[error("side {side}: regiment {regiment} at ({x}, {y}) is outside the map")]
     PositionOutOfMap {
         side: usize,
@@ -120,6 +122,15 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
             return Err(SetupError::MissingDeploymentZone {
                 side,
                 zone: s.deployment_zone,
+            });
+        }
+        // T2-080 (plan decision 12): the side's profile override must exist.
+        if let Some(id) = &s.ai_profile
+            && !regs.ai_profiles.contains(id)
+        {
+            return Err(SetupError::UnknownAiProfile {
+                side,
+                id: id.clone(),
             });
         }
         // SIM-FLOW-016 (plan decision 17): the map must list the edge.

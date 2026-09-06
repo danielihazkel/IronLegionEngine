@@ -18,7 +18,7 @@ use il_sim_battle::resources::{
     Projectiles, Rng, Shock, ShockKind, Sides,
 };
 use il_sim_battle::visibility::Visibility;
-use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
+use il_sim_battle::{AiState, ArmyPlan, BattleWorld, Command, CommandKind, FireMode, SpeedMode};
 
 /// Golden hash of the freshly spawned 2 x 500 hastati world at seed 42 on
 /// the test map (re-baselined in T1-030 when the regiments moved onto it and
@@ -40,12 +40,13 @@ use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 /// T2-050 when the milestone 4 fields (battle flow, side flags, energy,
 /// cooldowns, statuses, withdrawn, visibility masks) joined the layout; and
 /// in T2-060 when the visibility masks were first filled; and in T2-071 when
-/// `BattleFlow.ended_at` joined the layout).
+/// `BattleFlow.ended_at` joined the layout; and in T2-080 when the AI
+/// state (outbox, plans) joined the layout).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x47b3_f39d_4615_8784;
+const GOLDEN_FRESH: u64 = 0x716a_fbd1_5009_64c1;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0xda06_40ce_114c_343b;
+const GOLDEN_1000: u64 = 0x6251_53fb_6146_7e6e;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -635,6 +636,37 @@ fn every_hashed_field_changes_the_hash() {
         "visibility mask",
         Box::new(|w| {
             w.ecs_mut().resource_mut::<Visibility>().masks = vec![vec![true, false]];
+        }),
+    ));
+    // T2-080: the AI outbox and the army plans.
+    cases.push((
+        "ai outbox",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<AiState>().outbox.push(Command {
+                tick: Tick(1),
+                player: il_core::PlayerId::ENGINE_AI,
+                seq: 0,
+                kind: CommandKind::Pause,
+            });
+        }),
+    ));
+    cases.push((
+        "ai plan",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<AiState>().plans = vec![Some(ArmyPlan::default()), None];
+        }),
+    ));
+    cases.push((
+        "ai plan field",
+        Box::new(|w| {
+            let mut plan = ArmyPlan::default();
+            plan.assignments.push(il_sim_battle::Assignment {
+                regiment: RegimentId(0),
+                role: il_sim_battle::Role::Line {
+                    slot: V2::from_f32_data(1.0, 2.0),
+                },
+            });
+            w.ecs_mut().resource_mut::<AiState>().plans = vec![Some(plan), None];
         }),
     ));
     // Globals: phase, RNG.

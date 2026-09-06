@@ -76,6 +76,9 @@ pub struct Lookup {
     /// Ids that exist but failed validation: a reference to one is not an
     /// error of the referencing item.
     invalid: BTreeMap<KindTag, std::collections::BTreeSet<ContentId>>,
+    /// Scope of every valid AI action set, registered once the sets are
+    /// built so `AiProfile::resolve` can check it has one of each (T2-080).
+    action_set_scopes: BTreeMap<ContentId, crate::ai::InputScope>,
 }
 
 impl Lookup {
@@ -121,6 +124,19 @@ impl Lookup {
     /// already explain why).
     pub fn is_invalid(&self, kind: KindTag, id: &ContentId) -> bool {
         self.invalid.get(&kind).is_some_and(|s| s.contains(id))
+    }
+
+    /// Records the scope of built AI action sets (T2-080).
+    pub fn register_action_set_scopes(
+        &mut self,
+        scopes: impl IntoIterator<Item = (ContentId, crate::ai::InputScope)>,
+    ) {
+        self.action_set_scopes.extend(scopes);
+    }
+
+    /// The scope of a built AI action set.
+    pub fn scope_of_action_set(&self, id: &ContentId) -> Option<crate::ai::InputScope> {
+        self.action_set_scopes.get(id).copied()
     }
 }
 

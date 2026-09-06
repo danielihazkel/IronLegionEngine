@@ -4,6 +4,7 @@
 use il_core::StateHasher;
 
 use crate::ability::Ability;
+use crate::ai::{AiActionSet, AiProfile};
 use crate::faction::Faction;
 use crate::formation::{FormationTemplate, GroupFormationTemplate};
 use crate::locale::Locale;
@@ -32,6 +33,9 @@ pub struct Registries {
     pub sprite_sets: Registry<SpriteSet>,
     /// T2-050.
     pub abilities: Registry<Ability>,
+    /// T2-080.
+    pub ai_action_sets: Registry<AiActionSet>,
+    pub ai_profiles: Registry<AiProfile>,
     pub rules: Rules,
     pub input: InputBindings,
     /// Every mod's `locale/*.json5`, merged in load order.
@@ -59,6 +63,8 @@ impl Default for Registries {
             maps: Registry::new(),
             sprite_sets: Registry::new(),
             abilities: Registry::new(),
+            ai_action_sets: Registry::new(),
+            ai_profiles: Registry::new(),
             rules: Rules::zeroed(),
             input: InputBindings::default(),
             locale: Locale::default(),
@@ -87,6 +93,8 @@ impl Registries {
         hash_registry(&self.zones, &mut h);
         hash_registry(&self.maps, &mut h);
         hash_registry(&self.abilities, &mut h);
+        hash_registry(&self.ai_action_sets, &mut h);
+        hash_registry(&self.ai_profiles, &mut h);
         self.rules.hash_content(&mut h);
         h.finish().0
     }

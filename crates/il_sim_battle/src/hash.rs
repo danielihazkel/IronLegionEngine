@@ -34,7 +34,9 @@ use crate::visibility::Visibility;
 /// ammo, cooldown), general rank (present for the general); per projectile
 /// (ascending id) every launch field; pending damage in queue order; morale
 /// shocks in queue order; per side (ascending) the visibility mask
-/// (length-prefixed, regiment order); RNG stream states.
+/// (length-prefixed, regiment order); the AI state (T2-080: the command
+/// outbox for the next tick, then per side the army plan or a zero byte);
+/// RNG stream states.
 pub fn compute_hash(world: &mut World) -> StateHash {
     let mut h = StateHasher::new();
     h.write(&world.resource::<Clock>().tick);
@@ -147,6 +149,8 @@ pub fn compute_hash(world: &mut World) -> StateHash {
     for m in &vis.masks {
         h.write(m.as_slice());
     }
+    // T2-080: what the AI decided for the next tick and remembers.
+    world.resource::<crate::ai::AiState>().hash_state(&mut h);
 
     h.write(world.resource::<Rng>());
     h.finish()

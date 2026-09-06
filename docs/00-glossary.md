@@ -114,6 +114,18 @@ Terms are grouped by area. A term in *italics* inside a definition is itself def
 | **Line of sight** | Whether a Regiment can see a point given distance, elevation, and occluding terrain. |
 | **Fog of war** | Per-side visibility: enemy Regiments are shown only when inside one of the side's Regiments' line of sight (or within the conceal radius in a forest). |
 
+## Battle AI
+
+| Term | Definition |
+|---|---|
+| **Utility AI** | The decision method of the engine AI: every candidate action gets a score from data-defined *considerations*, and the highest score wins its *decision channel* (SIM-AI-001). Deterministic: no randomness beyond an optional seeded jitter. |
+| **Consideration** | One factor of an action's score: a named input of the situation (distance to the nearest enemy, own morale, strength ratio), normalised by a `scale` and shaped by a *response curve*. |
+| **Response curve** | A function from a normalised input in 0..1 to a factor in 0..1: linear, quadratic, logistic (an algebraic sigmoid), or step. |
+| **Action set** | A content item (`content/ai/actions/`) listing the candidate actions of one scope (regiment or army) with their considerations. |
+| **AI profile** | A content item (`content/ai/profiles/`) holding a personality (aggression, reserves, hysteresis margin), the army-level distances and cadences, and the action sets it decides with. Named by a *Faction*; a scenario may override it per side. |
+| **Decision channel** | The group of actions that compete with each other: a regiment decides movement, formation, fire and each ability slot separately; an army decides its stance. |
+| **Army plan** | The engine AI's current intent for one side: stance (attack, defend, hold, retreat), the battle line it holds, and a role per regiment (line, skirmish, reserve, flank group, counter-charge, screen, bodyguard). Rebuilt every army period; part of the state hash. |
+
 ## Campaign
 
 | Term | Definition |

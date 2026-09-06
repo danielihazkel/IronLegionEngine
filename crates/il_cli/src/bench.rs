@@ -294,6 +294,7 @@ pub fn generate_scenario(soldiers: u32) -> anyhow::Result<Scenario> {
                 })
                 .collect(),
             reinforcements: Vec::new(),
+            ai_profile: None,
         }],
         victory: VictoryRules::default(),
     };

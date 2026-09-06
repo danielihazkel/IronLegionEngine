@@ -22,6 +22,8 @@ pub enum KindTag {
     Map,
     SpriteSet,
     Ability,
+    AiActionSet,
+    AiProfile,
     RulesMovement,
     RulesFormation,
     RulesCombat,
@@ -34,7 +36,7 @@ pub enum KindTag {
 }
 
 impl KindTag {
-    pub const ALL: [KindTag; 18] = [
+    pub const ALL: [KindTag; 20] = [
         KindTag::Manifest,
         KindTag::Unit,
         KindTag::Formation,
@@ -44,6 +46,8 @@ impl KindTag {
         KindTag::Map,
         KindTag::SpriteSet,
         KindTag::Ability,
+        KindTag::AiActionSet,
+        KindTag::AiProfile,
         KindTag::RulesMovement,
         KindTag::RulesFormation,
         KindTag::RulesCombat,
@@ -67,6 +71,8 @@ impl KindTag {
             KindTag::Map => "map",
             KindTag::SpriteSet => "sprite set",
             KindTag::Ability => "ability",
+            KindTag::AiActionSet => "AI action set",
+            KindTag::AiProfile => "AI profile",
             KindTag::RulesMovement => "movement rules",
             KindTag::RulesFormation => "formation rules",
             KindTag::RulesCombat => "combat rules",
@@ -94,6 +100,10 @@ impl KindTag {
             KindTag::Map => include_str!("../../../docs/schemas/map-def.schema.json"),
             KindTag::SpriteSet => include_str!("../../../docs/schemas/sprite-set.schema.json"),
             KindTag::Ability => include_str!("../../../docs/schemas/ability.schema.json"),
+            KindTag::AiActionSet => {
+                include_str!("../../../docs/schemas/ai-action-set.schema.json")
+            }
+            KindTag::AiProfile => include_str!("../../../docs/schemas/ai-profile.schema.json"),
             KindTag::RulesMovement => {
                 include_str!("../../../docs/schemas/rules-movement.schema.json")
             }

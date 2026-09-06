@@ -471,9 +471,10 @@ flowchart LR
 
 ### AI — `il_ai` and battle AI
 
-- [ ] **T2-080 Utility-AI framework** · M · Refs SIM-AI-001..003, TDD §8.5 `il_ai`, REQ-AI-001, 005, 006
+- [x] **T2-080 Utility-AI framework** · M · Refs SIM-AI-001..003, TDD §8.5 `il_ai`, REQ-AI-001, 005, 006
   `Consideration`, `Curve` (linear, quadratic, logistic, step), `ActionDef`, `AiActionSet` content kind, `InputProvider`, deterministic `select` with order tie-break, cadence helpers, `AiProfile` content kind. Content: `content/ai/regiment_default.json5`, `army_default.json5`, `profiles/default.json5`.
   **Done when** curve golden tests pass and selection is stable across threads.
+  Done 2026-09-06: data kinds in `il_data::ai` (`AiActionSet` under `content/ai/actions/`, `AiProfile` under `content/ai/profiles/`, closed `InputId` and `ActionKind` vocabularies, `Consideration.scale`, load diagnostics for scope, names, abilities and the one-set-per-scope rule; `Faction.ai_profile_handle`), the two schemas, `il_ai` (`evaluate` with the algebraic logistic, `score` with lazy multiplicative noise, per-channel `select` with thresholds and list-order ties, `due`; golden and eight-thread tests), `il_sim_battle::ai` (`AiState { outbox, plans }` hashed and snapshotted, `AiEnabled`, `ArmyPlan`/`Role`/`Stance` declared, Stage 1 `ai_decide` stamping `tick + 1` / `PlayerId(255)`, `step` feeding the outbox, `StepOutput.ai_commands`, `set_ai_enabled`, Stage 1 in the Deployment stage set, `SideSetup.ai_profile`, `SNAPSHOT_VERSION = 9`, goldens re-baselined once for the milestone), `rome:default_ai` with `rome:army_default` and `rome:regiment_default`, `rome:square` on hastati and hoplites, §15.4. The Deployment and Battle arms are stubs until T2-081/082.
 
 - [ ] **T2-081 Regiment AI and deployment** · M · Refs SIM-AI-020..022, TDD §8.5 inputs
   `InputId` enum and `RegimentContext`; actions engage, hold, fall back, use ability, switch formation, fire mode; AI deployment in a battle line; commands emitted for `tick + 1` under the AI player id.

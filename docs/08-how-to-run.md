@@ -51,7 +51,7 @@ Every key comes from `game/content/input/bindings.json5`; a mod may rebind any o
 | Halt | `H` |
 | Run toggle for new orders | `R` (the HUD shows `running` or `walking`) |
 | Fire toggle for the selected ranged regiments | `F` (hold fire / fire at will; regiments start at fire at will) |
-| Formation templates of the selected unit type | `F1`..`F4` in the order the unit lists them (hastati: line, column, loose) |
+| Formation templates of the selected unit type | `F1`..`F4` in the order the unit lists them (hastati: line, column, loose, square) |
 | Confirm the deployment (Deployment phase) | `Enter` |
 | Abilities of the selected regiments | `Z`, `X`, `C` for the first three slots (the unit's abilities, then its general's; T2-050): hastati testudo, hoplites shield wall, Persian cavalry war cry on the nearest enemy regiment within 60 m |
 | Pause | `Space`, or the HUD button |

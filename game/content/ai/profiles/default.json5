@@ -1,0 +1,31 @@
+// The flagship battle-AI personality (Simulation Spec 13, 15.4; schema
+// docs/schemas/ai-profile.schema.json; T2-080). Every faction names it in
+// `ai_profile`; a scenario may override it per side. Every numeric field is
+// required, like a rules file; every value is *chosen* (15.4).
+{
+  id: "rome:default_ai",
+  name_key: "rome.ai.default.name",
+
+  aggression: 0.6,             // army input (SIM-AI-010)
+  general_aggression: 0.3,     // SIM-AI-022
+  reserve_fraction: 0.2,       // SIM-AI-014
+  stance_margin: 0.1,          // hysteresis (plan decision 10)
+
+  army_period_ticks: 40,       // SIM-AI-002
+  regiment_period_ticks: 20,
+
+  approach_distance: 150,      // m (SIM-AI-011)
+  advance_step: 8,             // m per army period once the line is formed
+  line_tolerance: 12,          // m
+  skirmish_range_frac: 0.9,    // SIM-AI-011
+  flank_offset: 80,            // m
+  charge_trigger_dist: 40,     // m
+  defend_search_radius: 200,   // m (SIM-AI-012)
+  counter_charge_dist: 30,     // m
+  screen_offset: 40,           // m (SIM-AI-013)
+  screen_gap: 80,              // m
+  reserve_offset: 60,          // m (SIM-AI-014)
+  commit_morale: 45,           // morale points
+
+  action_sets: ["rome:army_default", "rome:regiment_default"],
+}

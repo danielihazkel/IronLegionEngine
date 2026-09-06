@@ -4,9 +4,11 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-description = "Iron Legion utility-AI framework (Phase 2)."
+description = "Iron Legion utility-AI framework: response curves, scoring, deterministic selection, cadence (Phase 2)."
 
 [dependencies]
+il_core.workspace = true
+il_data.workspace = true
 
 [lints]
 workspace = true

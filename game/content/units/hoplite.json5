@@ -30,7 +30,7 @@
   los_radius: 200,
 
   abilities: ["greece:shield_wall"],
-  formations: ["rome:phalanx", "rome:line", "rome:column"],
+  formations: ["rome:phalanx", "rome:line", "rome:column", "rome:square"],
 
   sprite_set: "rome:sprites_infantry",
   sounds: {},

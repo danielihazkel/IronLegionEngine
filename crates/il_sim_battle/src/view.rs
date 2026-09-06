@@ -378,6 +378,17 @@ impl<'w> BattleView<'w> {
         *self.world.resource::<BattleFlow>()
     }
 
+    /// SIM-AI-010 (T2-080): the engine's plan for a side it decides for
+    /// (`None` before its first army decision or for a player's side).
+    pub fn ai_plan(&self, side: u8) -> Option<&'w crate::ai::ArmyPlan> {
+        self.world.resource::<crate::ai::AiState>().plan(side)
+    }
+
+    /// The commands the AI queued for the next tick (SIM-CMD-005).
+    pub fn ai_outbox(&self) -> &'w [crate::command::Command] {
+        &self.world.resource::<crate::ai::AiState>().outbox
+    }
+
     /// SIM-VIS-004 (T2-060): whether `side` currently sees the regiment.
     pub fn visible(&self, side: u8, id: RegimentId) -> bool {
         crate::visibility::sees_regiment(self.world, side, id)

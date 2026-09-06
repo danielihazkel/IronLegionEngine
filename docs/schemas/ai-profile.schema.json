@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/ai-profile.schema.json",
+  "title": "Iron Legion AI profile",
+  "description": "A battle-AI personality (content/ai/profiles/*.json5; Simulation Spec 13, 15.4, Modding SDK 4.8): the army-level tunables of SIM-AI-010..014, the cadences of SIM-AI-002 and the action sets it decides with. Factions name one in `ai_profile`; a scenario may override it per side. Every numeric field is required, like a rules file. The loader checks that `action_sets` names exactly one army set and one regiment set.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
+    "unitInterval": { "type": "number", "minimum": 0, "maximum": 1 },
+    "metres": { "type": "number", "minimum": 0, "maximum": 10000 },
+    "listOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$append": { "type": "array" },
+        "$remove": { "type": "array" },
+        "$replace": { "type": "array" }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id", "aggression", "general_aggression", "reserve_fraction", "stance_margin",
+    "army_period_ticks", "regiment_period_ticks",
+    "approach_distance", "advance_step", "line_tolerance", "skirmish_range_frac", "flank_offset",
+    "charge_trigger_dist", "defend_search_radius", "counter_charge_dist", "screen_offset", "screen_gap",
+    "reserve_offset", "commit_morale", "action_sets"
+  ],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"] },
+    "$delete": { "const": true },
+    "$from": { "$ref": "#/$defs/contentId" },
+    "deprecated": { "type": "string" },
+    "id": { "$ref": "#/$defs/contentId" },
+    "name_key": { "$ref": "#/$defs/locKey", "description": "Display name (UI only)." },
+    "aggression": { "$ref": "#/$defs/unitInterval", "description": "The `aggression` army input (SIM-AI-010)." },
+    "general_aggression": { "$ref": "#/$defs/unitInterval", "description": "The bodyguard engages only while this exceeds the enemy's share of the strength ratio (SIM-AI-022)." },
+    "reserve_fraction": { "$ref": "#/$defs/unitInterval", "description": "Fraction of the infantry cost held in reserve (SIM-AI-014)." },
+    "stance_margin": { "$ref": "#/$defs/unitInterval", "description": "A new stance must beat the current stance's score by this much; retreat is exempt (plan decision 10)." },
+    "army_period_ticks": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Army decisions every this many ticks, staggered by side (SIM-AI-002)." },
+    "regiment_period_ticks": { "type": "integer", "minimum": 1, "maximum": 65535, "description": "Regiment decisions every this many ticks, staggered by regiment id (SIM-AI-002)." },
+    "approach_distance": { "$ref": "#/$defs/metres", "description": "Where the attacking line forms before advancing (SIM-AI-011)." },
+    "advance_step": { "$ref": "#/$defs/metres", "description": "How far the line anchor steps toward the enemy per army period once the line is formed (plan decision 22)." },
+    "line_tolerance": { "$ref": "#/$defs/metres", "description": "Mean slot error under which the line counts as formed; also the slot error a regiment ignores." },
+    "skirmish_range_frac": { "$ref": "#/$defs/unitInterval", "description": "Skirmishers stand ahead of the line until the enemy is within this fraction of their range (SIM-AI-011)." },
+    "flank_offset": { "$ref": "#/$defs/metres", "description": "How far beyond the enemy's flank the cavalry groups aim (SIM-AI-011)." },
+    "charge_trigger_dist": { "$ref": "#/$defs/metres", "description": "Main-line distance to the enemy at which the flank groups charge (SIM-AI-011)." },
+    "defend_search_radius": { "$ref": "#/$defs/metres", "description": "Radius around the centroid searched for the highest ground on defend (SIM-AI-012)." },
+    "counter_charge_dist": { "$ref": "#/$defs/metres", "description": "An enemy this close to a line end draws the cavalry counter-charge (SIM-AI-012)." },
+    "screen_offset": { "$ref": "#/$defs/metres", "description": "Where the cavalry screen holds on retreat, toward the enemy from the infantry (SIM-AI-013)." },
+    "screen_gap": { "$ref": "#/$defs/metres", "description": "The screen withdraws once the infantry is this far away (SIM-AI-013)." },
+    "reserve_offset": { "$ref": "#/$defs/metres", "description": "How far behind the line the reserves, the bodyguard and falling-back regiments stand (SIM-AI-014)." },
+    "commit_morale": { "type": "number", "minimum": 0, "maximum": 100, "description": "A line regiment below this morale draws a reserve (SIM-AI-014)." },
+    "action_sets": {
+      "oneOf": [
+        { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/contentId" } },
+        { "$ref": "#/$defs/listOp" }
+      ],
+      "description": "One army set and one regiment set under content/ai/actions/, in any order."
+    },
+    "campaign": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["army_strength_target"],
+      "description": "Campaign personality (Phase 4; parsed and hashed now, unread until then).",
+      "properties": {
+        "army_strength_target": { "type": "number", "minimum": 0, "maximum": 100 },
+        "composition": {
+          "type": "array", "default": [],
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["category", "fraction"],
+            "properties": {
+              "category": { "enum": ["infantry", "cavalry", "ranged", "skirmisher", "general", "siege"] },
+              "fraction": { "$ref": "#/$defs/unitInterval" }
+            }
+          }
+        },
+        "min_garrison": { "type": "integer", "minimum": 0, "maximum": 255, "default": 0 }
+      }
+    }
+  }
+}

@@ -70,6 +70,10 @@ pub struct SideSetup {
     pub regiments: Vec<RegimentSetup>,
     #[serde(default)]
     pub reinforcements: Vec<ReinforcementGroup>,
+    /// The AI profile this side decides with when the engine owns it;
+    /// the faction's `ai_profile` when absent (T2-080, plan decision 12).
+    #[serde(default)]
+    pub ai_profile: Option<ContentId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -279,6 +283,7 @@ mod tests {
         assert_eq!(setup.sides[1].regiments[0].facing_deg, Some(180.0));
         assert_eq!(setup.sides[1].general.bodyguard, Some(2));
         assert_eq!(setup.sides[1].reinforcements[0].edge, MapEdge::North);
+        assert_eq!(setup.sides[0].ai_profile, None);
         assert_eq!(setup.soldier_total(), 1022);
         let json = serde_json::to_string(&setup).unwrap();
         let back: BattleSetup = serde_json::from_str(&json).unwrap();

@@ -4,6 +4,7 @@
 //! 18-stage schedule; the state hash and snapshot make every run verifiable.
 
 pub mod abilities;
+pub mod ai;
 pub mod combat;
 pub mod command;
 pub mod components;
@@ -27,6 +28,7 @@ pub mod view;
 pub mod visibility;
 pub mod world;
 
+pub use ai::{AiEnabled, AiState, ArmyPlan, Assignment, Role, Stance};
 pub use command::{
     AbilityFail, AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode,
 };

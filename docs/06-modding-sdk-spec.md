@@ -77,9 +77,10 @@ mymod/
       visibility.json5
       battle_flow.json5
     abilities/*.json5           (T2-050)
+    ai/actions/*.json5          AI action sets (AiActionSet, T2-080)
+    ai/profiles/*.json5         AI profiles (AiProfile, T2-080)
     technologies/*.json5        (Phase 4)
     buildings/*.json5           (Phase 4)
-    ai/*.json5                  (Phase 2)
   locale/
     en.json5
     de.json5
@@ -93,7 +94,7 @@ mymod/
     music/                      (Phase 2)
 ```
 
-Folders marked with a phase are reserved for that phase; since T2-010 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `abilities` (T2-050), `input`, the eight `rules/*.json5` files (`movement`, `formation`, `combat`, `morale`, `fatigue`, `general`, `visibility`, `battle_flow`) and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `ability`, `input-bindings`, `rules-movement`, `rules-formation`, `rules-combat`, `rules-morale`, `rules-fatigue`, `rules-general`, `rules-visibility`, `rules-battle_flow`, `mod-manifest`).
+Folders marked with a phase are reserved for that phase; since T2-010 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `abilities` (T2-050), `ai/actions` and `ai/profiles` (T2-080), `input`, the eight `rules/*.json5` files (`movement`, `formation`, `combat`, `morale`, `fatigue`, `general`, `visibility`, `battle_flow`) and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `ability`, `ai-action-set`, `ai-profile`, `input-bindings`, `rules-movement`, `rules-formation`, `rules-combat`, `rules-morale`, `rules-fatigue`, `rules-general`, `rules-visibility`, `rules-battle_flow`, `mod-manifest`).
 
 Rules:
 
@@ -461,7 +462,7 @@ Schema: [`schemas/faction.schema.json`](schemas/faction.schema.json). Satisfies 
 | `colour_secondary` | `#rrggbb` | required | |
 | `units` | [id] | required | Unit types this faction may recruit (subject to buildings and tier) |
 | `starting_provinces` | [string] | `[]` | Province ids on the campaign map owned at start |
-| `ai_profile` | id | required | Content ID of an AI profile under `content/ai/` |
+| `ai_profile` | id | required | Content ID of an AI profile under `content/ai/profiles/` (§4.8); resolved at load, the engine AI decides with it (T2-080) |
 | `diplomacy_personality` | object | see schema | `aggression`, `loyalty`, `greed`, `expansionism` in 0..1 |
 | `tech_tree` | id | required | Content ID of a technology tree definition |
 
@@ -542,9 +543,28 @@ Satisfies REQ-CAMP-022.
 
 Battle maps are large; the schema is summarised in §6.1 because the map editor is their normal author. Reserved siege fields exist from Phase 1 (REQ-SIM-045).
 
-### 4.8 AI profiles — `content/ai/`
+### 4.8 AI profiles and action sets — `content/ai/profiles/`, `content/ai/actions/`
 
-Satisfies REQ-AI-007. An AI profile is an object of consideration weights per decision, keyed by the consideration names the Simulation Spec defines (`SIM-AI-*`). Unknown consideration names are errors; omitted ones take the engine default. Personality fields duplicate `diplomacy_personality` for campaign AI when a faction lacks its own.
+Satisfies REQ-AI-007 (delivered in T2-080). Schemas: [`schemas/ai-profile.schema.json`](schemas/ai-profile.schema.json), [`schemas/ai-action-set.schema.json`](schemas/ai-action-set.schema.json). The Simulation Spec owns the semantics (§13, §15.4); this section fixes the file shapes.
+
+An **AI profile** is the personality a faction names in `ai_profile` (a scenario may override it per side, §4.13): `aggression`, `general_aggression`, `reserve_fraction`, `stance_margin`, the cadences `army_period_ticks` / `regiment_period_ticks`, the distances `approach_distance`, `advance_step`, `line_tolerance`, `skirmish_range_frac`, `flank_offset`, `charge_trigger_dist`, `defend_search_radius`, `counter_charge_dist`, `screen_offset`, `screen_gap`, `reserve_offset`, `commit_morale`, and `action_sets` naming exactly one army set and one regiment set. Every numeric field is required (no engine defaults, like `content/rules/`); an optional `campaign` object (`army_strength_target`, `composition`, `min_garrison`) waits for Phase 4.
+
+An **AI action set** lists the candidate actions of one `scope` (`regiment` or `army`). Each action is `{ name, kind, base, threshold, noise, considerations }`; `kind` is one of the closed behaviours (`engage_nearest`, `hold_position`, `fall_back`, `follow_centroid`, `use_ability` with `ability`, `switch_formation` with `layout`, `fire_at_will`, `hold_fire`; `attack`, `defend`, `hold`, `retreat`), and each consideration is `{ input, scale, curve }` with `input` from the closed vocabulary of the Simulation Spec §13 tables, `scale` the raw value that maps to 1, and `curve` one of `{ type: "linear", m, b }`, `{ type: "quadratic", k }`, `{ type: "logistic", k, mid }`, `{ type: "step", threshold }`. Unknown kinds and inputs are schema errors; an input of the other scope, a duplicate `name`, a `use_ability` naming a missing ability and a profile without one set of each scope are load diagnostics (§3.6). Action lists take the §3.4 list operations, so a mod may `$append` an action or `$replace` a set's list.
+
+```json5
+// mymod/content/ai/actions/cautious.json5 — a regiment set that falls back earlier than the flagship's
+{
+  id: "mymod:cautious_regiment",
+  $from: "rome:regiment_default",
+  actions: { $append: [
+    { name: "fall_back_early", kind: "fall_back", base: 1.4,
+      considerations: [ { input: "own_morale", curve: { type: "logistic", k: -12, mid: 0.5 } } ] },
+  ] },
+}
+// mymod/content/ai/profiles/raider.json5
+{ id: "mymod:tribal_raider", $from: "rome:default_ai", aggression: 0.9, reserve_fraction: 0.05,
+  action_sets: ["rome:army_default", "mymod:cautious_regiment"] }
+```
 
 ### 4.9 Engine rule tunables — `content/rules/`
 
@@ -598,7 +618,8 @@ A scenario file (`tests/scenarios/*.json5`, `il_cli run`, `il_cli autoresolve`, 
 | `time_limit_ticks` | i | 48000 | Battle timer (SIM-FLOW-012) |
 | `reveal_deployment` | bool | false | Full visibility during the deployment (SIM-VIS-006) |
 | `victory.timeout_winner` | i | | The side that wins on the timer; without it the rules policy decides (SIM-FLOW-013) |
-| `sides[].faction`, `player` | id, i | required | Owner player id; 255 is the engine AI (deploys and confirms by itself) |
+| `sides[].faction`, `player` | id, i | required | Owner player id; 255 is the engine AI, which decides for the side at Stage 1 (T2-080) |
+| `sides[].ai_profile` | id | the faction's | The AI profile the engine decides with for this side (§4.8, T2-080) |
 | `sides[].deployment_zone` | i | 0 | Index of the map's deployment polygon |
 | `sides[].general` | object | required | `{ unit_type, rank (1), name_key, bodyguard (the first regiment's id) }` |
 | `sides[].regiments[]` | object | required | `{ id, unit_type, count, experience (0), fatigue (0), formation (the unit's first), position, facing_deg }`; a `position` pre-deploys the regiment (a fully placed side starts confirmed, a fully placed battle starts in the Battle phase), otherwise it is auto-placed at the zone centre and awaits `Deploy` |

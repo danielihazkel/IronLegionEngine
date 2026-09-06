@@ -1551,6 +1551,10 @@ checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 [[package]]
 name = "il_ai"
 version = "0.1.0"
+dependencies = [
+ "il_core",
+ "il_data",
+]
 
 [[package]]
 name = "il_app"
@@ -1646,6 +1650,7 @@ version = "0.1.0"
 dependencies = [
  "bevy_ecs",
  "bevy_tasks",
+ "il_ai",
  "il_core",
  "il_data",
  "json5",

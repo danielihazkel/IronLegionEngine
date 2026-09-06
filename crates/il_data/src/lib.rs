@@ -7,6 +7,7 @@
 //! (T1-025). The only crate that touches the filesystem at load.
 
 pub mod ability;
+pub mod ai;
 pub mod content_id;
 pub mod de;
 pub mod diagnostic;
@@ -36,6 +37,10 @@ pub mod validate;
 pub mod zone;
 
 pub use ability::{Ability, Effect, Stacking, Stat, Targeting};
+pub use ai::{
+    ActionDef, ActionKind, AiActionSet, AiProfile, CampaignProfile, Channel, Consideration, Curve,
+    InputId, InputScope,
+};
 pub use content_id::{ContentId, InvalidContentId};
 pub use de::Rgb;
 pub use diagnostic::{Diagnostic, Diagnostics, Severity};

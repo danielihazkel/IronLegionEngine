@@ -349,6 +349,7 @@ mod tests {
                     facing_deg: Some(0.0),
                 }],
                 reinforcements: vec![],
+                ai_profile: None,
             }],
             victory: Default::default(),
         };
@@ -370,6 +371,7 @@ mod tests {
                 pos: il_core::V2::from_f32_data(300.0, 150.0),
             }],
             rejected: Vec::new(),
+            ai_commands: Vec::new(),
         };
         s.route_events(Tick(1), &out);
         assert_eq!(s.corpses().len(), 1);
@@ -378,6 +380,7 @@ mod tests {
             hash: s.world.hash(),
             events: Vec::new(),
             rejected: Vec::new(),
+            ai_commands: Vec::new(),
         };
         s.route_events(Tick(corpse_ticks), &empty);
         assert_eq!(s.corpses().len(), 1, "still within corpse_ticks");

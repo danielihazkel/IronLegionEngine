@@ -119,8 +119,9 @@ flowchart TD
     tests --> simb
     tests --> data
     game[game/] -.->|content loaded at runtime| data
-    ai[il_ai] -.-> core
-    simb -.-> ai
+    ai[il_ai] --> core
+    ai --> data
+    simb --> ai
     simc[il_sim_campaign] -.-> data
     simc -.-> ai
     simc -.->|BattleSetup / BattleResult types| simb
@@ -159,7 +160,7 @@ Hard rules, enforced by `tests/tests/dep_rules.rs` (four tests over every `Cargo
 | `il_data` | JSON5 parse, schema validation with diagnostics, manifest, load order, override/merge (including `$from` inheritance), `Registry<T>`, `Handle<T>`, `ContentId`, localisation strings, mod list hash and content registry hash (used by saves and multiplayer handshake), hot reload (dev) | REQ-VIS-004, REQ-MOD-001, 004..008, REQ-LOC-001, REQ-SAVE-002, REQ-TEST-005 |
 | `il_sim_battle` | Battle ECS world; formation, movement, collision, combat, projectile, morale, fatigue, ability, visibility, battle-flow systems; Command application; Events; snapshot; hash; `BattleSetup`/`BattleResult` | REQ-SIM-*, REQ-FORM-*, REQ-PATH-001..007, 009, REQ-CMBT-*, REQ-ABIL-*, REQ-MOR-*, REQ-FAT-*, REQ-NET-001..003 |
 | `il_sim_campaign` | Turn engine, provinces, armies, economy, diplomacy, research, recruitment, experience, battle trigger, `BattleResult` application, campaign Commands and Events, snapshot, hash | REQ-CAMP-*, REQ-PATH-008, REQ-SIM-002, REQ-SIM-062, REQ-SIM-064 |
-| `il_ai` | Utility-AI core (considerations, response curves, action scoring, deterministic tie-break), soldier FSM types, decision cadence helpers | REQ-AI-001, 002, 005, 006, 007 |
+| `il_ai` | Utility-AI core (response curves, scoring, per-channel selection with deterministic tie-break, decision cadence helpers) over the `il_data::ai` content kinds; the soldier FSM stayed in `il_sim_battle` | REQ-AI-001, 005, 006, 007 |
 | `il_render` | wgpu setup, atlases, instance buffers, isometric projection, camera, interpolation, LOD tiers, terrain, projectiles, debug overlays, profiler overlay | REQ-RNDR-*, REQ-TOOL-003 |
 | `il_ui` | egui panels, selection, input mapping, drag-formation gesture, Command emission, minimap, cards | REQ-UI-*, REQ-INP-* |
 | `il_audio` | Event-driven sound playback, zoom mixing, music state | REQ-AUD-* |
@@ -227,7 +228,7 @@ Rules:
 
 ```
 Stage 0  ApplyCommands        commands sorted by (tick, player id, sequence); mutate orders/regiment state
-Stage 1  AI                   regiment and army utility AI (staggered cadence) -> emits internal Commands for next tick
+Stage 1  AI                   regiment and army utility AI for the engine's sides (staggered cadence; T2-080) -> Commands for the next tick, held in the hashed outbox
 Stage 2  Formation            recompute slot layouts for regiments whose count/template/facing changed; reform assignment
 Stage 3  RegimentMovement     path following, anchor movement, wheeling
 Stage 4  SoldierSteering      seek slot / flow field, separation, obstacle avoidance -> desired velocity
@@ -380,9 +381,9 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 | T-6 | Game-specific Rust in `game/rules` | Debt | game | Each addition logged as an open question in the PRD for generalisation. |
 | T-7 | `RegimentSetup.position` and `facing_deg` place regiments directly because deployment zones do not exist yet (Phase 0) | Closed (T2-070) | il_sim_battle | Kept as the pre-deploy override (PRD OQ-9): a placed regiment starts deployed and a fully placed side starts confirmed, so every headless scenario and fixture keeps working; unplaced regiments go through the deployment phase. |
 | T-8 | `ComputeTaskPool` is process-global, so the first `set_threads(n > 1)` fixes the worker count for the process | Debt | il_sim_battle | Acceptable for the app (one pool) and the tests (single N); revisit if a tool needs two pool sizes in one process. |
-| T-9 | Three of the 18 stages (1, 8, 12, 16; Stages 9, 10 and 15 got their systems in T2-020, T2-021 and T2-022, Stage 11 in T2-031, Stages 13 and 14 in T2-040/041) run an empty placeholder system so the profiler shows every row; together they cost ≈ 0.3 ms of schedule overhead per tick at 20k | Debt | il_sim_battle | Each placeholder is replaced by its real systems in Phase 2; if any stage stays empty after that, drop its schedule. |
+| T-9 | Placeholder stages ran an empty system so the profiler showed every row (Stages 9, 10 and 15 got their systems in T2-020..022, Stage 11 in T2-031, Stages 13 and 14 in T2-040/041, Stages 8, 12 and 16 in T2-050..070, Stage 1 in T2-080) | Closed (T2-080) | il_sim_battle | Every stage holds real systems. |
 | T-10 | At 20k soldiers `Collision` (11.2 ms) and `SoldierSteering` (7.7 ms) already sit at their Phase 3 budgets (TDD budget table, T1-083) | Risk | il_sim_battle | Phase 2 combat must not grow them; candidates are a narrower pair neighbourhood, fewer `collision_iterations` when nobody moved and per-row buffers reused across ticks. |
 | T-11 | Lint opt-outs: `il_render` (`unsafe_code = "deny"` for the wgpu surface, `float_arithmetic = "allow"`), `il_ui` and `il_app` (`float_arithmetic = "allow"`); `il_cli::bench::StageTimer` allows `Instant::now`; `il_sim_battle` declares `tracing` without using it | Debt | presentation crates | Each carries its reason in the manifest or attribute; the render-side float allowance is by design (no sim arithmetic there). Drop `tracing` from il_sim_battle when the next dependency pass happens. |
-| T-12 | `il_ai`, `il_save`, `il_sim_campaign` and `game/rules` are empty placeholder crates, so several §5.2 edges cannot be enforced yet | Debt | workspace | Filled by their phases; `dep_rules.rs` already lists them so the rules apply the moment they gain dependencies. |
+| T-12 | `il_save`, `il_sim_campaign` and `game/rules` are empty placeholder crates, so several §5.2 edges cannot be enforced yet (`il_ai` gained its code and its `il_core` / `il_data` edges in T2-080) | Debt | workspace | Filled by their phases; `dep_rules.rs` already lists them so the rules apply the moment they gain dependencies. |
 | T-13 | Hot reload reads manifests at startup only (`ReloadEvent::ManifestIgnored`) and debounces by poll count (`QUIET_POLLS` = 6) rather than time | Debt | il_data | Acceptable for a dev feature; a manifest change needs a restart. |
 | T-14 | `TransferControl` from a player who does not own `from` is rejected as `WrongPhase` rather than a dedicated reason (noted in T2-050) | Debt | il_sim_battle | Give it a `NotOwner`-style reason when the multiplayer drop-to-AI path (Phase 7) needs to tell the two apart. |
