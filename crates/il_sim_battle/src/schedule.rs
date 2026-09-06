@@ -17,6 +17,7 @@ use crate::combat::{
     pursue_update, ranged_fire, ranged_spawn, ranged_target, resolve_deaths, resolve_fled,
 };
 use crate::command::apply_commands;
+use crate::flow_battle::battle_flow;
 use crate::formation::{formation_apply, formation_integrity, formation_layout};
 use crate::hash::flush_events_and_hash;
 use crate::morale::{fatigue_tick, morale_tick, regiment_fatigue_mean};
@@ -97,6 +98,27 @@ impl Stage {
         self as usize
     }
 
+    /// SIM-FLOW-010 (T2-070, plan I17): the stages a phase runs. Deployment
+    /// takes commands, keeps the grids and the fog current and watches the
+    /// confirmations; Ended takes only `Pause`/`SetSpeed` and hashes;
+    /// Battle and Pursuit run everything. Checked per stage in `step`, so
+    /// no system needs a phase guard.
+    pub fn runs_in(self, phase: crate::resources::BattlePhase) -> bool {
+        use crate::resources::BattlePhase;
+        match phase {
+            BattlePhase::Deployment => matches!(
+                self,
+                Stage::ApplyCommands
+                    | Stage::SpatialGrid
+                    | Stage::Visibility
+                    | Stage::BattleFlow
+                    | Stage::EventsAndHash
+            ),
+            BattlePhase::Ended => matches!(self, Stage::ApplyCommands | Stage::EventsAndHash),
+            BattlePhase::Battle | BattlePhase::Pursuit => true,
+        }
+    }
+
     /// Stable display name (the variant name).
     pub fn name(self) -> &'static str {
         match self {
@@ -140,7 +162,6 @@ impl StageObserver for NoopObserver {
 // Placeholder systems, one per stage without real systems yet, so every
 // stage shows up in the profiler with its own timing.
 fn stage_ai() {}
-fn stage_battle_flow() {}
 
 fn stage_schedule(stage: Stage) -> Schedule {
     let mut s = Schedule::new(stage);
@@ -180,7 +201,7 @@ fn stage_schedule(stage: Stage) -> Schedule {
         }
         Stage::Morale => s.add_systems(morale_tick.in_set(stage)),
         Stage::Death => s.add_systems((resolve_deaths, resolve_fled).chain().in_set(stage)),
-        Stage::BattleFlow => s.add_systems(stage_battle_flow.in_set(stage)),
+        Stage::BattleFlow => s.add_systems(battle_flow.in_set(stage)),
         Stage::EventsAndHash => s.add_systems(flush_events_and_hash.in_set(stage)),
     };
     s

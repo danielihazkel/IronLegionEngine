@@ -196,7 +196,7 @@ Simulation tick rate and render frame rate are independent. The simulation runs 
 | REQ-SIM-033 | A player shall be able to order a withdraw; withdrawing regiments move to their own map edge and leave the field without routing penalties. | S | 2 |
 | REQ-SIM-034 | After one side has fully routed or withdrawn, a pursuit phase shall run in which pursuers inflict casualties on routing regiments until they exit the map or the pursuit timer expires. | S | 2 |
 | REQ-SIM-035 | The battle shall produce a BattleResult (§11) at the end of every battle, including aborted ones. | M | 2 |
-| REQ-SIM-036 | Reinforcement groups defined in BattleSetup shall enter from specified map edges at specified ticks. | C | 4 |
+| REQ-SIM-036 | Reinforcement groups defined in BattleSetup shall enter from specified map edges at specified ticks. | C | 2 (built in T2-070) |
 
 ### 10.3 Terrain
 
@@ -596,4 +596,4 @@ The project is successful when all of the following hold:
 | OQ-6 | Does fog of war apply in the deployment phase (blind deployment) or is the enemy deployment visible? **Resolved (T2-060):** a data switch, `BattleSetup.reveal_deployment` (default false, blind), per SIM-VIS-006. | Simulation Spec §11 | Phase 2 |
 | OQ-7 | Which JSON5 crate: `json5` (serde, mature) or `serde_json5`? **Resolved (Phase 0, T0-020): `json5` 1.3. Amended (Phase 1, T1-020): content and scenarios are parsed by `il_data::json5`, an own span-carrying parser, because diagnostics and merge provenance need a position per field; the `json5` crate remains only as a dev-dependency for test fixtures.** | TDD §3 | Phase 1 |
 | OQ-8 | Audio crate: `kira` (game-oriented) or `rodio`? | TDD audio section | Phase 2 |
-| OQ-9 | `RegimentSetup.position` / `facing_deg` were added in Phase 0 to place regiments without deployment zones (SAD T-7). Remove them in T2-070, or keep them as an optional scenario-file override that skips deployment for tests? *Phase 1 note (T1-083): every scenario in `tests/scenarios/`, the determinism test and the `il_cli bench` generator place regiments this way, and T1-030 validates the positions against the map; the decision stays with T2-070, which must keep those tests placing regiments somehow.* | TDD §4.2 | Phase 2 |
+| OQ-9 | `RegimentSetup.position` / `facing_deg` were added in Phase 0 to place regiments without deployment zones (SAD T-7). Remove them in T2-070, or keep them as an optional scenario-file override that skips deployment for tests? *Phase 1 note (T1-083): every scenario in `tests/scenarios/`, the determinism test and the `il_cli bench` generator place regiments this way, and T1-030 validates the positions against the map; The decision stays with T2-070, which must keep those tests placing regiments somehow.* **Resolved (T2-070):** kept as an optional pre-deploy override; a fully pre-placed setup starts in Battle, anything else goes through the deployment phase (SIM-FLOW-011). | TDD §4.2 | Phase 2 |

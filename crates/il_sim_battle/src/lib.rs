@@ -9,6 +9,7 @@ pub mod command;
 pub mod components;
 pub mod events;
 pub mod flow;
+pub mod flow_battle;
 pub mod formation;
 pub mod hash;
 pub mod interface;
@@ -17,6 +18,7 @@ pub mod morale;
 pub mod movement;
 pub mod nav;
 pub mod resources;
+pub mod result;
 pub mod schedule;
 pub mod snapshot;
 pub mod spatial;
@@ -43,8 +45,8 @@ pub use interface::{
 pub use map::{FLAT_MAP_ID, LoadedMap, MapError, polygon_contains};
 pub use nav::{AStar, NavGrid, PathResult, Pathfinder, string_pull};
 pub use resources::{
-    AnchorGridRes, BattlePhase, FlowFields, MapRes, NavGridRes, PathRequests, PathfinderRes,
-    SpatialGridRes,
+    AnchorGridRes, BattleFlow, BattlePhase, FlowFields, MapRes, NavGridRes, PathRequests,
+    PathfinderRes, SpatialGridRes,
 };
 pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};

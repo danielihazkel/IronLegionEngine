@@ -240,7 +240,9 @@ fn a_mid_clash_snapshot_restores_and_continues_identically() {
 
 #[test]
 fn attack_regiment_is_validated_and_pursued() {
-    let setup = two_sides(40);
+    // Close enough to be seen (T2-060): at 200 m on low ground the hastati's
+    // sight radius is about 184 m.
+    let setup = close_sides(40);
     let mut w = BattleWorld::new(&setup, regs()).unwrap();
     // Own side, unknown, then a real enemy.
     let out = w.step(&[attack_regiment(1, 0, &[0], 0)]);
@@ -301,7 +303,12 @@ fn attack_move_acquires_an_enemy_within_the_radius_only() {
 fn an_attack_move_resumes_its_move_when_the_target_is_emptied() {
     let mut setup = two_sides(40);
     setup.sides[0].regiments = vec![at(1, "rome:hastati", 40, 300.0, 150.0, 0.0)];
-    setup.sides[1].regiments = vec![at(2, "rome:hastati", 40, 340.0, 160.0, 180.0)];
+    // A second enemy far away keeps side 1 undefeated once regiment 1 is
+    // emptied, so the battle stays in the Battle phase (T2-070).
+    setup.sides[1].regiments = vec![
+        at(2, "rome:hastati", 40, 340.0, 160.0, 180.0),
+        at(3, "rome:hastati", 40, 700.0, 300.0, 180.0),
+    ];
     let mut w = BattleWorld::new(&setup, regs()).unwrap();
     let commands = [attack_move(1, 0, &[0], 500.0, 150.0)];
     run(&mut w, &commands, 300);

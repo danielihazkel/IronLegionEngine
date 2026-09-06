@@ -25,8 +25,8 @@ use crate::components::{Cooldowns, Energy};
 use crate::map::LoadedMap;
 use crate::nav::NavGrid;
 use crate::resources::{
-    AnchorGridRes, BattlePhase, Ids, MapRes, NavGridRes, Projectiles, Regs, SideState, Sides,
-    SpatialGridRes,
+    AnchorGridRes, BattleFlow, BattlePhase, Ids, MapRes, NavGridRes, Projectiles, Regs, SideState,
+    Sides, SpatialGridRes,
 };
 use crate::spatial::SpatialGrid;
 use crate::visibility::{Seen, Visibility};
@@ -371,6 +371,11 @@ impl<'w> BattleView<'w> {
     pub fn formation_state(&self, id: RegimentId) -> Option<&'w FormationState> {
         let entity = self.world.resource::<Ids>().regiment_entity(id)?;
         self.world.get::<FormationState>(entity)
+    }
+
+    /// SIM-FLOW-010..015 (T2-070): the phase timers and verdict.
+    pub fn flow(&self) -> BattleFlow {
+        *self.world.resource::<BattleFlow>()
     }
 
     /// SIM-VIS-004 (T2-060): whether `side` currently sees the regiment.

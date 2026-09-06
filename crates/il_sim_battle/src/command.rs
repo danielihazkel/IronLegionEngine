@@ -11,8 +11,8 @@ use il_data::ContentId;
 use serde::{Deserialize, Serialize};
 
 use crate::components::{
-    Anchor, Combat, Fire, FormationState, Morale, MoraleState, Order, OrderKind, Path, Pos,
-    Regiment, SlotRef,
+    Anchor, Combat, Fire, FormationState, Fsm, MeleeState, Morale, MoraleState, Order, OrderKind,
+    Path, Pos, Regiment, SlotRef, SoldierState,
 };
 use crate::events::BattleEvent;
 use crate::formation::{
@@ -20,7 +20,7 @@ use crate::formation::{
 };
 use crate::resources::{
     BattlePhase, Clock, CommandInbox, Events, Ids, MapRes, MoraleShocks, PathRequests, Phase, Regs,
-    Rejected, Shock, ShockKind, Sides,
+    Rejected, Shock, ShockKind, SideState, Sides,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -345,7 +345,11 @@ pub enum RejectReason {
     },
     /// A hidden enemy regiment was named as a target (SIM-VIS-004, T2-060).
     NotVisible(RegimentId),
-    /// The variant has no implementation yet; never silently dropped.
+    /// `Deploy` outside the side's deployment polygon (SIM-FLOW-011,
+    /// T2-070).
+    OutsideDeploymentZone { regiment: RegimentId },
+    /// Every variant has an arm since T2-070; kept so a future kind is
+    /// never silently dropped.
     NotImplemented,
 }
 
@@ -400,6 +404,33 @@ fn validate_and_apply(
             command_tick: command.tick,
             current,
         });
+    }
+
+    // SIM-FLOW-010..017 (T2-070, plan I18): what each phase accepts.
+    let phase = world.resource::<Phase>().0;
+    let allowed = match phase {
+        BattlePhase::Deployment => matches!(
+            command.kind,
+            CommandKind::Deploy { .. }
+                | CommandKind::ConfirmDeployment
+                | CommandKind::SetFormation { .. }
+                | CommandKind::SetFacing { .. }
+                | CommandKind::Pause
+                | CommandKind::SetSpeed { .. }
+                | CommandKind::Surrender
+                | CommandKind::TransferControl { .. }
+        ),
+        BattlePhase::Ended => matches!(
+            command.kind,
+            CommandKind::Pause | CommandKind::SetSpeed { .. }
+        ),
+        BattlePhase::Battle | BattlePhase::Pursuit => !matches!(
+            command.kind,
+            CommandKind::Deploy { .. } | CommandKind::ConfirmDeployment
+        ),
+    };
+    if !allowed {
+        return Err(RejectReason::WrongPhase);
     }
 
     // SIM-CMD-003: every addressed regiment must exist and belong to the player.
@@ -662,6 +693,21 @@ fn validate_and_apply(
                 return Err(RejectReason::WrongPhase);
             }
             let entity = entities[0];
+            // SIM-FLOW-011 (T2-070, plan I20): the anchor must land inside the
+            // side's deployment polygon.
+            let (rid, side) = {
+                let r = world.get::<Regiment>(entity).expect("validated");
+                (r.id, r.side)
+            };
+            let zone = world.resource::<Sides>().0[usize::from(side)].deployment_zone;
+            let inside = world
+                .resource::<MapRes>()
+                .0
+                .deployment_polygon(zone)
+                .is_some_and(|poly| crate::map::polygon_contains(poly, *position));
+            if !inside {
+                return Err(RejectReason::OutsideDeploymentZone { regiment: rid });
+            }
             if let Some(id) = template {
                 let handle = world
                     .resource::<Regs>()
@@ -749,8 +795,112 @@ fn validate_and_apply(
             }
             crate::abilities::use_ability(world, entities[0], ability, target, current)
         }
-        _ => Err(RejectReason::NotImplemented),
+        // SIM-FLOW-011 (T2-070): every side the player owns confirms.
+        CommandKind::ConfirmDeployment => {
+            let confirmed = mark_sides(world, command.player, |s| {
+                if s.deployment_confirmed {
+                    false
+                } else {
+                    s.deployment_confirmed = true;
+                    true
+                }
+            });
+            for side in confirmed {
+                world
+                    .resource_mut::<Events>()
+                    .0
+                    .push(current, BattleEvent::DeploymentConfirmed { side });
+            }
+            Ok(())
+        }
+        // SIM-FLOW-017 (T2-070): the side is defeated at the next Stage 16.
+        CommandKind::Surrender => {
+            let sides = mark_sides(world, command.player, |s| {
+                if s.surrendered {
+                    false
+                } else {
+                    s.surrendered = true;
+                    true
+                }
+            });
+            for side in sides {
+                world
+                    .resource_mut::<Events>()
+                    .0
+                    .push(current, BattleEvent::Surrendered { side });
+            }
+            Ok(())
+        }
+        // SIM-FLOW-014 (T2-070): march for the escape edge; a routing or
+        // shattered regiment ignores it (SIM-CMD-004).
+        CommandKind::Withdraw { .. } => {
+            for entity in entities {
+                let routing = world.get::<Morale>(entity).is_some_and(|m| {
+                    matches!(m.state, MoraleState::Routing | MoraleState::Shattered)
+                });
+                if !routing {
+                    withdraw(world, entity, current);
+                }
+            }
+            Ok(())
+        }
     }
+}
+
+/// Applies `f` to every side `player` owns; returns the sides it reported.
+fn mark_sides(
+    world: &mut World,
+    player: PlayerId,
+    mut f: impl FnMut(&mut SideState) -> bool,
+) -> Vec<u8> {
+    let mut sides = world.resource_mut::<Sides>();
+    sides
+        .0
+        .iter_mut()
+        .enumerate()
+        .filter(|(_, s)| s.player == player)
+        .filter_map(|(i, s)| f(s).then_some(i as u8))
+        .collect()
+}
+
+/// `Withdraw` (SIM-FLOW-014, plan G51): the order becomes `Withdraw` at
+/// `March` with no target and no path, every soldier enters `Withdrawing`
+/// and drops its melee target; the soldiers follow the escape field and the
+/// anchor follows their centroid.
+fn withdraw(world: &mut World, entity: Entity, tick: Tick) {
+    let (id, soldiers) = {
+        let r = world.get::<Regiment>(entity).expect("validated");
+        (r.id, r.soldiers.clone())
+    };
+    if let Some(mut order) = world.get_mut::<Order>(entity) {
+        order.kind = OrderKind::Withdraw;
+        order.target_regiment = None;
+        order.facing = None;
+        order.speed = SpeedMode::March;
+        order.since = tick;
+    }
+    if let Some(mut path) = world.get_mut::<Path>(entity) {
+        path.waypoints.clear();
+        path.next = 0;
+        path.requested = false;
+    }
+    world.resource_mut::<PathRequests>().0.remove(&id);
+    for sid in soldiers {
+        let Some(e) = world.resource::<Ids>().soldier_entity(sid) else {
+            continue;
+        };
+        if let Some(mut fsm) = world.get_mut::<Fsm>(e) {
+            fsm.state = SoldierState::Withdrawing;
+            fsm.since = tick;
+        }
+        if let Some(mut melee) = world.get_mut::<MeleeState>(e) {
+            melee.target = None;
+        }
+    }
+    world
+        .resource_mut::<Events>()
+        .0
+        .push(tick, BattleEvent::Withdrawing { regiment: id });
 }
 
 /// `Halt`: the order ends where the regiment stands; a pending path

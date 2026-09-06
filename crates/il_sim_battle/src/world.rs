@@ -219,7 +219,11 @@ impl BattleWorld {
 
         for (schedule, stage) in self.schedules.iter_mut().zip(Stage::ALL) {
             observer.begin(stage);
-            schedule.run(&mut self.world);
+            // SIM-FLOW-010 (T2-070): the phase decides which stages run; Stage
+            // 16 may flip it mid-tick, so it is read per stage.
+            if stage.runs_in(self.world.resource::<Phase>().0) {
+                schedule.run(&mut self.world);
+            }
             observer.end(stage);
         }
         self.view_queries.refresh(&self.world);

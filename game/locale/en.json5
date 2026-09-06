@@ -103,7 +103,20 @@
       ready: "ready",
       seconds: "{seconds} s",
       status: "{name} {seconds} s",
+      // Battle phases (T2-070).
+      phase: { deployment: "Deployment", battle: "Battle", pursuit: "Pursuit", ended: "Ended" },
+      deploy_hint: "Right-click or drag to place the selection inside your zone, Enter to confirm",
     },
+    result: {
+      title: "Battle over",
+      winner: "Side {side} wins",
+      draw: "Draw",
+      duration: "Duration {time}",
+      side: "Side {side}",
+      line: "{survivors} survivors · {killed} killed · {fled} fled · general {fate} · loot {loot}",
+      back: "Back to the menu",
+    },
+    fate: { alive: "alive", wounded: "wounded", dead: "dead", captured: "captured" },
     morale: {
       steady: "steady",
       unsettled: "unsettled",

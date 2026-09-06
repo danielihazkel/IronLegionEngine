@@ -17,7 +17,7 @@ use anyhow::{Context, anyhow};
 use il_core::{StateHash, Tick};
 use il_data::Registries;
 use il_data::json5::{FileId, parse_json5};
-use il_sim_battle::{BattleSetup, BattleWorld, Scenario, Snapshot};
+use il_sim_battle::{BattleEvent, BattleSetup, BattleWorld, Scenario, Snapshot};
 
 /// Options of `il_cli run`.
 #[derive(Clone, Debug)]
@@ -135,10 +135,27 @@ pub fn run(opts: &RunOptions, out: &mut dyn Write) -> anyhow::Result<Vec<(Tick, 
     };
 
     let mut hashes = Vec::new();
+    let mut ended = false;
     while world.tick().0 < opts.ticks {
         let commands = script.take_for(world.tick().next());
         let step = world.step(&commands);
         let tick = world.tick();
+        // T2-070: the battle's end, once; stepping continues so hash logs
+        // stay comparable (the frozen ticks still hash).
+        if !ended && world.phase() == il_sim_battle::BattlePhase::Ended {
+            ended = true;
+            if let Some(BattleEvent::Ended { result }) = step
+                .events
+                .iter()
+                .find(|e| matches!(e, BattleEvent::Ended { .. }))
+            {
+                eprintln!(
+                    "# ended tick={} winner={}",
+                    tick.0,
+                    result.winner.map_or("none".to_string(), |w| w.to_string())
+                );
+            }
+        }
         if opts.hash_every > 0 && tick.0 % opts.hash_every == 0 {
             hashes.push((tick, step.hash));
             let line = format!("{},{}\n", tick.0, step.hash);

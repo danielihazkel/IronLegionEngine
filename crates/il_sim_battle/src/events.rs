@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::RejectReason;
 use crate::components::MoraleState;
+use crate::interface::BattleResult;
 use crate::resources::BattlePhase;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -92,6 +93,26 @@ pub enum BattleEvent {
         regiment: RegimentId,
         ability: ContentId,
     },
+    /// A side confirmed its deployment (SIM-FLOW-011, T2-070).
+    DeploymentConfirmed { side: u8 },
+    /// A side surrendered (SIM-FLOW-017, T2-070).
+    Surrendered { side: u8 },
+    /// The regiment was ordered to withdraw (SIM-FLOW-014, T2-070).
+    Withdrawing { regiment: RegimentId },
+    /// A withdrawing soldier reached its side's escape edge and left the
+    /// battle as a survivor (SIM-FLOW-014, T2-070).
+    SoldierWithdrew {
+        id: SoldierId,
+        regiment: RegimentId,
+        pos: V2,
+    },
+    /// A reinforcement group entered at its edge (SIM-FLOW-016, T2-070).
+    ReinforcementsArrived { side: u8 },
+    /// A reinforcement group was dropped at the soldier cap (SIM-CORE-006).
+    ReinforcementsDropped { side: u8, group: u8 },
+    /// The battle ended (SIM-FLOW-013/015/018, T2-070); the result as of
+    /// that tick.
+    Ended { result: Box<BattleResult> },
 }
 
 impl Event for BattleEvent {}

@@ -16,7 +16,8 @@ use glam::Vec2;
 use il_core::{Angle, RegimentId, S, Scalar, V2};
 use il_data::{ContentId, GroupKind, Targeting};
 use il_sim_battle::{
-    AbilityTarget, BattleView, CommandKind, FireMode, RegimentRow, SpeedMode, ranks_for_width,
+    AbilityTarget, BattlePhase, BattleView, CommandKind, FireMode, RegimentRow, SpeedMode,
+    ranks_for_width,
 };
 
 /// Drags shorter than this (metres) are clicks in disguise; no order.
@@ -139,6 +140,29 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
     if regiments.is_empty() {
         return Vec::new();
     }
+    // SIM-FLOW-011 (T2-070, plan decision 20): during the deployment a move
+    // or a drag places the regiments instead.
+    if ctx.view.phase() == BattlePhase::Deployment {
+        match intent {
+            UiIntent::Move { target } => {
+                let facing = ctx
+                    .view
+                    .regiment(regiments[0])
+                    .map(|r| r.anchor_facing)
+                    .unwrap_or_default();
+                return deploy_commands(ctx, &regiments, *target, facing, 30.0);
+            }
+            UiIntent::DragFormation(drag) => {
+                let spacing = if regiments.len() > 1 {
+                    drag.width / regiments.len() as f32
+                } else {
+                    0.0
+                };
+                return deploy_commands(ctx, &regiments, drag.anchor, drag.facing(), spacing);
+            }
+            _ => {}
+        }
+    }
     match intent {
         UiIntent::Move { target } => vec![CommandKind::Move {
             regiments,
@@ -177,6 +201,34 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
             }]
         }
     }
+}
+
+/// One `Deploy` per selected regiment, side by side along the facing's
+/// right axis `spacing` metres apart, centred on `centre` (T2-070).
+fn deploy_commands(
+    ctx: &OrderContext<'_, '_>,
+    regiments: &[RegimentId],
+    centre: Vec2,
+    facing: il_core::Angle<il_core::S>,
+    spacing: f32,
+) -> Vec<CommandKind> {
+    let f = facing.direction();
+    let right = Vec2::new(f.y.to_f32_render(), -f.x.to_f32_render());
+    let n = regiments.len() as f32;
+    regiments
+        .iter()
+        .enumerate()
+        .filter(|(_, id)| ctx.view.regiment(**id).is_some())
+        .map(|(k, id)| {
+            let offset = right * ((k as f32 - (n - 1.0) * 0.5) * spacing);
+            CommandKind::Deploy {
+                regiment: *id,
+                position: v2(centre + offset),
+                facing,
+                template: None,
+            }
+        })
+        .collect()
 }
 
 /// One `UseAbility` per selected regiment that has the slot (plan decision

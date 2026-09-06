@@ -7,6 +7,7 @@
 
 use il_core::{PlayerId, Tick};
 use il_data::ContentId;
+use il_data::MapEdge;
 use serde::{Deserialize, Serialize};
 
 use crate::command::Command;
@@ -103,21 +104,27 @@ pub struct RegimentSetup {
     pub fatigue: f32,
     #[serde(default)]
     pub formation: Option<ContentId>,
-    /// TEMPORARY (Phase 0, SAD §12 T-7): anchor position in world units,
-    /// because deployment zones do not exist until T2-070. Removed then.
+    /// Pre-deploy override (PRD OQ-9, T2-070): the anchor position in world
+    /// units. A regiment with a position spawns deployed there (checked
+    /// against the map, not the deployment polygon), and a side whose every
+    /// regiment has one starts with its deployment confirmed; when every
+    /// side does, the battle starts in the Battle phase. Without it the
+    /// regiment is auto-placed at its zone centre and awaits `Deploy`.
     #[serde(default)]
     pub position: Option<[f32; 2]>,
-    /// TEMPORARY (Phase 0, SAD §12 T-7): anchor facing in degrees,
-    /// counter-clockwise from +x. Removed with `position`.
+    /// Anchor facing in degrees, counter-clockwise from +x, for a
+    /// pre-deployed regiment (default 0).
     #[serde(default)]
     pub facing_deg: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReinforcementGroup {
+    /// Ticks after the Battle phase begins (SIM-FLOW-016).
     pub arrival_tick: u32,
-    /// Map edge index the group enters from.
-    pub edge: u8,
+    /// The map edge the group enters from; the map must list it for the
+    /// side's deployment zone (`reinforcement_edges`, T2-070).
+    pub edge: MapEdge,
     pub regiments: Vec<RegimentSetup>,
 }
 
@@ -208,6 +215,14 @@ pub struct RegimentResult {
     pub killed: u16,
     pub experience_gain: u16,
     pub ammo_left: u16,
+    /// False for a reinforcement group that never entered the field
+    /// (T2-070); such regiments count in full as survivors.
+    #[serde(default = "default_true")]
+    pub arrived: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -248,7 +263,7 @@ mod tests {
                 { faction: "rome:rome", player: 1,
                   general: { unit_type: "rome:general", bodyguard: 2 },
                   regiments: [ { id: 2, unit_type: "rome:hastati", count: 500, facing_deg: 180 } ],
-                  reinforcements: [ { arrival_tick: 100, edge: 1,
+                  reinforcements: [ { arrival_tick: 100, edge: "north",
                     regiments: [ { id: 3, unit_type: "rome:hastati", count: 20 } ] } ] },
               ],
             }"#,
@@ -263,6 +278,7 @@ mod tests {
         assert_eq!(setup.sides[0].regiments[0].position, Some([-100.0, 0.0]));
         assert_eq!(setup.sides[1].regiments[0].facing_deg, Some(180.0));
         assert_eq!(setup.sides[1].general.bodyguard, Some(2));
+        assert_eq!(setup.sides[1].reinforcements[0].edge, MapEdge::North);
         assert_eq!(setup.soldier_total(), 1022);
         let json = serde_json::to_string(&setup).unwrap();
         let back: BattleSetup = serde_json::from_str(&json).unwrap();

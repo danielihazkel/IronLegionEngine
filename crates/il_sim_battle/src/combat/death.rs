@@ -137,7 +137,7 @@ fn general_died(world: &mut World, side: u8, soldier: SoldierId, tick: Tick) {
 /// SIM-FORM-021: takes `victim` out of its regiment's soldier list and the
 /// parallel slot assignment and requests a reform; the layout itself is
 /// rebuilt at the next Stage 2. Returns the regiment entity.
-fn detach_from_regiment(
+pub(crate) fn detach_from_regiment(
     world: &mut World,
     regiment: RegimentId,
     victim: SoldierId,
@@ -166,7 +166,7 @@ fn detach_from_regiment(
 /// nobody targets them any more (a fighter without a target holds still
 /// until its next retarget tick, SIM-CORE-011), they leave `Ids`, the
 /// world and the spatial grid.
-fn remove_soldiers(world: &mut World, gone: &[SoldierId]) {
+pub(crate) fn remove_soldiers(world: &mut World, gone: &[SoldierId]) {
     let soldier_entities: Vec<Entity> = world
         .resource::<Ids>()
         .soldier_entities
@@ -213,7 +213,7 @@ fn remove_soldiers(world: &mut World, gone: &[SoldierId]) {
 /// no casualty ring, no kill credit.
 pub fn resolve_fled(world: &mut World) {
     let tick = world.resource::<Clock>().tick;
-    let fled: Vec<(SoldierId, RegimentId, V2)> = {
+    let fled: Vec<(SoldierId, RegimentId, V2, SoldierState)> = {
         let ids = world.resource::<Ids>();
         let nav = &world.resource::<NavGridRes>().0;
         let flow = world.resource::<FlowFields>();
@@ -229,14 +229,70 @@ pub fn resolve_fled(world: &mut World) {
                 let p = world.get::<Pos>(*e)?.p;
                 flow.for_side(side)
                     .is_some_and(|f| f.is_exit(nav, p))
-                    .then_some((*id, regiment, p))
+                    .then_some((*id, regiment, p, fsm.state))
             })
             .collect()
     };
     if fled.is_empty() {
         return;
     }
-    for (id, regiment, pos) in &fled {
+    for (id, regiment, pos, state) in &fled {
+        // SIM-FLOW-002/014 (T2-070): a withdrawer is a survivor, a router
+        // is fled.
+        let withdrawing = *state == SoldierState::Withdrawing;
+        world.resource_mut::<Events>().0.push(
+            tick,
+            if withdrawing {
+                BattleEvent::SoldierWithdrew {
+                    id: *id,
+                    regiment: *regiment,
+                    pos: *pos,
+                }
+            } else {
+                BattleEvent::SoldierFled {
+                    id: *id,
+                    regiment: *regiment,
+                    pos: *pos,
+                }
+            },
+        );
+        if let Some(re) = detach_from_regiment(world, *regiment, *id)
+            && let Some(mut c) = world.get_mut::<Combat>(re)
+        {
+            if withdrawing {
+                c.withdrawn = c.withdrawn.saturating_add(1);
+            } else {
+                c.fled = c.fled.saturating_add(1);
+            }
+        }
+    }
+    let ids: Vec<SoldierId> = fled.iter().map(|f| f.0).collect();
+    remove_soldiers(world, &ids);
+}
+
+/// SIM-FLOW-015 (T2-070, plan I24): at the end of the pursuit every
+/// Routing soldier still on the field escapes: counted as fled, one
+/// `SoldierFled` each, removed like the dead (ascending id).
+pub fn escape_all_routers(world: &mut World) {
+    let tick = world.resource::<Clock>().tick;
+    let routers: Vec<(SoldierId, RegimentId, V2)> = {
+        let ids = world.resource::<Ids>();
+        ids.soldier_entities
+            .iter()
+            .filter_map(|(id, e)| {
+                let fsm = world.get::<Fsm>(*e)?;
+                (fsm.state == SoldierState::Routing).then(|| {
+                    let regiment = world.get::<Soldier>(*e).map(|s| s.regiment)?;
+                    let p = world.get::<Pos>(*e)?.p;
+                    Some((*id, regiment, p))
+                })?
+            })
+            .collect()
+    };
+    if routers.is_empty() {
+        return;
+    }
+    for (id, regiment, pos) in &routers {
         world.resource_mut::<Events>().0.push(
             tick,
             BattleEvent::SoldierFled {
@@ -251,6 +307,6 @@ pub fn resolve_fled(world: &mut World) {
             c.fled = c.fled.saturating_add(1);
         }
     }
-    let ids: Vec<SoldierId> = fled.iter().map(|f| f.0).collect();
+    let ids: Vec<SoldierId> = routers.iter().map(|f| f.0).collect();
     remove_soldiers(world, &ids);
 }

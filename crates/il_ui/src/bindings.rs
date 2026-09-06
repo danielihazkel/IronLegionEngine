@@ -110,6 +110,8 @@ pub enum Action {
     Formation(u8),
     /// The selection's n-th ability slot (1-based; T2-050).
     Ability(u8),
+    /// Ends the deployment for every side the player owns (T2-070).
+    ConfirmDeployment,
     Pause,
     SpeedUp,
     SpeedDown,
@@ -150,6 +152,7 @@ const FIXED_ACTIONS: &[(&str, Action)] = &[
     ("order_halt", Action::OrderHalt),
     ("toggle_run", Action::ToggleRun),
     ("toggle_fire", Action::ToggleFire),
+    ("confirm_deployment", Action::ConfirmDeployment),
     ("pause", Action::Pause),
     ("speed_up", Action::SpeedUp),
     ("speed_down", Action::SpeedDown),

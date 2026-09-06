@@ -23,6 +23,8 @@ cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --thread
 - `--show-keys` shows localisation keys instead of text, to spot a label that bypasses the locale.
 - `--content-root <folder>` points at a different game root (default `game`).
 
+A regiment with a `position` in the file starts deployed there; a side whose every regiment has one skips the deployment phase, and when every side does the battle opens in the Battle phase (that is every file under `tests/scenarios/` except `phases_all_four.json5`). Leave the positions out and the battle opens in Deployment: the regiments stand in a battle line at their zone centre, right-click or right-drag moves the selection inside the zone (a red `OutsideDeploymentZone` in the event panel otherwise), `Enter` confirms, and the HUD shows the phase. A battle ends in a result window (winner, duration, per side survivors, killed, fled, the general's fate, loot) with a button back to the menu; the sim stops stepping then (T2-070).
+
 `move_reform_2000.json5` starts with ten regiments north of the river and a scripted command stream: at one second everyone runs south over the bridge and the ford, later some change formation, wheel, form a battle line and march back. `idle_1000.json5` is a thousand soldiers standing still. The band files under `tests/scenarios/bands/` are small fights (§4a, §4b).
 
 The window title is the quick telemetry line: tick, soldiers drawn, sim milliseconds per tick, speed, selection size, commands recorded, zoom, rotation.
@@ -48,6 +50,7 @@ Every key comes from `game/content/input/bindings.json5`; a mod may rebind any o
 | Run toggle for new orders | `R` (the HUD shows `running` or `walking`) |
 | Fire toggle for the selected ranged regiments | `F` (hold fire / fire at will; regiments start at fire at will) |
 | Formation templates of the selected unit type | `F1`..`F4` in the order the unit lists them (hastati: line, column, loose) |
+| Confirm the deployment (Deployment phase) | `Enter` |
 | Abilities of the selected regiments | `Z`, `X`, `C` for the first three slots (the unit's abilities, then its general's; T2-050): hastati testudo, hoplites shield wall, Persian cavalry war cry on the nearest enemy regiment within 60 m |
 | Pause | `Space`, or the HUD button |
 | Speed | `Ctrl+=` / `Ctrl+-` or the numpad `+` / `-`, or the HUD buttons |

@@ -1,0 +1,41 @@
+// T2-070 determinism scenario: a battle that passes through every phase.
+// Neither side pre-places its regiments, so the battle starts in
+// Deployment with both sides auto-placed in a battle line at their zone
+// centre (side 0 near y 120, side 1 near y 480, facing each other). Player
+// 0 re-deploys one regiment, both players confirm at tick 10, and side 0
+// attacks: 240 hastati against 60 velites. The velites break and run
+// north, the battle enters Pursuit and ends when the routers leave the
+// field or the pursuit timer (2,400 ticks) expires; the remaining ticks
+// run frozen (SIM-FLOW-010: Ended runs Stage 0 and 17 only).
+//
+// RegimentIds: hastati 0 and 1 (side 0), velites 2 (side 1).
+{
+  map_id: "rome:test_field",
+  seed: 11,
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "rome:hastati", count: 120, formation: "rome:line" },
+        { id: 2, unit_type: "rome:hastati", count: 120, formation: "rome:line" },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 3, unit_type: "rome:velites", count: 60, formation: "rome:loose" },
+      ],
+    },
+  ],
+  commands: [
+    // Inside zone 0 (y 40..200): a re-deploy during Deployment.
+    { tick: 5,  player: 0, seq: 0, kind: { Deploy: { regiment: 1, position: { x: 420, y: 160 }, facing: 1.5707964, template: null } } },
+    { tick: 10, player: 0, seq: 0, kind: "ConfirmDeployment" },
+    { tick: 10, player: 1, seq: 0, kind: "ConfirmDeployment" },
+    { tick: 20, player: 0, seq: 0, kind: { FireMode: { regiments: [0, 1], mode: "Hold" } } },
+    { tick: 20, player: 0, seq: 1, kind: { SetSpeedMode: { regiments: [0, 1], mode: "Run" } } },
+    { tick: 20, player: 0, seq: 2, kind: { AttackMove: { regiments: [0, 1], target: { x: 400, y: 480 } } } },
+  ],
+}

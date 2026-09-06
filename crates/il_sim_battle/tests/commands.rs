@@ -51,12 +51,16 @@ fn commands_apply_in_player_then_seq_order_regardless_of_arrival() {
         }
     )));
 
-    // Across players: player 0 sorts before player 1 whatever the seq numbers.
+    // Across players: player 0 sorts before player 1 whatever the seq numbers
+    // (a `Deploy` in the Battle phase is `WrongPhase` for both, T2-070).
+    let deploy = |regiment| CommandKind::Deploy {
+        regiment: RegimentId(regiment),
+        position: il_core::V2::ZERO,
+        facing: il_core::Angle::default(),
+        template: None,
+    };
     let t = w.tick().next();
-    let out = w.step(&[
-        cmd(t, 1, 0, CommandKind::Surrender),
-        cmd(t, 0, 9, CommandKind::Surrender),
-    ]);
+    let out = w.step(&[cmd(t, 1, 0, deploy(1)), cmd(t, 0, 9, deploy(0))]);
     let players: Vec<u8> = out.rejected.iter().map(|(c, _)| c.player.0).collect();
     assert_eq!(players, vec![0, 1]);
 }
@@ -144,19 +148,22 @@ fn ownership_is_enforced_and_transfer_changes_it() {
     assert_eq!(out.rejected.len(), 1);
 }
 
+/// Every variant has an arm since T2-070: a command that does not fit the
+/// phase is `WrongPhase` (never silently dropped), and `Surrender` applies.
 #[test]
-fn unimplemented_variants_are_rejected_not_dropped() {
+fn every_variant_has_an_arm_and_the_phase_gate_reports_the_rest() {
     let mut w = common::world(10);
     let t = w.tick().next();
     let out = w.step(&[
         cmd(t, 0, 1, CommandKind::ConfirmDeployment),
         cmd(t, 0, 2, CommandKind::Surrender),
     ]);
-    assert_eq!(out.rejected.len(), 2);
+    assert_eq!(out.rejected.len(), 1);
+    assert_eq!(out.rejected[0].1, RejectReason::WrongPhase);
     assert!(
-        out.rejected
+        out.events
             .iter()
-            .all(|(_, r)| *r == RejectReason::NotImplemented)
+            .any(|e| matches!(e, il_sim_battle::BattleEvent::Surrendered { side: 0 }))
     );
 }
 

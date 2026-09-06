@@ -27,8 +27,8 @@ pub use orders::{
 };
 pub use overlay::{drag_formation_preview, selection_box};
 pub use panels::{
-    EventLine, HudAction, HudModel, MenuChoice, MenuModel, SelectedRegiment, battle_hud, clock,
-    event_panel, main_menu,
+    EventLine, HudAction, HudModel, MenuChoice, MenuModel, ResultModel, SelectedRegiment,
+    battle_hud, clock, event_panel, main_menu, result_window,
 };
 pub use pick::{
     Project, own_regiments, owned, pick_regiment, regiments_in_box, regiments_of_type_on_screen,

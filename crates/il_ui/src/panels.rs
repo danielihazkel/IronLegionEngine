@@ -92,6 +92,10 @@ pub struct SelectedRegiment {
 
 pub struct HudModel<'a> {
     pub tick: Tick,
+    /// Localised phase (`il.battle.phase.*`, T2-070) and, during the
+    /// deployment, the hint line.
+    pub phase: String,
+    pub deploying: bool,
     pub paused: bool,
     pub speed: f32,
     /// The run toggle for new orders.
@@ -158,6 +162,10 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
                 "il.battle.commands",
                 &[("count", &model.commands as &dyn Display), ("mode", &mode)],
             ));
+            ui.label(&model.phase);
+            if model.deploying {
+                ui.label(l.get("il.battle.deploy_hint"));
+            }
         });
     if !model.selection.is_empty() {
         egui::Window::new("il_selection")
@@ -188,6 +196,67 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
             });
     }
     action
+}
+
+/// The result screen model (T2-070; the full screen is T2-091).
+pub struct ResultModel<'a> {
+    pub result: &'a il_sim_battle::BattleResult,
+    pub locale: &'a Locale,
+}
+
+/// Draws the end-of-battle window; returns true when the player asked for
+/// the menu.
+pub fn result_window(ctx: &egui::Context, model: &ResultModel<'_>) -> bool {
+    let l = model.locale;
+    let r = model.result;
+    let mut back = false;
+    egui::Window::new(l.get("il.result.title"))
+        .id(egui::Id::new("il_result"))
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            match r.winner {
+                Some(side) => ui.heading(l.fmt("il.result.winner", &[("side", &side)])),
+                None => ui.heading(l.get("il.result.draw")),
+            };
+            ui.label(l.fmt(
+                "il.result.duration",
+                &[("time", &clock(Tick(r.duration_ticks)) as &dyn Display)],
+            ));
+            egui::Grid::new("il_result_sides")
+                .striped(true)
+                .show(ui, |ui| {
+                    for (i, s) in r.sides.iter().enumerate() {
+                        let survivors: u32 =
+                            s.regiments.iter().map(|x| u32::from(x.survivors)).sum();
+                        let killed: u32 = s.regiments.iter().map(|x| u32::from(x.killed)).sum();
+                        let fled: u32 = s.regiments.iter().map(|x| u32::from(x.fled)).sum();
+                        let fate = l.get(match s.general_fate {
+                            il_sim_battle::GeneralFate::Alive => "il.fate.alive",
+                            il_sim_battle::GeneralFate::Wounded => "il.fate.wounded",
+                            il_sim_battle::GeneralFate::Dead => "il.fate.dead",
+                            il_sim_battle::GeneralFate::Captured => "il.fate.captured",
+                        });
+                        ui.label(l.fmt("il.result.side", &[("side", &i)]));
+                        ui.label(l.fmt(
+                            "il.result.line",
+                            &[
+                                ("survivors", &survivors as &dyn Display),
+                                ("killed", &killed),
+                                ("fled", &fled),
+                                ("fate", &fate),
+                                ("loot", &s.loot),
+                            ],
+                        ));
+                        ui.end_row();
+                    }
+                });
+            if ui.button(l.get("il.result.back")).clicked() {
+                back = true;
+            }
+        });
+    back
 }
 
 /// One routed event or rejected command, for the developer panel.

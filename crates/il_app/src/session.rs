@@ -45,6 +45,8 @@ pub struct BattleSession {
     events: VecDeque<EventLine>,
     /// Fallen soldiers kept for `combat.corpse_ticks` (T2-022, SIM-CORE-008).
     corpses: Vec<Corpse>,
+    /// The result carried by `Ended` (T2-070); the sim stops stepping then.
+    result: Option<il_sim_battle::BattleResult>,
 }
 
 impl BattleSession {
@@ -62,7 +64,13 @@ impl BattleSession {
             command_log: Vec::new(),
             events: VecDeque::with_capacity(EVENT_RING),
             corpses: Vec::new(),
+            result: None,
         }
+    }
+
+    /// The battle's result once the phase is Ended (T2-070).
+    pub fn result(&self) -> Option<&il_sim_battle::BattleResult> {
+        self.result.as_ref()
     }
 
     pub fn speed(&self) -> f32 {
@@ -138,9 +146,13 @@ impl BattleSession {
             self.accumulator = cap;
         }
         let mut outputs = Vec::new();
-        while self.accumulator >= TICK {
+        // SIM-FLOW-010 (T2-070): nothing moves after the end.
+        while self.accumulator >= TICK && self.world.phase() != il_sim_battle::BattlePhase::Ended {
             outputs.push(self.step_once(observer));
             self.accumulator -= TICK;
+        }
+        if self.world.phase() == il_sim_battle::BattlePhase::Ended {
+            self.accumulator = 0.0;
         }
         outputs
     }
@@ -165,6 +177,9 @@ impl BattleSession {
         self.corpses
             .retain(|c| tick.0.saturating_sub(c.died.0) < corpse_ticks);
         for e in &out.events {
+            if let BattleEvent::Ended { result } = e {
+                self.result = Some((**result).clone());
+            }
             if let BattleEvent::SoldierDied { regiment, pos, .. } = e
                 && corpse_ticks > 0
                 && let Some(row) = self.world.view().regiment(*regiment)

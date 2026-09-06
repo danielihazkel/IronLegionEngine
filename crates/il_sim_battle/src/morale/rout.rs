@@ -169,9 +169,13 @@ pub fn follow_centroid(world: &mut World) {
         .map(|(_, e)| *e)
         .collect();
     for entity in regiment_entities {
+        // Withdrawing regiments follow their soldiers too (SIM-FLOW-014, T2-070).
         let routing = world
             .get::<Morale>(entity)
-            .is_some_and(|m| matches!(m.state, MoraleState::Routing | MoraleState::Shattered));
+            .is_some_and(|m| matches!(m.state, MoraleState::Routing | MoraleState::Shattered))
+            || world
+                .get::<crate::components::Order>(entity)
+                .is_some_and(|o| o.kind == crate::components::OrderKind::Withdraw);
         if !routing {
             continue;
         }

@@ -50,6 +50,8 @@ pub enum SetupError {
     UnknownMap(ContentId),
     #[error("{0}")]
     Map(MapError),
+    #[error("side {side}: the map lists no reinforcement edge {edge:?} for its zone")]
+    UnknownReinforcementEdge { side: usize, edge: il_data::MapEdge },
     #[error("side {side}: the map defines no deployment polygon for zone {zone}")]
     MissingDeploymentZone { side: usize, zone: u8 },
     #[error("side {side}: regiment {regiment} at ({x}, {y}) is outside the map")]
@@ -120,6 +122,16 @@ pub fn validate(setup: &BattleSetup, regs: &Registries) -> Result<(), SetupError
                 zone: s.deployment_zone,
             });
         }
+        // SIM-FLOW-016 (plan decision 17): the map must list the edge.
+        for g in &s.reinforcements {
+            if !map
+                .reinforcement_edges
+                .iter()
+                .any(|e| e.side == s.deployment_zone && e.edge == g.edge)
+            {
+                return Err(SetupError::UnknownReinforcementEdge { side, edge: g.edge });
+            }
+        }
         let all = s
             .regiments
             .iter()
@@ -173,6 +185,7 @@ pub(crate) fn spawn_regiment(
     setup: &RegimentSetup,
     unit: Handle<UnitType>,
     general: Option<(&crate::interface::GeneralSetup, Handle<UnitType>)>,
+    placement: Option<(V2, Angle<S>)>,
 ) -> Option<SoldierId> {
     let count = setup.count + u16::from(general.is_some());
     let (radius, mass, hp, morale_base, category, template, slots, ranks, ammo, energy, slot_count) = {
@@ -206,10 +219,16 @@ pub(crate) fn spawn_regiment(
         )
     };
 
-    let anchor_pos = setup
-        .position
-        .map_or(V2::ZERO, |[x, y]| V2::from_f32_data(x, y));
-    let facing = Angle::<S>::from_degrees_data(setup.facing_deg.unwrap_or(0.0));
+    // T2-070: an auto-placement (deployment, reinforcements) wins over the
+    // setup's pre-deploy position.
+    let (anchor_pos, facing) = placement.unwrap_or_else(|| {
+        (
+            setup
+                .position
+                .map_or(V2::ZERO, |[x, y]| V2::from_f32_data(x, y)),
+            Angle::<S>::from_degrees_data(setup.facing_deg.unwrap_or(0.0)),
+        )
+    });
     let anchor = Anchor {
         pos: anchor_pos,
         facing,
@@ -341,13 +360,29 @@ pub(crate) fn spawn_regiment(
 impl BattleWorld {
     /// Validates `setup` (SIM-FLOW-019) and spawns every regiment and
     /// soldier in setup order, so ids ascend side by side, regiment by
-    /// regiment. Phase 0 starts directly in `Battle`; the deployment phase
-    /// arrives in T2-070.
+    /// regiment. A side whose every regiment carries a `position` starts
+    /// confirmed; when all do the battle starts in `Battle`, otherwise in
+    /// `Deployment` with the unplaced regiments auto-placed at their zone
+    /// centre (SIM-FLOW-011, T2-070).
     pub fn new(setup: &BattleSetup, regs: Arc<Registries>) -> Result<Self, SetupError> {
         validate(setup, &regs)?;
-        let mut w = BattleWorld::empty(setup.seed, regs.clone(), BattlePhase::Battle);
+        let all_confirmed = setup
+            .sides
+            .iter()
+            .all(|s| s.regiments.iter().all(|r| r.position.is_some()));
+        let phase = if all_confirmed {
+            BattlePhase::Battle
+        } else {
+            BattlePhase::Deployment
+        };
+        let mut w = BattleWorld::empty(setup.seed, regs.clone(), phase);
         w.install_map(&setup.map_id)?;
         let map = w.map().clone();
+        let zone_centres: Vec<V2> = setup
+            .sides
+            .iter()
+            .map(|s| crate::flow_battle::zone_centre(&map, s.deployment_zone))
+            .collect();
         w.world.resource_mut::<Sides>().0 = setup
             .sides
             .iter()
@@ -355,7 +390,7 @@ impl BattleWorld {
                 player: s.player,
                 faction: s.faction.clone(),
                 deployment_zone: s.deployment_zone,
-                deployment_confirmed: true,
+                deployment_confirmed: s.regiments.iter().all(|r| r.position.is_some()),
                 defeated: false,
                 surrendered: false,
                 reinforcements_spawned: 0,
@@ -375,10 +410,42 @@ impl BattleWorld {
                 .units
                 .lookup(&s.general.unit_type)
                 .expect("validated above");
+            // SIM-FLOW-011 (plan I19): the regiments without a position form a
+            // battle line at the zone centre facing the other sides.
+            let unplaced: Vec<(&RegimentSetup, Handle<UnitType>, u16)> = s
+                .regiments
+                .iter()
+                .filter(|r| r.position.is_none())
+                .map(|r| {
+                    let unit = regs.units.lookup(&r.unit_type).expect("validated above");
+                    (r, unit, r.count + u16::from(bodyguard == Some(r.id)))
+                })
+                .collect();
+            let others: Vec<V2> = zone_centres
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != side)
+                .map(|(_, c)| *c)
+                .collect();
+            let placements = crate::flow_battle::auto_placements(
+                &regs,
+                &map,
+                &unplaced,
+                s.deployment_zone,
+                &others,
+            );
+            let placed: Vec<(u32, (V2, Angle<S>))> = unplaced
+                .iter()
+                .zip(placements)
+                .map(|((r, _, _), p)| (r.id, p))
+                .collect();
             for r in &s.regiments {
                 let unit = regs.units.lookup(&r.unit_type).expect("validated above");
                 let general = (bodyguard == Some(r.id)).then_some((&s.general, general_unit));
-                if let Some(gid) = spawn_regiment(&mut w.world, side as u8, r, unit, general) {
+                let placement = placed.iter().find(|(id, _)| *id == r.id).map(|(_, p)| *p);
+                if let Some(gid) =
+                    spawn_regiment(&mut w.world, side as u8, r, unit, general, placement)
+                {
                     let rid = w
                         .world
                         .resource::<Ids>()
@@ -391,7 +458,7 @@ impl BattleWorld {
                 }
             }
         }
-        // Reinforcement groups are validated but spawn only in T2-070.
+        // Reinforcement groups spawn at Stage 16 when their tick comes (T2-070).
         w.set_setup(setup.clone());
         w.rebuild_derived();
         // SIM-VIS-004 (T2-060): every side's mask from the spawn positions.

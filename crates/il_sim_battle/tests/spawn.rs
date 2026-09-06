@@ -100,7 +100,7 @@ fn over_cap_is_rejected() {
     let mut setup = two_sides(16_000);
     setup.sides[0].reinforcements.push(ReinforcementGroup {
         arrival_tick: 100,
-        edge: 0,
+        edge: il_data::MapEdge::South,
         regiments: vec![regiment(9, "rome:hastati", 1_000, 0.0, 0.0)],
     });
     assert!(matches!(

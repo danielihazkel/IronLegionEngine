@@ -251,7 +251,9 @@ impl Ctx<'_, '_, '_> {
 /// Recomputes `Attackers` from the targets and each regiment's `engaged`
 /// flag from its soldiers, both in ascending id order. `emit` pushes
 /// `Engaged` events on the false-to-true edge (Stage 9); restore passes
-/// `false`.
+/// `false` and rebuilds the attacker counts only: `Combat` is stored state
+/// (the flag was read at Stage 9, before Stage 14 may have routed the
+/// soldiers, so rederiving it from the FSM would drift; T2-070).
 fn recount(world: &mut World, emit: bool) {
     let tick = world.resource::<Clock>().tick;
     let soldier_entities: Vec<(SoldierId, Entity)> =
@@ -318,6 +320,9 @@ fn recount(world: &mut World, emit: bool) {
                 regiment.soldiers.clone(),
             )
         };
+        if !emit {
+            continue;
+        }
         let Some(mut combat) = world.get_mut::<Combat>(entity) else {
             continue;
         };

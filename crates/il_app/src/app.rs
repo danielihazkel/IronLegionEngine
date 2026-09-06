@@ -356,6 +356,14 @@ impl App {
                 }
             }
         }
+        // SIM-FLOW-011 (T2-070): Enter ends the deployment.
+        if input.pressed(b, Action::ConfirmDeployment)
+            && let Some(session) = self.state.session_mut()
+        {
+            session.queue(il_sim_battle::CommandKind::ConfirmDeployment);
+        }
+        let b = &self.bindings;
+        let input = &self.input;
         let mut hud = None;
         if input.pressed(b, Action::Pause) {
             hud = Some(HudAction::TogglePause);
@@ -801,8 +809,22 @@ impl App {
                         .drag(&self.bindings, Action::BoxSelect)
                         .or_else(|| self.input.drag(&self.bindings, Action::BoxSelectAdd))
                         .map(|d| (d.from, d.to));
+                    let phase = session.world.phase();
                     let hud = HudModel {
                         tick: session.world.tick(),
+                        phase: self
+                            .regs
+                            .locale
+                            .get(match phase {
+                                il_sim_battle::BattlePhase::Deployment => {
+                                    "il.battle.phase.deployment"
+                                }
+                                il_sim_battle::BattlePhase::Battle => "il.battle.phase.battle",
+                                il_sim_battle::BattlePhase::Pursuit => "il.battle.phase.pursuit",
+                                il_sim_battle::BattlePhase::Ended => "il.battle.phase.ended",
+                            })
+                            .to_string(),
+                        deploying: phase == il_sim_battle::BattlePhase::Deployment,
                         paused: session.paused(),
                         speed: session.speed(),
                         run: self.run,
@@ -825,6 +847,12 @@ impl App {
                             drag_formation_preview(ctx, from, to, tip);
                         }
                         action = battle_hud(ctx, &hud);
+                        // T2-070: the result window once the battle ended.
+                        if let Some(result) = session.result()
+                            && il_ui::result_window(ctx, &il_ui::ResultModel { result, locale })
+                        {
+                            action = Some(HudAction::QuitToMenu);
+                        }
                     });
                     ui_out = Some(out);
                     if let Some(action) = action {

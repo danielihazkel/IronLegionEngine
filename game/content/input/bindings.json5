@@ -48,6 +48,8 @@
     { action: "ability_1", keys: ["Z"] },
     { action: "ability_2", keys: ["X"] },
     { action: "ability_3", keys: ["C"] },
+    // Deployment (T2-070): right-click places, Enter confirms.
+    { action: "confirm_deployment", keys: ["Enter"] },
     { action: "formation_1", keys: ["F1"] },
     { action: "formation_2", keys: ["F2"] },
     { action: "formation_3", keys: ["F3"] },

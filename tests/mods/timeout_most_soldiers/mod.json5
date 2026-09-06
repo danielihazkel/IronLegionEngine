@@ -1,0 +1,9 @@
+// T2-070 test mod: the time limit goes to the side with the most soldiers
+// on the field (SIM-FLOW-013 `timeout_winner: most_soldiers`).
+{
+  id: "timeout_most_soldiers",
+  name_key: "timeout_most_soldiers.mod.name",
+  version: "0.1.0",
+  engine_version: "*",
+  dependencies: [{ id: "rome", version: ">=0.1.0" }],
+}
