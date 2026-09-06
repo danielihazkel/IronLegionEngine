@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
+use crate::ability::Ability;
 use crate::content_id::ContentId;
 use crate::diagnostic::{Diagnostic, Diagnostics};
 use crate::faction::Faction;
@@ -183,10 +184,16 @@ fn resolve_diagnostic(
             )
         }
     };
-    let mut expected = format!("an existing {} ContentId", err.kind.label());
-    if let Some(n) = nearest(err.id.as_str(), lookup.ids(err.kind).map(ContentId::as_str)) {
-        expected.push_str(&format!("; nearest: {n:?}"));
-    }
+    let expected = match &err.expected {
+        Some(e) => e.clone(),
+        None => {
+            let mut expected = format!("an existing {} ContentId", err.kind.label());
+            if let Some(n) = nearest(err.id.as_str(), lookup.ids(err.kind).map(ContentId::as_str)) {
+                expected.push_str(&format!("; nearest: {n:?}"));
+            }
+            expected
+        }
+    };
     Diagnostic::file_level(sources.display(span.file), message)
         .at(span.line, span.col)
         .field(err.field.clone())
@@ -379,6 +386,7 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
     let zones = merge_kind::<ZoneType>(set, &mut sources, &mut diags);
     let maps = merge_kind::<MapDef>(set, &mut sources, &mut diags);
     let sprite_sets = merge_kind::<SpriteSet>(set, &mut sources, &mut diags);
+    let abilities = merge_kind::<Ability>(set, &mut sources, &mut diags);
     let movement = merge_singleton_file(set, "rules", "movement", &mut sources, &mut diags);
     let formation_rules = merge_singleton_file(set, "rules", "formation", &mut sources, &mut diags);
     let combat_rules = merge_singleton_file(set, "rules", "combat", &mut sources, &mut diags);
@@ -428,6 +436,7 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
     let (zones_ok, zones_order) = pass1!(zones, zones);
     let (maps_ok, maps_order) = pass1!(maps, maps);
     let (sprites_ok, sprites_order) = pass1!(sprite_sets, sprite_sets);
+    let (abilities_ok, abilities_order) = pass1!(abilities, abilities);
 
     // Pass 2: deserialise and resolve.
     let movement: Option<MovementRules> = build_singleton(
@@ -557,6 +566,7 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
         zones: pass2!(zones, zones_ok, zones_order, zones),
         maps: pass2!(maps, maps_ok, maps_order, maps),
         sprite_sets: pass2!(sprite_sets, sprites_ok, sprites_order, sprite_sets),
+        abilities: pass2!(abilities, abilities_ok, abilities_order, abilities),
         rules,
         input,
         locale,

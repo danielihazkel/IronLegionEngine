@@ -14,11 +14,16 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use glam::Vec2;
 use il_core::{Angle, RegimentId, S, Scalar, V2};
-use il_data::{ContentId, GroupKind};
-use il_sim_battle::{BattleView, CommandKind, FireMode, SpeedMode, ranks_for_width};
+use il_data::{ContentId, GroupKind, Targeting};
+use il_sim_battle::{
+    AbilityTarget, BattleView, CommandKind, FireMode, RegimentRow, SpeedMode, ranks_for_width,
+};
 
 /// Drags shorter than this (metres) are clicks in disguise; no order.
 pub const MIN_DRAG_WIDTH_M: f32 = 1.0;
+
+/// Ability hotkeys (`ability_1..3`, T2-050).
+pub const ABILITY_HOTKEYS: u8 = 3;
 
 /// A drag-formation gesture resolved to world geometry.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -79,6 +84,13 @@ pub enum UiIntent {
     /// The fire toggle (T2-030): the selection's ranged regiments hold
     /// fire, or fire at will again if the first of them was holding.
     ToggleFire,
+    /// The selection's n-th ability slot (1-based; T2-050): self and area
+    /// abilities fire at once, enemy and ally ones on the nearest fitting
+    /// regiment, point ones at `cursor` (world metres).
+    Ability {
+        slot: u8,
+        cursor: Vec2,
+    },
 }
 
 /// What conversion needs besides the intent.
@@ -141,6 +153,7 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
         }],
         UiIntent::Formation(n) => formation_commands(ctx, &regiments, *n),
         UiIntent::DragFormation(drag) => drag_commands(ctx, regiments, drag),
+        UiIntent::Ability { slot, cursor } => ability_commands(ctx, &regiments, *slot, *cursor),
         UiIntent::ToggleFire => {
             let modes: Vec<(RegimentId, FireMode)> = regiments
                 .iter()
@@ -164,6 +177,63 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
             }]
         }
     }
+}
+
+/// One `UseAbility` per selected regiment that has the slot (plan decision
+/// 11); regiments without the slot or without a fitting target are skipped.
+fn ability_commands(
+    ctx: &OrderContext<'_, '_>,
+    regiments: &[RegimentId],
+    slot: u8,
+    cursor: Vec2,
+) -> Vec<CommandKind> {
+    let regs = ctx.view.regs();
+    let mut out = Vec::new();
+    for id in regiments {
+        let Some(row) = ctx
+            .view
+            .abilities(*id)
+            .get(usize::from(slot.saturating_sub(1)))
+            .copied()
+        else {
+            continue;
+        };
+        let Some(me) = ctx.view.regiment(*id) else {
+            continue;
+        };
+        let a = regs.abilities.get(row.ability);
+        let target = match a.targeting {
+            Targeting::SelfTarget | Targeting::Area => AbilityTarget::SelfTarget,
+            Targeting::Point => AbilityTarget::Point(v2(cursor)),
+            Targeting::RegimentAlly | Targeting::RegimentEnemy => {
+                let ally = a.targeting == Targeting::RegimentAlly;
+                let Some(t) = nearest_regiment(ctx.view, &me, ally) else {
+                    continue;
+                };
+                AbilityTarget::Regiment(t)
+            }
+        };
+        out.push(CommandKind::UseAbility {
+            regiment: *id,
+            ability: a.id.clone(),
+            target,
+        });
+    }
+    out
+}
+
+/// The nearest other regiment with soldiers on the same (`ally`) or the
+/// other side of `me`, ties to the lower id.
+fn nearest_regiment(view: &BattleView, me: &RegimentRow, ally: bool) -> Option<RegimentId> {
+    let d = |r: &RegimentRow| {
+        let dx = (r.anchor_pos.x - me.anchor_pos.x).to_f32_render();
+        let dy = (r.anchor_pos.y - me.anchor_pos.y).to_f32_render();
+        dx * dx + dy * dy
+    };
+    view.regiments()
+        .filter(|r| r.id != me.id && (r.side == me.side) == ally && r.soldier_count > 0)
+        .min_by(|a, b| d(a).partial_cmp(&d(b)).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|r| r.id)
 }
 
 fn formation_commands(

@@ -1,0 +1,17 @@
+// persia:war_cry (T2-050, *chosen*): the riders howl at one enemy regiment
+// within 60 m; it bleeds two morale per second for fifteen seconds and
+// strikes a little worse (SIM-MOR-027).
+{
+  id: "persia:war_cry",
+  name_key: "persia.abilities.war_cry.name",
+  description_key: "persia.abilities.war_cry.description",
+  targeting: "regiment_enemy",
+  range: 60,
+  cooldown_ticks: 1800,       // 90 s
+  duration_ticks: 300,        // 15 s
+  effects: [
+    { type: "debuff", stat: "morale_per_s", add: -2 },
+    { type: "debuff", stat: "attack", mult: 0.9 },
+  ],
+  stacking: "refresh",
+}

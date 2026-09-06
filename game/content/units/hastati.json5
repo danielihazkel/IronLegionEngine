@@ -43,7 +43,7 @@
   fatigue_rate_mult: 1.0,
   los_radius: 200,
 
-  abilities: [],
+  abilities: ["rome:testudo"],
   formations: ["rome:line", "rome:column", "rome:loose"],
 
   sprite_set: "rome:sprites_infantry",

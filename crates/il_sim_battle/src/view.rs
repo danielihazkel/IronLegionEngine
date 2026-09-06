@@ -11,14 +11,17 @@ use std::sync::Arc;
 use bevy_ecs::prelude::*;
 use bevy_ecs::query::QueryState;
 use il_core::{Angle, ProjectileId, RegimentId, S, SoldierId, Tick, V2};
-use il_data::{FormationTemplate, Handle, ProjectileArc, Registries, UnitCategory, UnitType};
+use il_data::{
+    Ability, FormationTemplate, Handle, ProjectileArc, Registries, UnitCategory, UnitType,
+};
 
 use crate::command::FireMode;
 use crate::components::{
     Anchor, Combat, Facing, FatigueC, Fire, FormationState, Fsm, GeneralTag, Health, MeleeState,
     Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing, PrevPos, RangedState, Regiment,
-    RegimentFatigue, SlotRef, Soldier, SoldierState,
+    RegimentFatigue, SlotRef, Soldier, SoldierState, Statuses,
 };
+use crate::components::{Cooldowns, Energy};
 use crate::map::LoadedMap;
 use crate::nav::NavGrid;
 use crate::resources::{
@@ -50,6 +53,7 @@ type RegimentData = (
     &'static Combat,
     Option<&'static Fire>,
     &'static RegimentFatigue,
+    &'static Energy,
 );
 
 /// Cached query states behind every `BattleView`.
@@ -127,6 +131,28 @@ pub struct RegimentRow {
     pub fled: u16,
     /// Times the regiment routed (SIM-MOR-031; written from T2-042).
     pub rout_count: u8,
+    /// Soldiers that left the field withdrawing (SIM-FLOW-014; written from
+    /// T2-070).
+    pub withdrawn: u16,
+    /// SIM-ABIL-006 (T2-050).
+    pub energy: S,
+}
+
+/// One ability slot of a regiment (T2-050): the ability and the ticks
+/// until it may be used again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AbilityRow {
+    pub ability: Handle<Ability>,
+    pub cooldown: u16,
+}
+
+/// One active status effect of a regiment (T2-050).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatusRow {
+    pub ability: Handle<Ability>,
+    pub remaining: u16,
+    pub stacks: u8,
+    pub hostile: bool,
 }
 
 /// One projectile in flight (T2-030); the renderer evaluates the arc
@@ -174,6 +200,7 @@ type RegimentItem<'a> = (
     &'a Combat,
     Option<&'a Fire>,
     &'a RegimentFatigue,
+    &'a Energy,
 );
 
 fn soldier_row(
@@ -201,7 +228,7 @@ fn soldier_row(
 }
 
 fn regiment_row(
-    (r, anchor, order, morale, formation, combat, fire, fatigue): RegimentItem<'_>,
+    (r, anchor, order, morale, formation, combat, fire, fatigue, energy): RegimentItem<'_>,
 ) -> RegimentRow {
     RegimentRow {
         id: r.id,
@@ -223,6 +250,8 @@ fn regiment_row(
         fatigue_mean: fatigue.mean,
         fled: combat.fled,
         rout_count: morale.rout_count,
+        withdrawn: combat.withdrawn,
+        energy: energy.e,
     }
 }
 
@@ -341,6 +370,44 @@ impl<'w> BattleView<'w> {
     pub fn formation_state(&self, id: RegimentId) -> Option<&'w FormationState> {
         let entity = self.world.resource::<Ids>().regiment_entity(id)?;
         self.world.get::<FormationState>(entity)
+    }
+
+    /// The regiment's ability slots with their cooldowns (SIM-ABIL-003,
+    /// T2-050): its unit's abilities, then its general's while it lives.
+    pub fn abilities(&self, id: RegimentId) -> Vec<AbilityRow> {
+        let Some(entity) = self.world.resource::<Ids>().regiment_entity(id) else {
+            return Vec::new();
+        };
+        let cooldowns = self.world.get::<Cooldowns>(entity);
+        crate::abilities::slots(self.world, entity)
+            .into_iter()
+            .enumerate()
+            .map(|(i, ability)| AbilityRow {
+                ability,
+                cooldown: cooldowns.and_then(|c| c.0.get(i).copied()).unwrap_or(0),
+            })
+            .collect()
+    }
+
+    /// The regiment's active status effects in application order (T2-050).
+    pub fn statuses(&self, id: RegimentId) -> Vec<StatusRow> {
+        let Some(entity) = self.world.resource::<Ids>().regiment_entity(id) else {
+            return Vec::new();
+        };
+        self.world
+            .get::<Statuses>(entity)
+            .map(|s| {
+                s.list
+                    .iter()
+                    .map(|e| StatusRow {
+                        ability: e.source,
+                        remaining: e.remaining,
+                        stacks: e.stacks,
+                        hostile: e.hostile,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// The regiment's current path.

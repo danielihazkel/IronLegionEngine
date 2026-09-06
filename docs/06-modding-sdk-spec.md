@@ -76,7 +76,7 @@ mymod/
       general.json5
       visibility.json5
       battle_flow.json5
-    abilities/*.json5           (Phase 2)
+    abilities/*.json5           (T2-050)
     technologies/*.json5        (Phase 4)
     buildings/*.json5           (Phase 4)
     ai/*.json5                  (Phase 2)
@@ -93,7 +93,7 @@ mymod/
     music/                      (Phase 2)
 ```
 
-Folders marked with a phase are reserved for that phase; since T2-010 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `input`, the eight `rules/*.json5` files (`movement`, `formation`, `combat`, `morale`, `fatigue`, `general`, `visibility`, `battle_flow`) and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `input-bindings`, `rules-movement`, `rules-formation`, `rules-combat`, `rules-morale`, `rules-fatigue`, `rules-general`, `rules-visibility`, `rules-battle_flow`, `mod-manifest`).
+Folders marked with a phase are reserved for that phase; since T2-010 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `abilities` (T2-050), `input`, the eight `rules/*.json5` files (`movement`, `formation`, `combat`, `morale`, `fatigue`, `general`, `visibility`, `battle_flow`) and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `ability`, `input-bindings`, `rules-movement`, `rules-formation`, `rules-combat`, `rules-morale`, `rules-fatigue`, `rules-general`, `rules-visibility`, `rules-battle_flow`, `mod-manifest`).
 
 Rules:
 
@@ -331,7 +331,9 @@ Schema: [`schemas/unit-type.schema.json`](schemas/unit-type.schema.json). Satisf
 | `morale_base` | f | 0..100 | 60 | Starting regiment morale contribution |
 | `fatigue_rate_mult` | f | | 1.0 | Multiplier on fatigue accumulation |
 | `los_radius` | f | wu | 80 | Line-of-sight radius on flat open ground |
-| `abilities` | [id] | | `[]` | Ability Content IDs |
+| `abilities` | [id] | | `[]` | Ability Content IDs (`content/abilities/`, §4.4); each must exist |
+| `energy_max` | f | ≥ 0 | 0 | Energy capacity for abilities with an `energy_cost` (Phase 5; 0 for antiquity) |
+| `energy_regen` | f | ≥ 0 | 0 | Energy regenerated per second |
 | `formations` | [id] | | required | Formation templates this unit may use; first is default |
 | `sprite_set` | id | | required | Sprite set Content ID (`content/sprites/`, schema `sprite-set.schema.json`): atlas path, frame size, facings, animations |
 | `sounds` | object | | `{}` | `select`, `move`, `attack`, `charge`, `die` → paths under `assets_root` |
@@ -488,20 +490,26 @@ Worked example:
 
 ### 4.4 Abilities — `content/abilities/`
 
-Satisfies REQ-ABIL-001..003. MVP effect types are `buff` and `debuff`; the others validate but are rejected at load unless the engine build enables the Phase 5 fantasy layer.
+Satisfies REQ-ABIL-001..003 (Simulation Spec §10, T2-050; schema `ability.schema.json`). MVP effect types are `buff` and `debuff`; the others parse and validate but the loader rejects an ability that uses one with a diagnostic naming the kind (`effects[1]: effect kind "summon" is not executable before Phase 5 (expected buff or debuff)`) until Phase 5.
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `id`, `name_key` | | required | |
-| `description_key` | key | required | Tooltip |
+| `description_key` | key | | Tooltip (render only) |
+| `icon` | string | | Path under `assets_root` (render only) |
+| `targeting` | enum | required | `self` (the user), `regiment_ally` / `regiment_enemy` (one regiment within `range`; an enemy must be visible), `point` (a point within `range`; regiments whose anchor lies within `radius` of it), `area` (regiments within `radius` of the user's anchor) |
+| `range` | f | 0 | Metres from the user's anchor to the target anchor or point; 0 = unlimited |
+| `radius` | f | 0 | Metres, for `point` and `area` |
 | `cooldown_ticks` | i | required | |
-| `duration_ticks` | i | 0 | 0 = instant |
-| `energy_cost` | f | 0 | Phase 5 resource; must be 0 for antiquity |
-| `targeting` | enum | required | `self`, `regiment`, `area`, `point` |
-| `radius` | f | 0 | For `area` |
-| `effects` | [object] | required | Each `{type, stat, amount, stacking}`; `type` ∈ buff, debuff, damage, heal, summon, fear, area, teleport |
-| `effects[].stacking` | enum | `refresh` | `refresh`, `stack`, `highest` |
-| `icon` | string | required | Path under `assets_root` |
+| `duration_ticks` | i | 0 | Status duration; a buff or debuff needs at least 1 |
+| `energy_cost` | f | 0 | Phase 5 resource; 0 for antiquity |
+| `effects` | [object] | required | Each `{ type, ... }`: `buff` / `debuff { stat, mult (1), add (0) }` with `stat` ∈ attack, defence, armour, damage, speed, attack_interval, morale_per_s, fatigue_rate, los_radius, accuracy; `damage { amount, armour_penetration, per_tick }`, `heal { amount, per_tick }`, `summon { unit_type, count, formation }`, `fear`, `area { effects, radius, duration_ticks }`, `teleport { max_distance }` (Phase 5). Multipliers multiply; `add` joins the multiplier as `+ add`, except armour (points added to the armour value) and `morale_per_s` (morale per second). A friendly target takes every effect; an enemy target takes the debuffs only. |
+| `stacking` | enum | `refresh` | How a second application combines with an active status of the same ability: `refresh` (reset the duration), `stack` (count up to `max_stacks`, additive parts scale with the count), `highest` (keep the longer duration and the higher count) |
+| `max_stacks` | i | 1 | Cap for `stack` |
+| `requires_not_engaged` | bool | false | Refused while the regiment is in melee |
+| `requires_not_moving` | bool | false | Refused while the regiment's anchor follows a path |
+
+A unit lists the abilities it may use in `abilities`; a general unit's abilities are usable by its bodyguard regiment while the general lives. The flagship ships `rome:testudo`, `greece:shield_wall` and `persia:war_cry` (Simulation Spec §15.2).
 
 ### 4.5 Technologies — `content/technologies/`
 

@@ -13,6 +13,7 @@ use il_data::Registries;
 
 use crate::combat::{fatigue_mults, morale_mults};
 use crate::command::SpeedMode;
+use crate::components::Statuses;
 use crate::components::{
     Anchor, Body, Facing, FatigueC, FormationState, Fsm, MeleeState, Morale, MoraleState, Order,
     Pos, Rank, Regiment, SlotRef, Soldier, SoldierState, Vel,
@@ -38,6 +39,7 @@ type RegimentRead<'w, 's> = Query<
         &'static FormationState,
         &'static Order,
         &'static Morale,
+        &'static Statuses,
     ),
 >;
 /// One regiment as a soldier reads it.
@@ -47,6 +49,7 @@ type RegimentItem<'a> = (
     &'a FormationState,
     &'a Order,
     &'a Morale,
+    &'a Statuses,
 );
 
 /// The per-soldier query of `soldier_steer`.
@@ -185,10 +188,10 @@ impl Steer<'_, '_, '_> {
         let rules = &self.regs.rules.movement;
         let combat = &self.regs.rules.combat;
         let unit = self.regs.units.get(soldier.unit);
-        let mut mode = regiment.map_or(SpeedMode::Walk, |(_, _, _, o, _)| o.speed);
+        let mut mode = regiment.map_or(SpeedMode::Walk, |(_, _, _, o, _, _)| o.speed);
         // SIM-CMBT-012: second-rank fighters stop a reach bonus further back.
         let second_rank = rank.rank == 1
-            && regiment.is_some_and(|(_, _, state, _, _)| {
+            && regiment.is_some_and(|(_, _, state, _, _, _)| {
                 unit.second_rank_attack
                     || self.regs.formations.get(state.template).layout == Layout::Phalanx
             });
@@ -213,7 +216,7 @@ impl Steer<'_, '_, '_> {
                 .ok()
                 .and_then(|s| self.ids.regiment_entity(s.regiment))
                 .and_then(|re| self.regiments.get(re).ok())
-                .is_some_and(|(_, _, _, _, m)| {
+                .is_some_and(|(_, _, _, _, m, _)| {
                     matches!(m.state, MoraleState::Routing | MoraleState::Shattered)
                 })
         {
@@ -304,11 +307,11 @@ impl Steer<'_, '_, '_> {
     ) {
         let rules = &self.regs.rules.movement;
         let p = pos.p;
-        // SIM-MOVE-020 (T2-040): own fatigue and the regiment's morale state
-        // scale every branch's `v_max`.
+        // SIM-MOVE-020 (T2-040/T2-050): own fatigue, the regiment's morale
+        // state and its status effects scale every branch's `v_max`.
         let speed_mult = fatigue_mults(fatigue.f, &self.regs.rules.fatigue).speed
-            * regiment.map_or(S::ONE, |(_, _, _, _, m)| {
-                morale_mults(m.state, &self.regs.rules.morale).speed
+            * regiment.map_or(S::ONE, |(_, _, _, _, m, st)| {
+                morale_mults(m.state, &self.regs.rules.morale).speed * st.mults.speed
             });
         // SIM-FLOW-002 / SIM-MOR-030 (T2-042): routing and withdrawing
         // soldiers follow the escape field; this comes before every other
@@ -319,7 +322,7 @@ impl Steer<'_, '_, '_> {
             } else {
                 SpeedMode::March
             };
-            let side = regiment.map(|(r, _, _, _, _)| r.side);
+            let side = regiment.map(|(r, _, _, _, _, _)| r.side);
             self.flee(
                 soldier, p, body, speed_mult, side, mode, vel, facing, scratch,
             );
@@ -332,7 +335,7 @@ impl Steer<'_, '_, '_> {
             return;
         }
         // The slot to hold, if any.
-        let target = regiment.and_then(|(_, anchor, state, order, _)| {
+        let target = regiment.and_then(|(_, anchor, state, order, _, _)| {
             let s = state.slots.get(usize::from(slot.slot?))?;
             Some((
                 slot_world(anchor, s),

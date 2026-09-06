@@ -12,6 +12,7 @@ use il_core::{
 use il_data::{ContentId, MapEdge, ProjectileArc, Registries};
 use serde::{Deserialize, Serialize};
 
+use crate::combat::formulas::StatMults;
 use crate::command::{Command, RejectReason};
 use crate::events::BattleEvent;
 use crate::interface::BattleSetup;
@@ -131,6 +132,17 @@ pub struct MeleeGateRes {
     /// SIM-GEN-002 (T2-043): the anchor lies within its side's living,
     /// non-routing general's aura this tick.
     pub in_aura: Vec<bool>,
+    /// SIM-ABIL-005 (T2-050): each regiment's cached status multipliers.
+    pub status: Vec<StatMults>,
+}
+
+impl MeleeGateRes {
+    /// The status multipliers of regiment index `i` (identity when the gate
+    /// has not run for it).
+    pub fn status(&self, i: Option<usize>) -> StatMults {
+        i.and_then(|i| self.status.get(i).copied())
+            .unwrap_or_default()
+    }
 }
 
 /// Stage 9 ranged gate (T2-030, derived per tick): one entry per regiment
@@ -292,6 +304,11 @@ pub struct SideState {
     pub deployment_zone: u8,
     pub deployment_confirmed: bool,
     pub defeated: bool,
+    /// SIM-FLOW-017: `Surrender` was received (T2-070).
+    pub surrendered: bool,
+    /// SIM-FLOW-016: reinforcement groups of the setup already spawned, in
+    /// setup order (T2-070).
+    pub reinforcements_spawned: u8,
     /// SIM-FLOW-001: the map edge routing soldiers run for, chosen at spawn
     /// from the deployment polygon (T2-042; `West` until then).
     pub escape_edge: MapEdge,
@@ -309,6 +326,10 @@ impl SideState {
     /// discriminant: `il_data` types cannot implement `Hashable` here).
     pub fn hash_state(&self, h: &mut StateHasher) {
         h.write_u8(self.escape_edge as u8);
+        self.deployment_confirmed.hash_state(h);
+        self.defeated.hash_state(h);
+        self.surrendered.hash_state(h);
+        h.write_u8(self.reinforcements_spawned);
         self.general.hash_state(h);
         self.general_regiment.hash_state(h);
         self.general_dead.hash_state(h);
@@ -349,6 +370,23 @@ pub struct MoraleShocks(pub Vec<Shock>);
 
 #[derive(Resource, Clone, Debug, Default)]
 pub struct Sides(pub Vec<SideState>);
+
+/// SIM-FLOW-010..015 timers and verdict (T2-070; declared with the layout in
+/// T2-050). Hashed and snapshotted.
+#[derive(Resource, Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BattleFlow {
+    /// Tick the Battle phase began.
+    pub battle_start: Tick,
+    /// Tick the Pursuit phase began; `Tick::ZERO` before it.
+    pub pursuit_start: Tick,
+    /// The winning side once the phase is Ended.
+    pub winner: Option<u8>,
+}
+impl_hashable_struct!(BattleFlow {
+    battle_start,
+    pursuit_start,
+    winner
+});
 
 /// The setup this battle was built from; stored in snapshots so restore can
 /// re-resolve content ids (TDD §4.6). `None` only for `BattleWorld::empty`.

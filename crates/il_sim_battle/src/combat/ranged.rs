@@ -23,11 +23,13 @@ use il_core::{
 use il_data::ProjectileArc;
 
 use crate::combat::attack::{Kill, Kills};
+use crate::combat::formulas::StatMults;
 use crate::combat::formulas::{
     apex_height, attack_arc, cooldown_ticks, fatigue_mults, flight_ticks, footprint_area,
     range_mult, ranged_damage, scatter, stat_hit_probability,
 };
 use crate::command::FireMode;
+use crate::components::Statuses;
 use crate::components::{
     Anchor, Body, Facing, FatigueC, Fire, FormationState, Fsm, Health, Morale, MoraleState, Pos,
     RangedState, Regiment, Soldier, SoldierState, Vel,
@@ -318,6 +320,8 @@ struct Ctx<'a, 'w, 's> {
     regiments: &'a RegimentRead<'w, 's>,
     gate: &'a RangedGateRes,
     extent: &'a [S],
+    /// SIM-ABIL-005 (T2-050): each regiment's status multipliers.
+    status: &'a [StatMults],
     tick: Tick,
     seed: u64,
     volley: bool,
@@ -377,6 +381,7 @@ impl Ctx<'_, '_, '_> {
         let Some(rg) = unit.ranged.as_ref() else {
             return;
         };
+        let st_i = self.status.get(ri).copied().unwrap_or_default();
 
         // SIM-PROJ-003: the aimed soldier (draw index 1) and its predicted
         // position after the flight.
@@ -432,7 +437,7 @@ impl Ctx<'_, '_, '_> {
         let end = aim
             + scatter(
                 d0,
-                rg.accuracy,
+                rg.accuracy * st_i.accuracy,
                 c.scatter_scale,
                 hash_draw::<S>(self.seed, self.tick, soldier.id.0, 0),
             );
@@ -478,7 +483,8 @@ impl Ctx<'_, '_, '_> {
         };
         self.out.lock().expect("shot buffer").push(shot);
         if blocked.is_none() && !self.volley {
-            ranged.cooldown = cooldown_ticks(rg.reload_ticks, fm.interval, S::ONE, S::ONE);
+            ranged.cooldown =
+                cooldown_ticks(rg.reload_ticks, fm.interval, S::ONE, st_i.attack_interval);
         }
     }
 }
@@ -507,6 +513,11 @@ pub fn ranged_fire(
     } else {
         vec![S::ZERO; ids.regiment_entities.len()]
     };
+    let status: Vec<StatMults> = if melee_gate.status.len() == ids.regiment_entities.len() {
+        melee_gate.status.clone()
+    } else {
+        vec![StatMults::default(); ids.regiment_entities.len()]
+    };
     let ctx = Ctx {
         ids: &ids,
         regs: &regs.0,
@@ -515,6 +526,7 @@ pub fn ranged_fire(
         regiments: &regiments,
         gate: &gate,
         extent: &extent,
+        status: &status,
         tick: clock.tick,
         seed: rng.draw_seed(StreamId::CombatRanged),
         volley: regs.0.rules.combat.volley,
@@ -590,7 +602,11 @@ fn statistical_shot(world: &World, shot: &Shot, tick: Tick, seed: u64) -> Option
     let p_v = world.get::<Pos>(ve)?.p;
     let unit = regs.units.get(soldier.unit);
     let arc = attack_arc(facing.theta, shot.start - p_v, unit.frontal_arc_deg);
-    let damage = ranged_damage(shot.damage, unit.armour, shot.pen, arc, unit.shield, c);
+    // SIM-ABIL-005 (T2-050): the victim regiment's armour statuses.
+    let armour = world
+        .get::<Statuses>(te)
+        .map_or(unit.armour, |s| s.mults.armour(unit.armour));
+    let damage = ranged_damage(shot.damage, armour, shot.pen, arc, unit.shield, c);
     Some(Pending {
         apply_tick: shot.land_tick,
         target: victim,
@@ -691,8 +707,11 @@ pub fn ranged_spawn(world: &mut World) {
                     regs.units.get(u).ranged.as_ref().map(|rg| rg.reload_ticks)
                 })
                 .unwrap_or(1);
+            let st_interval = world
+                .get::<Statuses>(entity)
+                .map_or(S::ONE, |st| st.mults.attack_interval);
             if let Some(mut fire) = world.get_mut::<Fire>(entity) {
-                fire.cooldown = cooldown_ticks(reload, s.fatigue_interval, S::ONE, S::ONE);
+                fire.cooldown = cooldown_ticks(reload, s.fatigue_interval, S::ONE, st_interval);
             }
         }
     }
@@ -783,9 +802,15 @@ fn projectile_land(world: &mut World, tick: Tick) {
             let regs = &world.resource::<Regs>().0;
             let unit = regs.units.get(soldier.unit);
             let arc = attack_arc(facing.theta, p.start - p.end, unit.frontal_arc_deg);
+            // SIM-ABIL-005 (T2-050): the victim regiment's armour statuses.
+            let armour = world
+                .resource::<Ids>()
+                .regiment_entity(soldier.regiment)
+                .and_then(|re| world.get::<Statuses>(re))
+                .map_or(unit.armour, |s| s.mults.armour(unit.armour));
             let damage = ranged_damage(
                 p.damage,
-                unit.armour,
+                armour,
                 p.pen,
                 arc,
                 unit.shield,

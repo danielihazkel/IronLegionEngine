@@ -14,6 +14,7 @@ use il_core::{S, Scalar};
 use il_data::FatigueRules;
 
 use crate::command::SpeedMode;
+use crate::components::Statuses;
 use crate::components::{
     Combat, FatigueC, Fsm, Order, Path, Pos, Regiment, RegimentFatigue, Soldier, SoldierState,
 };
@@ -74,7 +75,7 @@ pub fn activity(
 }
 
 /// SIM-FAT-002: `weather.fatigue_mult` is `1` until the weather rules of
-/// Phase 4, like the `status_mult` placeholder of T2-050.
+/// Phase 4 (the status multiplier of SIM-ABIL-005 already applies, T2-050).
 pub fn weather_fatigue_mult() -> S {
     S::ONE
 }
@@ -120,7 +121,16 @@ pub fn fatigue_state(f: S, r: &FatigueRules) -> FatigueState {
 }
 
 type FatigueItem<'a> = (&'a Soldier, &'a Pos, &'a Fsm, Mut<'a, FatigueC>);
-type RegimentRead<'w, 's> = Query<'w, 's, (&'static Order, &'static Path, &'static Combat)>;
+type RegimentRead<'w, 's> = Query<
+    'w,
+    's,
+    (
+        &'static Order,
+        &'static Path,
+        &'static Combat,
+        &'static Statuses,
+    ),
+>;
 
 /// Stage 13 `fatigue_tick` (parallel; writes only its own `FatigueC`).
 /// SIM-FAT-002: `F ← clamp(F + rate × dt, 0, 1)`.
@@ -138,11 +148,15 @@ pub fn fatigue_tick(
     let regiments = &regiments;
     let rules = &regs.rules.fatigue;
     let run = |(soldier, pos, fsm, mut fatigue): FatigueItem<'_>| {
-        let (moving, order_speed) = ids
+        let (moving, order_speed, status_rate) = ids
             .regiment_entity(soldier.regiment)
             .and_then(|e| regiments.get(e).ok())
-            .map_or((false, SpeedMode::Walk), |(o, path, combat)| {
-                (anchor_moves(o, path, combat), o.speed)
+            .map_or((false, SpeedMode::Walk, S::ONE), |(o, path, combat, st)| {
+                (
+                    anchor_moves(o, path, combat),
+                    o.speed,
+                    st.mults.fatigue_rate,
+                )
             });
         let Some(act) = activity(fsm.state, moving, order_speed) else {
             return;
@@ -151,7 +165,9 @@ pub fn fatigue_tick(
             .zone_at(pos.p)
             .map_or(S::ONE, |h| regs.zones.get(h).fatigue_mult);
         let unit = regs.units.get(soldier.unit);
-        let rate = fatigue_rate(act, unit.armour, unit.fatigue_rate_mult, zone, rules);
+        // SIM-ABIL-002 `fatigue_rate` (T2-050) scales the accumulation.
+        let rate =
+            fatigue_rate(act, unit.armour, unit.fatigue_rate_mult, zone, rules) * status_rate;
         fatigue.f = (fatigue.f + rate * dt).clamp(S::ZERO, S::ONE);
     };
     let parallel = bevy_tasks::ComputeTaskPool::try_get().is_some_and(|p| p.thread_num() > 1);

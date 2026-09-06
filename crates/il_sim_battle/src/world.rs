@@ -109,6 +109,8 @@ impl BattleWorld {
         world.insert_resource(Projectiles(Vec::with_capacity(cap)));
         world.insert_resource(PendingDamage::default());
         world.insert_resource(crate::resources::MoraleShocks::default());
+        world.insert_resource(crate::resources::BattleFlow::default());
+        world.insert_resource(crate::visibility::Visibility::default());
         world.insert_resource(MapRes(Arc::new(flat_map)));
         // Dimensioned by the Stage 6 system once the map and rules are known.
         let flat = S::from_i32(FLAT_MAP_SIZE);
@@ -360,11 +362,11 @@ mod tests {
     /// Golden: the hash of an empty world at seed 42 after 0, 1 and 2 ticks.
     /// Changes whenever the hash layout or the RNG seeding changes
     /// (re-baselined in T2-040 when the morale shock queue joined the
-    /// layout).
+    /// layout, and in T2-050 when the battle flow and visibility masks did).
     const GOLDEN: [u64; 3] = [
-        0x32f9_f379_20b3_f39a,
-        0xc757_150e_7635_9988,
-        0xa5a1_034b_b6e0_2278,
+        0x3981_1060_1ede_d138,
+        0xfcf5_8e8f_2e3e_b393,
+        0x3c6b_e55b_2721_5c17,
     ];
 
     #[test]

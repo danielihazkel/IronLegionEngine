@@ -166,6 +166,15 @@ pub enum AssertionKind {
         reference: String,
         tolerance: f32,
     },
+    /// Cross-file (T2-050): the mean soldiers `side` lost over this file's
+    /// seeds is at most `ratio` times the mean in the band file `reference`
+    /// of the same run (a reference mean of zero requires zero). Evaluated
+    /// once every file has run; `min_fraction`/`max_fraction` are ignored.
+    MeanLossBelow {
+        side: u8,
+        reference: String,
+        ratio: f32,
+    },
 }
 
 /// What one seed produced.
@@ -280,7 +289,7 @@ impl SeedOutcome {
     pub fn holds(&self, kind: &AssertionKind) -> anyhow::Result<bool> {
         Ok(match kind {
             // Cross-file: settled by `run_bands`, never per seed.
-            AssertionKind::MeanLossMatches { .. } => true,
+            AssertionKind::MeanLossMatches { .. } | AssertionKind::MeanLossBelow { .. } => true,
             AssertionKind::Winner { side } => {
                 let mine = self.fraction(*side, None);
                 mine > 0.0
@@ -680,16 +689,36 @@ pub fn mean_loss_within(file_mean: f64, reference_mean: f64, tolerance: f32) -> 
     }
 }
 
+/// The `mean_loss_below` verdict: `a ≤ ratio × b` (a reference mean of
+/// zero only admits a zero).
+pub fn mean_loss_below(file_mean: f64, reference_mean: f64, ratio: f32) -> bool {
+    if reference_mean == 0.0 {
+        file_mean == 0.0
+    } else {
+        file_mean <= f64::from(ratio) * reference_mean
+    }
+}
+
+/// The cross-file verdicts (T2-032, T2-050), settled by [`run_bands`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum CrossFile {
+    Matches { tolerance: f32 },
+    Below { ratio: f32 },
+}
+
 /// Evaluates the per-seed assertions of one file over its outcomes; the
-/// cross-file `mean_loss_matches` clauses come back as `pending` and are
-/// settled by [`run_bands`] once every file has run.
+/// cross-file `mean_loss_matches` and `mean_loss_below` clauses come back as
+/// `pending` and are settled by [`run_bands`] once every file has run.
 pub fn evaluate(bands: &Bands, outcomes: &[SeedOutcome]) -> anyhow::Result<Vec<AssertionResult>> {
     let seeds = outcomes.len() as u32;
     bands
         .assertions
         .iter()
         .map(|a| {
-            if matches!(a.kind, AssertionKind::MeanLossMatches { .. }) {
+            if matches!(
+                a.kind,
+                AssertionKind::MeanLossMatches { .. } | AssertionKind::MeanLossBelow { .. }
+            ) {
                 return Ok(AssertionResult {
                     name: a.name.clone(),
                     active: a.active,
@@ -777,8 +806,8 @@ pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<Band
     );
     writeln!(out, "{header}")?;
     // Cross-file clauses wait until every file has run: (file index,
-    // assertion index, side, reference stem, tolerance).
-    let mut deferred: Vec<(usize, usize, u8, String, f32)> = Vec::new();
+    // assertion index, side, reference stem, verdict kind).
+    let mut deferred: Vec<(usize, usize, u8, String, CrossFile)> = Vec::new();
     let mut deferred_bands: Vec<Bands> = Vec::new();
     for path in band_files(&opts.dir)? {
         let file = path
@@ -808,14 +837,29 @@ pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<Band
         let rejected: u32 = outcomes.iter().map(|o| o.rejected).sum();
         report.rejected += rejected;
         for (k, a) in assertions.iter().enumerate() {
-            if let AssertionKind::MeanLossMatches {
-                side,
-                reference,
-                tolerance,
-            } = &bands.assertions[k].kind
+            let cross = match &bands.assertions[k].kind {
+                AssertionKind::MeanLossMatches {
+                    side,
+                    reference,
+                    tolerance,
+                } => Some((
+                    *side,
+                    reference.clone(),
+                    CrossFile::Matches {
+                        tolerance: *tolerance,
+                    },
+                )),
+                AssertionKind::MeanLossBelow {
+                    side,
+                    reference,
+                    ratio,
+                } => Some((*side, reference.clone(), CrossFile::Below { ratio: *ratio })),
+                _ => None,
+            };
+            if let Some((side, reference, kind)) = cross
                 && a.status == "pending"
             {
-                deferred.push((report.files.len(), k, *side, reference.clone(), *tolerance));
+                deferred.push((report.files.len(), k, side, reference, kind));
                 continue;
             }
             match a.status.as_str() {
@@ -861,7 +905,7 @@ pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<Band
     }
     let _ = deferred_bands;
     // Settle the cross-file clauses (T2-032).
-    for (fi, k, side, reference, tolerance) in deferred {
+    for (fi, k, side, reference, kind) in deferred {
         let stem = |name: &str| {
             Path::new(name)
                 .file_stem()
@@ -874,27 +918,51 @@ pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<Band
             .position(|f| stem(&f.file) == reference)
             .ok_or_else(|| {
                 anyhow!(
-                    "{}: mean_loss_matches names {reference}, which is not among the band files run",
+                    "{}: a cross-file clause names {reference}, which is not among the band files run",
                     report.files[fi].file
                 )
             })?;
         let file_mean = mean_lost(&report.files[fi].outcomes, side);
         let reference_mean = mean_lost(&report.files[reference_index].outcomes, side);
-        let ok = mean_loss_within(file_mean, reference_mean, tolerance);
-        let diff = if reference_mean == 0.0 {
-            0.0
-        } else {
-            (file_mean - reference_mean).abs() / reference_mean.abs() * 100.0
+        let (ok, detail, need) = match kind {
+            CrossFile::Matches { tolerance } => {
+                let diff = if reference_mean == 0.0 {
+                    0.0
+                } else {
+                    (file_mean - reference_mean).abs() / reference_mean.abs() * 100.0
+                };
+                (
+                    mean_loss_within(file_mean, reference_mean, tolerance),
+                    format!("{diff:.1}%"),
+                    format!(
+                        "<= {:.0}% of {:.1}",
+                        f64::from(tolerance) * 100.0,
+                        reference_mean
+                    ),
+                )
+            }
+            CrossFile::Below { ratio } => {
+                let share = if reference_mean == 0.0 {
+                    0.0
+                } else {
+                    file_mean / reference_mean * 100.0
+                };
+                (
+                    mean_loss_below(file_mean, reference_mean, ratio),
+                    format!("{file_mean:.1} ({share:.0}%)"),
+                    format!(
+                        "<= {:.0}% of {:.1}",
+                        f64::from(ratio) * 100.0,
+                        reference_mean
+                    ),
+                )
+            }
         };
         let file_name = report.files[fi].file.clone();
         let a = &mut report.files[fi].assertions[k];
         a.status = if ok { "pass" } else { "FAIL" }.to_string();
-        a.detail = format!("{diff:.1}%");
-        a.detail_need = format!(
-            "<= {:.0}% of {:.1}",
-            f64::from(tolerance) * 100.0,
-            reference_mean
-        );
+        a.detail = detail;
+        a.detail_need = need;
         if ok {
             report.passed += 1;
         } else {

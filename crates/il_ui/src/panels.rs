@@ -84,6 +84,10 @@ pub struct SelectedRegiment {
     pub morale: String,
     /// Localised fatigue state (`il.fatigue.*`, T2-040).
     pub fatigue: String,
+    /// One line per ability slot (`il.battle.ability`, T2-050).
+    pub abilities: Vec<String>,
+    /// One line per active status (`il.battle.status`, T2-050).
+    pub statuses: Vec<String>,
 }
 
 pub struct HudModel<'a> {
@@ -176,6 +180,8 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
                         ui.label(&r.order);
                         ui.label(&r.morale);
                         ui.label(&r.fatigue);
+                        ui.label(r.abilities.join(" \u{b7} "));
+                        ui.label(r.statuses.join(" \u{b7} "));
                         ui.end_row();
                     }
                 });

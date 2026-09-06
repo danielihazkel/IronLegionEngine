@@ -11,6 +11,7 @@
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{ScheduleLabel, SingleThreadedExecutor};
 
+use crate::abilities::ability_tick;
 use crate::combat::{
     apply_outcomes, melee_attack, melee_gate, melee_recount, melee_target, projectile_stage,
     pursue_update, ranged_fire, ranged_spawn, ranged_target, resolve_deaths, resolve_fled,
@@ -139,7 +140,6 @@ impl StageObserver for NoopObserver {
 // stage shows up in the profiler with its own timing.
 fn stage_ai() {}
 fn stage_visibility() {}
-fn stage_abilities() {}
 fn stage_battle_flow() {}
 
 fn stage_schedule(stage: Stage) -> Schedule {
@@ -174,7 +174,7 @@ fn stage_schedule(stage: Stage) -> Schedule {
                 .in_set(stage),
         ),
         Stage::Projectiles => s.add_systems(projectile_stage.in_set(stage)),
-        Stage::Abilities => s.add_systems(stage_abilities.in_set(stage)),
+        Stage::Abilities => s.add_systems(ability_tick.in_set(stage)),
         Stage::Fatigue => {
             s.add_systems((fatigue_tick, regiment_fatigue_mean).chain().in_set(stage))
         }

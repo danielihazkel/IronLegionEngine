@@ -21,6 +21,7 @@ pub enum KindTag {
     Zone,
     Map,
     SpriteSet,
+    Ability,
     RulesMovement,
     RulesFormation,
     RulesCombat,
@@ -33,7 +34,7 @@ pub enum KindTag {
 }
 
 impl KindTag {
-    pub const ALL: [KindTag; 17] = [
+    pub const ALL: [KindTag; 18] = [
         KindTag::Manifest,
         KindTag::Unit,
         KindTag::Formation,
@@ -42,6 +43,7 @@ impl KindTag {
         KindTag::Zone,
         KindTag::Map,
         KindTag::SpriteSet,
+        KindTag::Ability,
         KindTag::RulesMovement,
         KindTag::RulesFormation,
         KindTag::RulesCombat,
@@ -64,6 +66,7 @@ impl KindTag {
             KindTag::Zone => "zone type",
             KindTag::Map => "map",
             KindTag::SpriteSet => "sprite set",
+            KindTag::Ability => "ability",
             KindTag::RulesMovement => "movement rules",
             KindTag::RulesFormation => "formation rules",
             KindTag::RulesCombat => "combat rules",
@@ -90,6 +93,7 @@ impl KindTag {
             KindTag::Zone => include_str!("../../../docs/schemas/zone-type.schema.json"),
             KindTag::Map => include_str!("../../../docs/schemas/map-def.schema.json"),
             KindTag::SpriteSet => include_str!("../../../docs/schemas/sprite-set.schema.json"),
+            KindTag::Ability => include_str!("../../../docs/schemas/ability.schema.json"),
             KindTag::RulesMovement => {
                 include_str!("../../../docs/schemas/rules-movement.schema.json")
             }

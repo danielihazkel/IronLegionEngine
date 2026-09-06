@@ -1,0 +1,14 @@
+// The ability the Modding SDK 4.1 worked example appends to the Thracian
+// peltast (T2-050): since abilities are a content kind, the reference must
+// resolve for the mod to load.
+{
+  id: "mymod:rhomphaia_frenzy",
+  name_key: "mymod.abilities.rhomphaia_frenzy.name",
+  targeting: "self",
+  cooldown_ticks: 1200,
+  duration_ticks: 300,
+  effects: [
+    { type: "buff", stat: "damage", mult: 1.3 },
+    { type: "debuff", stat: "defence", mult: 0.8 },
+  ],
+}

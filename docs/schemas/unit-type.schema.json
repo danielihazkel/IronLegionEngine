@@ -318,7 +318,21 @@
     "abilities": {
       "$ref": "#/$defs/contentIdList",
       "default": [],
-      "description": "Ability content ids."
+      "description": "Ability content ids (content/abilities/*.json5; SIM-ABIL-003)."
+    },
+    "energy_max": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10000,
+      "default": 0,
+      "description": "Energy capacity for abilities with an energy_cost (SIM-ABIL-006); 0 for antiquity units."
+    },
+    "energy_regen": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10000,
+      "default": 0,
+      "description": "Energy regenerated per second (SIM-ABIL-006)."
     },
     "formations": {
       "$ref": "#/$defs/contentIdList",

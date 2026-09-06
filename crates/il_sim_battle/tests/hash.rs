@@ -12,10 +12,12 @@ use il_sim_battle::components::{
     MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevPos, RangedState, Regiment,
     RegimentFatigue, SlotRef, SoldierState, Vel, Waypoint,
 };
+use il_sim_battle::components::{Cooldowns, Energy, StatusEffect, Statuses};
 use il_sim_battle::resources::{
-    BattlePhase, Ids, MoraleShocks, Pending, PendingDamage, Phase, Projectile, Projectiles, Rng,
-    Shock, ShockKind, Sides,
+    BattleFlow, BattlePhase, Ids, MoraleShocks, Pending, PendingDamage, Phase, Projectile,
+    Projectiles, Rng, Shock, ShockKind, Sides,
 };
+use il_sim_battle::visibility::Visibility;
 use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 
 /// Golden hash of the freshly spawned 2 x 500 hastati world at seed 42 on
@@ -34,12 +36,14 @@ use il_sim_battle::{BattleWorld, FireMode, SpeedMode};
 /// started moving and the fresh value when regiments began spawning in
 /// the state their morale falls into; both again in T2-042 when the escape
 /// edges started coming from the deployment zones and routers fled; and in
-/// T2-043 when the generals began riding with their bodyguards).
+/// T2-043 when the generals began riding with their bodyguards; and in
+/// T2-050 when the milestone 4 fields (battle flow, side flags, energy,
+/// cooldowns, statuses, withdrawn, visibility masks) joined the layout).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x675f_0f41_7654_a4f1;
+const GOLDEN_FRESH: u64 = 0x5e72_8219_d51c_c1e4;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0xf5ef_bcae_ad56_40c7;
+const GOLDEN_1000: u64 = 0x08f6_07d3_007e_a8d1;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -530,6 +534,99 @@ fn every_hashed_field_changes_the_hash() {
         "side general dead",
         Box::new(|w| {
             w.ecs_mut().resource_mut::<Sides>().0[0].general_dead = true;
+        }),
+    ));
+    // T2-050: energy, cooldowns, statuses, the withdrawn counter, the side
+    // flags, the battle-flow timers and the visibility masks (declared for
+    // the whole milestone; written from T2-050..070).
+    cases.push((
+        "energy",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Energy>(e).unwrap().e = S::from_i32(5);
+        }),
+    ));
+    cases.push((
+        "cooldowns",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Cooldowns>(e).unwrap().0[0] = 9;
+        }),
+    ));
+    cases.push((
+        "status",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            let testudo = w
+                .registries()
+                .abilities
+                .lookup(&common::cid("rome:testudo"))
+                .unwrap();
+            w.ecs_mut()
+                .get_mut::<Statuses>(e)
+                .unwrap()
+                .list
+                .push(StatusEffect {
+                    source: testudo,
+                    remaining: 10,
+                    stacks: 1,
+                    hostile: false,
+                });
+        }),
+    ));
+    cases.push((
+        "combat withdrawn",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut().get_mut::<Combat>(e).unwrap().withdrawn = 2;
+        }),
+    ));
+    cases.push((
+        "side deployment confirmed",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Sides>().0[1].deployment_confirmed = false;
+        }),
+    ));
+    cases.push((
+        "side defeated",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Sides>().0[1].defeated = true;
+        }),
+    ));
+    cases.push((
+        "side surrendered",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Sides>().0[0].surrendered = true;
+        }),
+    ));
+    cases.push((
+        "side reinforcements spawned",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Sides>().0[0].reinforcements_spawned = 1;
+        }),
+    ));
+    cases.push((
+        "battle start",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<BattleFlow>().battle_start = Tick(3);
+        }),
+    ));
+    cases.push((
+        "pursuit start",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<BattleFlow>().pursuit_start = Tick(3);
+        }),
+    ));
+    cases.push((
+        "winner",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<BattleFlow>().winner = Some(1);
+        }),
+    ));
+    cases.push((
+        "visibility mask",
+        Box::new(|w| {
+            w.ecs_mut().resource_mut::<Visibility>().masks = vec![vec![true, false]];
         }),
     ));
     // Globals: phase, RNG.

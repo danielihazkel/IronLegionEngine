@@ -493,6 +493,12 @@ impl App {
         if input.pressed(b, Action::ToggleFire) {
             intents.push(UiIntent::ToggleFire);
         }
+        for n in 1..=il_ui::orders::ABILITY_HOTKEYS {
+            if input.pressed(b, Action::Ability(n)) {
+                let cursor = input.cursor().map(unproject).unwrap_or(Vec2::ZERO);
+                intents.push(UiIntent::Ability { slot: n, cursor });
+            }
+        }
         for n in 1..=FORMATION_HOTKEYS {
             if input.pressed(b, Action::Formation(n)) {
                 intents.push(UiIntent::Formation(n));
@@ -546,6 +552,9 @@ impl App {
 
     /// The selection card's rows, with localised names.
     fn selection_rows(&self) -> Vec<SelectedRegiment> {
+        fn ticks_to_seconds(ticks: u16) -> f32 {
+            f32::from(ticks) * il_core::TICK_SECONDS
+        }
         let Some(session) = self.state.session() else {
             return Vec::new();
         };
@@ -603,6 +612,47 @@ impl App {
                         FatigueState::Exhausted => "il.fatigue.exhausted",
                     })
                     .to_string(),
+                abilities: view
+                    .abilities(r.id)
+                    .iter()
+                    .enumerate()
+                    .map(|(i, a)| {
+                        let name = regs.locale.get(&regs.abilities.get(a.ability).name_key);
+                        let state = if a.cooldown == 0 {
+                            regs.locale.get("il.battle.ready").to_string()
+                        } else {
+                            regs.locale.fmt(
+                                "il.battle.seconds",
+                                &[("seconds", &format!("{:.0}", ticks_to_seconds(a.cooldown)))],
+                            )
+                        };
+                        regs.locale.fmt(
+                            "il.battle.ability",
+                            &[
+                                ("key", &(i + 1) as &dyn std::fmt::Display),
+                                ("name", &name),
+                                ("state", &state),
+                            ],
+                        )
+                    })
+                    .collect(),
+                statuses: view
+                    .statuses(r.id)
+                    .iter()
+                    .map(|s| {
+                        regs.locale.fmt(
+                            "il.battle.status",
+                            &[
+                                (
+                                    "name",
+                                    &regs.locale.get(&regs.abilities.get(s.ability).name_key)
+                                        as &dyn std::fmt::Display,
+                                ),
+                                ("seconds", &format!("{:.0}", ticks_to_seconds(s.remaining))),
+                            ],
+                        )
+                    })
+                    .collect(),
             })
             .collect()
     }

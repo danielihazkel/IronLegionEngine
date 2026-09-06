@@ -1,0 +1,19 @@
+// rome:testudo (T2-050, Simulation Spec §15.2 abilities table, *chosen*):
+// the hastati lock shields overhead. Armour is multiplied by 3.5 against every blow and
+// missile, but the formation crawls and strikes weakly. Cannot be formed in
+// melee.
+{
+  id: "rome:testudo",
+  name_key: "rome.abilities.testudo.name",
+  description_key: "rome.abilities.testudo.description",
+  targeting: "self",
+  cooldown_ticks: 1200,       // 60 s
+  duration_ticks: 400,        // 20 s
+  effects: [
+    { type: "buff", stat: "armour", mult: 3.5 },
+    { type: "debuff", stat: "speed", mult: 0.5 },
+    { type: "debuff", stat: "attack", mult: 0.8 },
+  ],
+  stacking: "refresh",
+  requires_not_engaged: true,
+}

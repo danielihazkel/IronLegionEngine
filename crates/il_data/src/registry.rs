@@ -19,6 +19,8 @@ pub struct ResolveError {
     pub kind: KindTag,
     /// Overrides the default "unknown reference" wording.
     pub message: Option<String>,
+    /// Overrides the default "an existing ... ContentId" expectation.
+    pub expected: Option<String>,
 }
 
 impl ResolveError {
@@ -28,12 +30,19 @@ impl ResolveError {
             id,
             kind,
             message: None,
+            expected: None,
         }
     }
 
     #[must_use]
     pub fn with_message(mut self, message: impl Into<String>) -> Self {
         self.message = Some(message.into());
+        self
+    }
+
+    #[must_use]
+    pub fn with_expected(mut self, expected: impl Into<String>) -> Self {
+        self.expected = Some(expected.into());
         self
     }
 }

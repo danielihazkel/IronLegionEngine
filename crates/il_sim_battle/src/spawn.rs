@@ -12,6 +12,7 @@ use crate::components::{
     Health, MeleeState, Morale, MoraleState, Order, Path, Pos, PrevFacing, PrevPos, RangedState,
     Rank, Regiment, RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
 };
+use crate::components::{Cooldowns, Energy, Statuses};
 use crate::formation::{effective_ranks, layout_slots, slot_world};
 use crate::interface::{BattleSetup, RegimentSetup, SOLDIER_CAP};
 use crate::map::MapError;
@@ -174,7 +175,7 @@ pub(crate) fn spawn_regiment(
     general: Option<(&crate::interface::GeneralSetup, Handle<UnitType>)>,
 ) -> Option<SoldierId> {
     let count = setup.count + u16::from(general.is_some());
-    let (radius, mass, hp, morale_base, category, template, slots, ranks, ammo) = {
+    let (radius, mass, hp, morale_base, category, template, slots, ranks, ammo, energy, slot_count) = {
         let regs = world.resource::<Regs>();
         let u = regs.0.units.get(unit);
         let template = setup
@@ -198,6 +199,10 @@ pub(crate) fn spawn_regiment(
             // SIM-PROJ-003: volleys per soldier from the unit's ranged block;
             // `None` for units that do not shoot.
             u.ranged.as_ref().map(|rg| rg.ammo),
+            // SIM-ABIL-006 / SIM-ABIL-003 (T2-050): energy and one cooldown
+            // slot per ability, the general's included for its bodyguard.
+            u.energy_max,
+            u.abilities.len() + general.map_or(0, |(_, g)| regs.0.units.get(g).abilities.len()),
         )
     };
 
@@ -243,6 +248,9 @@ pub(crate) fn spawn_regiment(
             Order::default(),
             Path::default(),
             FormationState::new(template, ranks, slots.clone(), facing),
+            Energy { e: energy },
+            Statuses::default(),
+            Cooldowns(vec![0; slot_count]),
         ))
         .id();
     if ammo.is_some() {
@@ -349,6 +357,8 @@ impl BattleWorld {
                 deployment_zone: s.deployment_zone,
                 deployment_confirmed: true,
                 defeated: false,
+                surrendered: false,
+                reinforcements_spawned: 0,
                 // SIM-FLOW-001 (T2-042): the edge nearest the deployment zone.
                 escape_edge: crate::flow::escape_edge(&map, s.deployment_zone),
                 general: None,

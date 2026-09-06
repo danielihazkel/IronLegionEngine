@@ -2,6 +2,7 @@
 //! Variants are added together with the systems that emit them.
 
 use il_core::{Event, PlayerId, RegimentId, SoldierId, V2};
+use il_data::ContentId;
 use serde::{Deserialize, Serialize};
 
 use crate::command::RejectReason;
@@ -79,6 +80,18 @@ pub enum BattleEvent {
     /// The side's general died (SIM-GEN-003, T2-043): the aura is gone and
     /// every regiment of the side takes the death shock next tick.
     GeneralDied { side: u8, soldier: SoldierId },
+    /// `UseAbility` succeeded at Stage 0 (SIM-ABIL-003, T2-050); `targets`
+    /// counts the regiments that received the status.
+    AbilityUsed {
+        regiment: RegimentId,
+        ability: ContentId,
+        targets: u8,
+    },
+    /// A status effect ran out at Stage 12 (SIM-ABIL-004, T2-050).
+    StatusExpired {
+        regiment: RegimentId,
+        ability: ContentId,
+    },
 }
 
 impl Event for BattleEvent {}

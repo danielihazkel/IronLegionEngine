@@ -1,0 +1,41 @@
+// Simulation Spec §15.3 row 8 (T2-050): row 5 again, but the hastati form
+// testudo (`rome:testudo`: armour ×3.5, half speed, weaker blows for 20 s) at
+// tick 1, before the first volley lands. They lose at most 60 % of the
+// soldiers the bare-headed hastati of `volley_velites_vs_hastati` lose,
+// measured across the two files' 50 seeds each.
+//
+// RegimentIds: velites 0, hastati 1. Both fire at will by default.
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 1, unit_type: "rome:velites", count: 120, formation: "rome:loose", position: [300, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [335, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    { tick: 1, player: 1, seq: 0, kind: { UseAbility: { regiment: 1, ability: "rome:testudo", target: "SelfTarget" } } },
+  ],
+  bands: {
+    seeds: 50,
+    seed_base: 5000,
+    // The hastati stand and take it (T2-042: they would break and run north).
+    pin_morale: [1],
+    tick_limit: 1200,
+    assertions: [
+      { name: "testudo halves the losses", kind: "mean_loss_below", side: 1, reference: "volley_velites_vs_hastati", ratio: 0.6 },
+      { name: "hastati lose 3-20", kind: "casualties", side: 1, min_lost: 0.025, max_lost: 0.167, min_fraction: 0.90 },
+    ],
+  },
+}

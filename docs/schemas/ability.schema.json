@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/ability.schema.json",
+  "title": "Iron Legion ability",
+  "description": "An ability (content/abilities/*.json5) a unit type lists in its `abilities` (Simulation Spec SIM-ABIL-001..004, Modding SDK 4.4). Every effect kind validates; before Phase 5 the loader rejects abilities using a kind other than buff or debuff with a diagnostic.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
+    "assetPath": { "type": "string", "pattern": "^[A-Za-z0-9_./-]+$" },
+    "stat": {
+      "enum": ["attack", "defence", "armour", "damage", "speed", "attack_interval", "morale_per_s", "fatigue_rate", "los_radius", "accuracy"],
+      "description": "The stat a buff or debuff touches (SIM-ABIL-002)."
+    },
+    "statEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "stat"],
+      "properties": {
+        "type": { "enum": ["buff", "debuff"] },
+        "stat": { "$ref": "#/$defs/stat" },
+        "mult": { "type": "number", "minimum": 0, "maximum": 100, "default": 1.0, "description": "Multiplied into the stat (armour: onto the armour value); for morale_per_s unused." },
+        "add": { "type": "number", "minimum": -1000, "maximum": 1000, "default": 0, "description": "Added to the stat after the multiplier; morale_per_s is purely additive (morale per second)." }
+      }
+    },
+    "effect": {
+      "oneOf": [
+        { "$ref": "#/$defs/statEffect" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "amount"],
+          "properties": {
+            "type": { "const": "damage" },
+            "amount": { "type": "number", "minimum": 0 },
+            "armour_penetration": { "type": "number", "minimum": 0, "maximum": 1, "default": 0 },
+            "per_tick": { "type": "boolean", "default": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "amount"],
+          "properties": {
+            "type": { "const": "heal" },
+            "amount": { "type": "number", "minimum": 0 },
+            "per_tick": { "type": "boolean", "default": false }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "unit_type", "count", "formation"],
+          "properties": {
+            "type": { "const": "summon" },
+            "unit_type": { "$ref": "#/$defs/contentId" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 1000 },
+            "formation": { "$ref": "#/$defs/contentId" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "fear" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "effects", "radius"],
+          "properties": {
+            "type": { "const": "area" },
+            "effects": { "type": "array", "items": { "$ref": "#/$defs/effect" } },
+            "radius": { "type": "number", "minimum": 0, "maximum": 1000 },
+            "duration_ticks": { "type": "integer", "minimum": 0, "maximum": 65535, "default": 0 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "max_distance"],
+          "properties": {
+            "type": { "const": "teleport" },
+            "max_distance": { "type": "number", "minimum": 0, "maximum": 5000 }
+          }
+        }
+      ]
+    },
+    "listOp": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "$append": { "type": "array" },
+        "$remove": { "type": "array" },
+        "$replace": { "type": "array" }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "name_key", "targeting", "cooldown_ticks", "effects"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"] },
+    "$delete": { "const": true },
+    "$from": { "$ref": "#/$defs/contentId" },
+    "deprecated": { "type": "string" },
+    "id": { "$ref": "#/$defs/contentId" },
+    "name_key": { "$ref": "#/$defs/locKey" },
+    "description_key": { "$ref": "#/$defs/locKey", "description": "Tooltip (render only)." },
+    "icon": { "$ref": "#/$defs/assetPath", "description": "Icon path under assets_root (render only)." },
+    "targeting": {
+      "enum": ["self", "regiment_ally", "regiment_enemy", "point", "area"],
+      "description": "self: the user; regiment_ally / regiment_enemy: one regiment within range; point: a point within range, affecting regiments within radius of it; area: regiments within radius of the user's anchor (SIM-ABIL-001, 003)."
+    },
+    "radius": { "type": "number", "minimum": 0, "maximum": 1000, "default": 0, "description": "Metres, for point and area targeting." },
+    "range": { "type": "number", "minimum": 0, "maximum": 5000, "default": 0, "description": "Metres from the user's anchor to the target anchor or point." },
+    "cooldown_ticks": { "type": "integer", "minimum": 0, "maximum": 65535 },
+    "duration_ticks": { "type": "integer", "minimum": 0, "maximum": 65535, "default": 0, "description": "Status duration; a buff or debuff needs at least 1." },
+    "energy_cost": { "type": "number", "minimum": 0, "maximum": 10000, "default": 0, "description": "Phase 5 resource (SIM-ABIL-006); antiquity content uses 0." },
+    "effects": {
+      "oneOf": [
+        { "type": "array", "items": { "$ref": "#/$defs/effect" } },
+        { "$ref": "#/$defs/listOp" }
+      ],
+      "description": "Each { type, ... }; type is buff, debuff, damage, heal, summon, fear, area or teleport."
+    },
+    "stacking": { "enum": ["refresh", "stack", "highest"], "default": "refresh", "description": "How a second application combines with an active status of the same ability (SIM-ABIL-004)." },
+    "max_stacks": { "type": "integer", "minimum": 1, "maximum": 255, "default": 1, "description": "Stack cap for stacking = stack." },
+    "requires_not_engaged": { "type": "boolean", "default": false },
+    "requires_not_moving": { "type": "boolean", "default": false }
+  }
+}

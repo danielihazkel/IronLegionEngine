@@ -9,6 +9,9 @@
       general: { name: "Roman general" },
       velites: { name: "Velites" },
     },
+    abilities: {
+      testudo: { name: "Testudo", description: "Shields locked overhead: armour x3.5, half speed, weaker blows for 20 s. Not in melee." },
+    },
     formations: {
       line: { name: "Line" },
       column: { name: "Column" },
@@ -43,10 +46,12 @@
   },
   greece: {
     units: { hoplite: { name: "Hoplite" }, general: { name: "Greek general" } },
+    abilities: { shield_wall: { name: "Shield wall", description: "Braced behind the aspis: better defence and armour, slower and fewer blows for 30 s." } },
     factions: { greece: { name: "Greek city-states" } },
   },
   persia: {
     units: { cavalry: { name: "Persian cavalry" }, archer: { name: "Persian archers" }, general: { name: "Persian general" } },
+    abilities: { war_cry: { name: "War cry", description: "Howl at an enemy regiment within 60 m: it loses two morale a second and strikes worse for 15 s." } },
     factions: { persia: { name: "Persia" } },
   },
   il: {
@@ -93,6 +98,11 @@
       soldiers: "{count} soldiers",
       formation: "{formation} · {ranks} ranks",
       morale: "morale {value} ({state})",
+      // Abilities (T2-050).
+      ability: "{key}: {name} ({state})",
+      ready: "ready",
+      seconds: "{seconds} s",
+      status: "{name} {seconds} s",
     },
     morale: {
       steady: "steady",

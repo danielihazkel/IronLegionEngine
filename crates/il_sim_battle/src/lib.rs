@@ -3,6 +3,7 @@
 //! Commands in, events out; one `step` is exactly one 20 Hz tick through the
 //! 18-stage schedule; the state hash and snapshot make every run verifiable.
 
+pub mod abilities;
 pub mod combat;
 pub mod command;
 pub mod components;
@@ -21,9 +22,12 @@ pub mod snapshot;
 pub mod spatial;
 pub mod spawn;
 pub mod view;
+pub mod visibility;
 pub mod world;
 
-pub use command::{AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode};
+pub use command::{
+    AbilityFail, AbilityTarget, Command, CommandKind, FireMode, RejectReason, SpeedMode,
+};
 pub use events::BattleEvent;
 pub use flow::{FlowField, NO_DIRECTION, escape_edge};
 pub use formation::{
@@ -46,5 +50,6 @@ pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spatial::{Entry as GridEntry, SpatialGrid};
 pub use spawn::SetupError;
-pub use view::{BattleView, ProjectileRow, RegimentRow, SoldierRow};
+pub use view::{AbilityRow, BattleView, ProjectileRow, RegimentRow, SoldierRow, StatusRow};
+pub use visibility::{Seen, Visibility};
 pub use world::{BattleWorld, StepOutput};

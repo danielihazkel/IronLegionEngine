@@ -14,6 +14,7 @@ use il_data::{FormationTemplate, Handle, Layout, MovementRules, Registries, Unit
 
 use crate::combat::{fatigue_mults, morale_mults};
 use crate::command::SpeedMode;
+use crate::components::Statuses;
 use crate::components::{
     Anchor, Combat, FormationState, Morale, Order, OrderKind, Path, Pos, Regiment, RegimentFatigue,
     SlotRef,
@@ -89,6 +90,7 @@ type FollowQuery<'w, 's> = Query<
         &'static Combat,
         &'static Morale,
         &'static RegimentFatigue,
+        &'static Statuses,
         &'static mut Anchor,
         &'static mut Order,
         &'static mut Path,
@@ -101,6 +103,7 @@ type FollowItem<'a> = (
     &'a Combat,
     &'a Morale,
     &'a RegimentFatigue,
+    &'a Statuses,
     Mut<'a, Anchor>,
     Mut<'a, Order>,
     Mut<'a, Path>,
@@ -278,47 +281,55 @@ pub fn regiment_follow_path(
     let regs = &regs.0;
     let map = &map.0;
     let wheel_per_tick = deg_to_rad(regs.rules.movement.wheel_rate) * tick_dt();
-    let run =
-        |(r, combat, morale, fatigue, mut anchor, mut order, mut path, mut state): FollowItem<
-            '_,
-        >| {
-            // SIM-CMBT-003 (plan decision 7): the anchor of an engaged attacker
-            // holds while its soldiers fight; the path is kept.
-            if order.kind.is_attack() && combat.engaged {
-                return;
+    let run = |(
+        r,
+        combat,
+        morale,
+        fatigue,
+        statuses,
+        mut anchor,
+        mut order,
+        mut path,
+        mut state,
+    ): FollowItem<'_>| {
+        // SIM-CMBT-003 (plan decision 7): the anchor of an engaged attacker
+        // holds while its soldiers fight; the path is kept.
+        if order.kind.is_attack() && combat.engaged {
+            return;
+        }
+        if !order.kind.moves() {
+            debug_assert!(!anchor_moves(&order, &path, combat));
+            // SIM-FORM-024: a halted regiment wheels toward its ordered
+            // facing while its soldiers track the moving slots.
+            if let Some(target) = order.facing
+                && anchor.facing != target
+            {
+                anchor.facing = anchor.facing.turn_toward(target, wheel_per_tick);
             }
-            if !order.kind.moves() {
-                debug_assert!(!anchor_moves(&order, &path, combat));
-                // SIM-FORM-024: a halted regiment wheels toward its ordered
-                // facing while its soldiers track the moving slots.
-                if let Some(target) = order.facing
-                    && anchor.facing != target
-                {
-                    anchor.facing = anchor.facing.turn_toward(target, wheel_per_tick);
-                }
-                return;
-            }
-            if !anchor_moves(&order, &path, combat) {
-                return;
-            }
-            // SIM-MOVE-011 (T2-040): the anchor slows with the regiment's mean
-            // fatigue and its morale state.
-            let speed_mult = fatigue_mults(fatigue.mean, &regs.rules.fatigue).speed
-                * morale_mults(morale.state, &regs.rules.morale).speed;
-            follow_one(
-                r,
-                speed_mult,
-                &mut anchor,
-                &mut order,
-                &mut path,
-                &mut state,
-                soldiers,
-                ids,
-                regs,
-                map,
-                tick,
-            );
-        };
+            return;
+        }
+        if !anchor_moves(&order, &path, combat) {
+            return;
+        }
+        // SIM-MOVE-011 (T2-040/T2-050): the anchor slows with the regiment's
+        // mean fatigue, its morale state and its status effects.
+        let speed_mult = fatigue_mults(fatigue.mean, &regs.rules.fatigue).speed
+            * morale_mults(morale.state, &regs.rules.morale).speed
+            * statuses.mults.speed;
+        follow_one(
+            r,
+            speed_mult,
+            &mut anchor,
+            &mut order,
+            &mut path,
+            &mut state,
+            soldiers,
+            ids,
+            regs,
+            map,
+            tick,
+        );
+    };
     if parallel {
         regiments.par_iter_mut().for_each(run);
     } else {

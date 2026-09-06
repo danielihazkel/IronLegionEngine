@@ -1,0 +1,17 @@
+// greece:shield_wall (T2-050, *chosen*): hoplites brace behind their
+// aspides. Defence and armour rise, the line slows and strikes less often.
+{
+  id: "greece:shield_wall",
+  name_key: "greece.abilities.shield_wall.name",
+  description_key: "greece.abilities.shield_wall.description",
+  targeting: "self",
+  cooldown_ticks: 1200,       // 60 s
+  duration_ticks: 600,        // 30 s
+  effects: [
+    { type: "buff", stat: "defence", mult: 1.25 },
+    { type: "buff", stat: "armour", add: 2 },
+    { type: "debuff", stat: "speed", mult: 0.7 },
+    { type: "debuff", stat: "attack_interval", mult: 1.2 },
+  ],
+  stacking: "refresh",
+}

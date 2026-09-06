@@ -29,7 +29,7 @@
   fatigue_rate_mult: 1.0,
   los_radius: 200,
 
-  abilities: [],
+  abilities: ["greece:shield_wall"],
   formations: ["rome:phalanx", "rome:line", "rome:column"],
 
   sprite_set: "rome:sprites_infantry",

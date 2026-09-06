@@ -97,7 +97,7 @@ pub fn validate(opts: &ValidateOptions, out: &mut dyn Write) -> anyhow::Result<V
         writeln!(out, "content hash {:016x}", regs.content_registry_hash)?;
         writeln!(
             out,
-            "units {} · formations {} · group formations {} · factions {} · zones {} · maps {} · sprite sets {} · locale languages {}",
+            "units {} · formations {} · group formations {} · factions {} · zones {} · maps {} · sprite sets {} · abilities {} · locale languages {}",
             regs.units.len(),
             regs.formations.len(),
             regs.group_formations.len(),
@@ -105,6 +105,7 @@ pub fn validate(opts: &ValidateOptions, out: &mut dyn Write) -> anyhow::Result<V
             regs.zones.len(),
             regs.maps.len(),
             regs.sprite_sets.len(),
+            regs.abilities.len(),
             regs.locale.languages().count()
         )?;
     }

@@ -7,9 +7,10 @@ use il_core::{
     Angle, Hashable, RegimentId, S, Scalar, SoldierId, StateHasher, TICKS_PER_SECOND, Tick, V2,
     impl_hashable_fieldless_enum, impl_hashable_struct,
 };
-use il_data::{FormationTemplate, Handle, UnitCategory, UnitType};
+use il_data::{Ability, FormationTemplate, Handle, UnitCategory, UnitType};
 use serde::{Deserialize, Serialize};
 
+use crate::combat::formulas::StatMults;
 use crate::command::{FireMode, SpeedMode};
 use crate::formation::Slot;
 
@@ -198,7 +199,44 @@ pub struct Combat {
     /// Soldiers that left the field routing (SIM-MOR-032, SIM-FLOW-002;
     /// written from T2-042).
     pub fled: u16,
+    /// Soldiers that left the field withdrawing (SIM-FLOW-014; survivors in
+    /// the result; written from T2-070).
+    pub withdrawn: u16,
 }
+
+/// SIM-ABIL-006 (T2-050): the regiment's energy for abilities with a cost;
+/// `unit.energy_max` at spawn, regenerated at Stage 12. Hashed, snapshotted.
+#[derive(Component, Clone, Copy, Debug, Default, PartialEq)]
+pub struct Energy {
+    pub e: S,
+}
+
+/// SIM-ABIL-004: one active status effect per source ability. `hostile`
+/// marks a status an enemy applied: only its debuff effects count
+/// (plan decision 10).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StatusEffect {
+    pub source: Handle<Ability>,
+    pub remaining: u16,
+    pub stacks: u8,
+    pub hostile: bool,
+}
+
+/// The regiment's active status effects (SIM-ABIL-004/005, T2-050). `list`
+/// is hashed (by the source ability's ContentId) and snapshotted in
+/// application order; `mults` is derived from it (refreshed whenever the
+/// list changes and on restore).
+#[derive(Component, Clone, Debug, Default, PartialEq)]
+pub struct Statuses {
+    pub list: Vec<StatusEffect>,
+    pub mults: StatMults,
+}
+
+/// SIM-ABIL-003: ticks until each of the regiment's ability slots may be
+/// used again, aligned with `abilities::slots` (T2-050). Hashed as a
+/// length-prefixed list, snapshotted.
+#[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Cooldowns(pub Vec<u16>);
 
 /// The regiment's formation (SIM-CORE-005, TDD §7). `slots` and
 /// `assignment` are derived (recomputed by `formation_layout` and on
@@ -411,6 +449,7 @@ impl_hashable_struct!(Morale {
     arc_hit
 });
 impl_hashable_struct!(RegimentFatigue { mean });
+impl_hashable_struct!(Energy { e });
 impl_hashable_struct!(MeleeState { target, cooldown });
 impl_hashable_struct!(RangedState { ammo, cooldown });
 impl_hashable_struct!(Fire {
@@ -424,7 +463,8 @@ impl_hashable_struct!(Combat {
     charge_until,
     experience,
     kills,
-    fled
+    fled,
+    withdrawn
 });
 impl_hashable_struct!(Order {
     kind,

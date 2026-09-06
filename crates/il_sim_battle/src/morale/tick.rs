@@ -10,6 +10,7 @@
 use bevy_ecs::prelude::*;
 use il_core::{RegimentId, S, Scalar, TICKS_PER_SECOND, Tick, V2};
 
+use crate::components::Statuses;
 use crate::components::{
     Anchor, Combat, FormationState, Morale, MoraleState, Regiment, RegimentFatigue, Soldier,
 };
@@ -39,6 +40,8 @@ struct Row {
     engaged: bool,
     engaged_since: Tick,
     arc_hit: [Tick; 3],
+    /// SIM-MOR-027 (T2-050): morale per second from status effects.
+    morale_per_s: S,
 }
 
 fn rows(world: &World) -> Vec<Row> {
@@ -70,6 +73,9 @@ fn rows(world: &World) -> Vec<Row> {
             engaged: c.engaged,
             engaged_since: m.engaged_since,
             arc_hit: m.arc_hit,
+            morale_per_s: world
+                .get::<Statuses>(*entity)
+                .map_or(S::ZERO, |s| s.mults.morale_per_s),
         });
     }
     out
@@ -232,7 +238,9 @@ pub fn morale_tick(world: &mut World) {
             m = m - shock_amount(s.kind, row.state, &rules.morale);
         }
         let x = morale_factors(&inp, &rules.morale, &rules.combat, &rules.formation);
-        m = (m + morale_delta(&x, &rules.morale.w, dt)).clamp(S::ZERO, hundred);
+        // SIM-MOR-027: the status term is additive, outside the weights.
+        m = (m + morale_delta(&x, &rules.morale.w, dt) + row.morale_per_s * dt)
+            .clamp(S::ZERO, hundred);
         let mut next = morale_state(m, row.state, &rules.morale);
         {
             let mut morale = world.get_mut::<Morale>(row.entity).expect("gathered");

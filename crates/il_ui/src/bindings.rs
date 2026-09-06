@@ -108,6 +108,8 @@ pub enum Action {
     ToggleFire,
     /// The unit type's n-th formation template (1-based).
     Formation(u8),
+    /// The selection's n-th ability slot (1-based; T2-050).
+    Ability(u8),
     Pause,
     SpeedUp,
     SpeedDown,
@@ -182,6 +184,11 @@ impl Action {
         {
             return Some(Action::Formation(n));
         }
+        if let Some(n) = digit("ability_", 9)
+            && n >= 1
+        {
+            return Some(Action::Ability(n));
+        }
         None
     }
 
@@ -191,6 +198,7 @@ impl Action {
             Action::GroupSet(n) => format!("group_set_{n}"),
             Action::GroupRecall(n) => format!("group_recall_{n}"),
             Action::Formation(n) => format!("formation_{n}"),
+            Action::Ability(n) => format!("ability_{n}"),
             other => FIXED_ACTIONS
                 .iter()
                 .find(|(_, a)| *a == other)

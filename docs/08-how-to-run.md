@@ -48,11 +48,12 @@ Every key comes from `game/content/input/bindings.json5`; a mod may rebind any o
 | Run toggle for new orders | `R` (the HUD shows `running` or `walking`) |
 | Fire toggle for the selected ranged regiments | `F` (hold fire / fire at will; regiments start at fire at will) |
 | Formation templates of the selected unit type | `F1`..`F4` in the order the unit lists them (hastati: line, column, loose) |
+| Abilities of the selected regiments | `Z`, `X`, `C` for the first three slots (the unit's abilities, then its general's; T2-050): hastati testudo, hoplites shield wall, Persian cavalry war cry on the nearest enemy regiment within 60 m |
 | Pause | `Space`, or the HUD button |
 | Speed | `Ctrl+=` / `Ctrl+-` or the numpad `+` / `-`, or the HUD buttons |
 | Back to the menu | `Escape` |
 
-Only your own regiments (player 0 in the scenarios) can be selected. A single selected regiment that is right-dragged gets its rank count from the drag width; two or more get a battle line. The selection card at the bottom lists each selected regiment's soldiers, formation, order, morale (value and state) and fatigue state (fresh, active, tired, exhausted; T2-040).
+Only your own regiments (player 0 in the scenarios) can be selected. A single selected regiment that is right-dragged gets its rank count from the drag width; two or more get a battle line. The selection card at the bottom lists each selected regiment's soldiers, formation, order, morale (value and state), fatigue state (fresh, active, tired, exhausted; T2-040), the ability slots with their cooldowns and the active status effects with their remaining seconds (T2-050). A refused ability (on cooldown, engaged, out of range) shows in the event panel.
 
 Developer keys (`dev` feature, on by default):
 
@@ -118,7 +119,7 @@ cargo run -p il_cli -- genart
 - `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
 - `validate` loads the mod roots you list and prints every diagnostic with file, line and column; exit code 1 on errors.
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers, `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release.
-- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), kill a side's general at a tick through `bands.harness: [{ tick, kill_general }]` (row 7, T2-043), and a `mean_loss_matches` row compares two files' mean losses after both have run.
+- `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), kill a side's general at a tick through `bands.harness: [{ tick, kill_general }]` (row 7, T2-043), and a `mean_loss_matches` or `mean_loss_below` row compares two files' mean losses after both have run (`volley_testudo.json5` must lose at most 60 % of `volley_velites_vs_hastati.json5`, T2-050).
 - `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
 
 Criterion micro-benches:

@@ -16,7 +16,7 @@ use il_data::{Layout, UnitCategory};
 
 use crate::combat::formulas::{
     Arc, arc_mults, attack_arc, aura_attack_mult, braced, charge_mults, cooldown_ticks,
-    experience_mult, fatigue_mults, hit_probability, melee_damage, morale_mults, status_mult,
+    experience_mult, fatigue_mults, hit_probability, melee_damage, morale_mults,
     terrain_defence_mult,
 };
 use crate::components::{
@@ -204,18 +204,19 @@ impl Ctx<'_, '_, '_> {
         let mm_i = morale_mults(morale_i.state, &rules.morale);
         let mm_j = morale_mults(morale_j.state, &rules.morale);
         let exp = experience_mult(combat_i.experience, c);
-        let status = status_mult();
+        // SIM-ABIL-005 (T2-050): each regiment's status multipliers.
+        let ri = self.ids.regiment_index(soldier.regiment);
+        let st_i = self.gate.status(ri);
+        let st_j = self.gate.status(self.ids.regiment_index(other.regiment));
         let a = unit_i.attack
             * fm_i.attack
             * mm_i.attack
             * (S::ONE + template_i.integrity_bonus_attack * form_i.integrity)
             * charge_mult
             * exp
-            * status
+            * st_i.attack
             * aura_attack_mult(
-                self.ids
-                    .regiment_index(soldier.regiment)
-                    .and_then(|i| self.gate.in_aura.get(i).copied())
+                ri.and_then(|i| self.gate.in_aura.get(i).copied())
                     .unwrap_or(false),
                 &rules.general,
             )
@@ -239,7 +240,7 @@ impl Ctx<'_, '_, '_> {
             * (S::ONE + template_j.integrity_bonus_defence * form_j.integrity)
             * def_mult
             * terrain
-            * status;
+            * st_j.defence;
         let p = hit_probability(a, d, c);
         // SIM-MOR-034 (T2-042, plan G22): routers are easier to hit.
         let p = if matches!(
@@ -255,9 +256,9 @@ impl Ctx<'_, '_, '_> {
         let damage = if hit {
             melee_damage(
                 unit_i.damage,
-                unit_j.armour,
+                st_j.armour(unit_j.armour),
                 unit_i.armour_penetration,
-                charge_dmg_mult * dmg_mult * exp,
+                charge_dmg_mult * dmg_mult * exp * st_i.damage,
                 c,
             )
         } else {
@@ -277,7 +278,7 @@ impl Ctx<'_, '_, '_> {
             unit_i.attack_interval_ticks,
             fm_i.interval,
             mm_i.interval,
-            status,
+            st_i.attack_interval,
         );
     }
 }

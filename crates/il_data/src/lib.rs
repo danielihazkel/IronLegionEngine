@@ -6,6 +6,7 @@
 //! rules and the content hash (T1-023); localisation (T1-024); hot reload
 //! (T1-025). The only crate that touches the filesystem at load.
 
+pub mod ability;
 pub mod content_id;
 pub mod de;
 pub mod diagnostic;
@@ -34,6 +35,7 @@ pub mod unit_type;
 pub mod validate;
 pub mod zone;
 
+pub use ability::{Ability, Effect, Stacking, Stat, Targeting};
 pub use content_id::{ContentId, InvalidContentId};
 pub use de::Rgb;
 pub use diagnostic::{Diagnostic, Diagnostics, Severity};

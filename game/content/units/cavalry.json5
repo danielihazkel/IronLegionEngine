@@ -30,7 +30,7 @@
   fatigue_rate_mult: 1.0,
   los_radius: 300,
 
-  abilities: [],
+  abilities: ["persia:war_cry"],
   formations: ["rome:wedge", "rome:line", "rome:column"],
 
   sprite_set: "rome:sprites_cavalry",

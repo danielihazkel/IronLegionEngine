@@ -5,6 +5,7 @@
 use il_core::{S, StateHasher, impl_hashable_fieldless_enum};
 use serde::{Deserialize, Serialize};
 
+use crate::ability::Ability;
 use crate::content_id::ContentId;
 use crate::de::{d_one, d_zero, de_s, s};
 use crate::formation::FormationTemplate;
@@ -138,6 +139,10 @@ struct Raw {
     los_radius: f32,
     #[serde(default)]
     abilities: Vec<ContentId>,
+    #[serde(default)]
+    energy_max: f32,
+    #[serde(default)]
+    energy_regen: f32,
     formations: Vec<ContentId>,
     sprite_set: ContentId,
     #[serde(default)]
@@ -216,8 +221,14 @@ pub struct UnitType {
     pub morale_base: S,
     pub fatigue_rate_mult: S,
     pub los_radius: S,
-    /// Ability ContentIds (kind arrives in Phase 2, so ids only).
-    pub abilities: Vec<ContentId>,
+    /// Abilities this unit may use (SIM-ABIL-003); ids and, after
+    /// `resolve`, handles (T2-050).
+    pub ability_ids: Vec<ContentId>,
+    pub abilities: Vec<Handle<Ability>>,
+    /// SIM-ABIL-006: energy capacity and regeneration per second; 0 for
+    /// antiquity units.
+    pub energy_max: S,
+    pub energy_regen: S,
     /// Formation templates this unit may use; the first is the default.
     pub formation_ids: Vec<ContentId>,
     pub formations: Vec<Handle<FormationTemplate>>,
@@ -275,7 +286,10 @@ impl<'de> Deserialize<'de> for UnitType {
             morale_base: s(r.morale_base),
             fatigue_rate_mult: s(r.fatigue_rate_mult),
             los_radius: s(r.los_radius),
-            abilities: r.abilities,
+            ability_ids: r.abilities,
+            abilities: Vec::new(),
+            energy_max: s(r.energy_max),
+            energy_regen: s(r.energy_regen),
             formation_ids: r.formations,
             formations: Vec::new(),
             sprite_set_id: r.sprite_set,
@@ -309,6 +323,17 @@ impl ContentKind for UnitType {
                     format!("formations[{i}]"),
                     id.clone(),
                     KindTag::Formation,
+                )),
+            }
+        }
+        self.abilities.clear();
+        for (i, id) in self.ability_ids.iter().enumerate() {
+            match lookup.handle::<Ability>(id) {
+                Some(h) => self.abilities.push(h),
+                None => errors.push(ResolveError::new(
+                    format!("abilities[{i}]"),
+                    id.clone(),
+                    KindTag::Ability,
                 )),
             }
         }
@@ -367,7 +392,9 @@ impl ContentKind for UnitType {
         h.write(&self.morale_base);
         h.write(&self.fatigue_rate_mult);
         h.write(&self.los_radius);
-        h.write(&self.abilities);
+        h.write(&self.ability_ids);
+        h.write(&self.energy_max);
+        h.write(&self.energy_regen);
         h.write(&self.formation_ids);
         h.write_u32(self.cost);
         h.write_u32(self.upkeep);
@@ -422,6 +449,13 @@ mod tests {
         assert_eq!(r.min_range, s(0.0));
         assert_eq!(u.formation_ids.len(), 1);
         assert!(u.formations.is_empty(), "handles arrive with resolve");
+        assert_eq!(
+            u.energy_max,
+            s(0.0),
+            "SIM-ABIL-006: antiquity units carry no energy"
+        );
+        assert_eq!(u.energy_regen, s(0.0));
+        assert!(u.ability_ids.is_empty() && u.abilities.is_empty());
     }
 
     #[test]

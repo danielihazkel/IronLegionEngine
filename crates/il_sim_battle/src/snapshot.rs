@@ -14,17 +14,18 @@ use serde::{Deserialize, Serialize};
 
 use crate::command::{FireMode, SpeedMode};
 use crate::components::{
-    Anchor, Attackers, Body, Combat, DEATHS_RING, Facing, FatigueC, Fire, FormationState, Fsm,
-    GeneralTag, Health, MeleeState, Morale, MoraleState, Order, OrderKind, Path, Pos, PrevFacing,
-    PrevPos, RangedState, Rank, Regiment, RegimentFatigue, SlotRef, Soldier, SoldierState, Vel,
-    Waypoint,
+    Anchor, Attackers, Body, Combat, Cooldowns, DEATHS_RING, Energy, Facing, FatigueC, Fire,
+    FormationState, Fsm, GeneralTag, Health, MeleeState, Morale, MoraleState, Order, OrderKind,
+    Path, Pos, PrevFacing, PrevPos, RangedState, Rank, Regiment, RegimentFatigue, SlotRef, Soldier,
+    SoldierState, StatusEffect, Statuses, Vel, Waypoint,
 };
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, MapError};
 use crate::resources::{
-    BattlePhase, Clock, Ids, MoraleShocks, Pending, PendingDamage, Phase, Projectile, Projectiles,
-    Rng, SetupRes, Shock, SideState, Sides,
+    BattleFlow, BattlePhase, Clock, Ids, MoraleShocks, Pending, PendingDamage, Phase, Projectile,
+    Projectiles, Rng, SetupRes, Shock, SideState, Sides,
 };
+use crate::visibility::{Seen, Visibility};
 use crate::world::{BattleWorld, InstallMapError};
 
 /// Bumped whenever the encoding changes; `il_save` migrations key on it.
@@ -40,7 +41,11 @@ use crate::world::{BattleWorld, InstallMapError};
 ///    `engaged_since`, `arc_hit` and `fatigue_mean`, soldiers an optional
 ///    general rank, the morale shock queue is stored, and `SideState`
 ///    gained the escape edge and general fields.
-pub const SNAPSHOT_VERSION: u32 = 6;
+/// 7: milestone 4 (T2-050): regiments carry `withdrawn`, `energy`,
+///    `cooldowns` and `statuses`, `SideState` gained `surrendered` and
+///    `reinforcements_spawned`, the battle-flow timers replaced `timer`,
+///    and the per-side visibility masks and memory are stored.
+pub const SNAPSHOT_VERSION: u32 = 7;
 
 /// A ranged regiment's `Fire` component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -48,6 +53,15 @@ pub struct FireSnap {
     pub mode: FireMode,
     pub target: Option<RegimentId>,
     pub cooldown: u16,
+}
+
+/// One active status effect (T2-050); the ability by id.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusSnap {
+    pub ability: ContentId,
+    pub remaining: u16,
+    pub stacks: u8,
+    pub hostile: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -94,6 +108,12 @@ pub struct RegimentSnap {
     pub engaged_since: Tick,
     pub arc_hit: [Tick; 3],
     pub fatigue_mean: S,
+    // T2-050 (version 7).
+    pub withdrawn: u16,
+    pub energy: S,
+    pub cooldowns: Vec<u16>,
+    /// Application order.
+    pub statuses: Vec<StatusSnap>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -143,8 +163,12 @@ pub struct Snapshot {
     pub pending_damage: Vec<Pending>,
     /// Queue order (T2-040; applied from T2-041).
     pub morale_shocks: Vec<Shock>,
-    /// Battle-flow timer; unused until T2-070.
-    pub timer: u32,
+    /// Battle-flow timers and verdict (T2-050 layout; written from T2-070).
+    pub flow: BattleFlow,
+    /// Per side, per regiment index (T2-050 layout; filled from T2-060).
+    pub visibility: Vec<Vec<bool>>,
+    /// Per side, per regiment index: last sightings (stored, not hashed).
+    pub memory: Vec<Vec<Option<Seen>>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
@@ -157,6 +181,8 @@ pub enum RestoreError {
     UnknownUnitType(ContentId),
     #[error("snapshot refers to map {0}, which is not in the registries")]
     UnknownMap(ContentId),
+    #[error("snapshot refers to ability {0}, which is not in the registries")]
+    UnknownAbility(ContentId),
     #[error("snapshot refers to formation {0}, which is not in the registries")]
     UnknownFormation(ContentId),
     #[error("{0}")]
@@ -225,6 +251,9 @@ impl BattleWorld {
                     target: f.target,
                     cooldown: f.cooldown,
                 });
+                let energy = world.get::<Energy>(*entity).expect("energy");
+                let cooldowns = world.get::<Cooldowns>(*entity).expect("cooldowns");
+                let statuses = world.get::<Statuses>(*entity).expect("statuses");
                 debug_assert_eq!(*id, r.id);
                 RegimentSnap {
                     id: r.id,
@@ -267,6 +296,19 @@ impl BattleWorld {
                     engaged_since: morale.engaged_since,
                     arc_hit: morale.arc_hit,
                     fatigue_mean: fatigue.mean,
+                    withdrawn: combat.withdrawn,
+                    energy: energy.e,
+                    cooldowns: cooldowns.0.clone(),
+                    statuses: statuses
+                        .list
+                        .iter()
+                        .map(|s| StatusSnap {
+                            ability: regs.abilities.id_of(s.source).clone(),
+                            remaining: s.remaining,
+                            stacks: s.stacks,
+                            hostile: s.hostile,
+                        })
+                        .collect(),
                 }
             })
             .collect();
@@ -319,7 +361,9 @@ impl BattleWorld {
             projectiles: world.resource::<Projectiles>().0.clone(),
             pending_damage: world.resource::<PendingDamage>().0.clone(),
             morale_shocks: world.resource::<MoraleShocks>().0.clone(),
-            timer: 0,
+            flow: *world.resource::<BattleFlow>(),
+            visibility: world.resource::<Visibility>().masks.clone(),
+            memory: world.resource::<Visibility>().memory.clone(),
         }
     }
 
@@ -404,6 +448,7 @@ impl BattleWorld {
                         experience: r.experience,
                         kills: r.kills,
                         fled: r.fled,
+                        withdrawn: r.withdrawn,
                     },
                     Order {
                         kind: r.order,
@@ -440,6 +485,27 @@ impl BattleWorld {
                     cooldown: f.cooldown,
                 });
             }
+            let mut statuses = Vec::with_capacity(r.statuses.len());
+            for s in &r.statuses {
+                let source = regs
+                    .abilities
+                    .lookup(&s.ability)
+                    .ok_or_else(|| RestoreError::UnknownAbility(s.ability.clone()))?;
+                statuses.push(StatusEffect {
+                    source,
+                    remaining: s.remaining,
+                    stacks: s.stacks,
+                    hostile: s.hostile,
+                });
+            }
+            w.world.entity_mut(entity).insert((
+                Energy { e: r.energy },
+                Cooldowns(r.cooldowns.clone()),
+                Statuses {
+                    list: statuses,
+                    mults: Default::default(),
+                },
+            ));
             w.world
                 .resource_mut::<Ids>()
                 .regiment_entities
@@ -561,6 +627,10 @@ impl BattleWorld {
             projectiles.0.extend(snapshot.projectiles.iter().copied());
             w.world.resource_mut::<PendingDamage>().0 = snapshot.pending_damage.clone();
             w.world.resource_mut::<MoraleShocks>().0 = snapshot.morale_shocks.clone();
+            *w.world.resource_mut::<BattleFlow>() = snapshot.flow;
+            let mut vis = w.world.resource_mut::<Visibility>();
+            vis.masks = snapshot.visibility.clone();
+            vis.memory = snapshot.memory.clone();
         }
 
         w.set_setup(snapshot.setup.clone());
@@ -581,7 +651,8 @@ impl BattleWorld {
     /// - formation slots from template, count and ranks, and `Rank` from
     ///   `SlotRef` (T1-041),
     /// - attacker counts from the melee targets (T2-020),
-    /// - the charge mass of regiments inside a charge window (T2-021).
+    /// - the charge mass of regiments inside a charge window (T2-021),
+    /// - the cached status multipliers from the status lists (T2-050).
     pub(crate) fn rebuild_derived(&mut self) {
         use bevy_ecs::system::RunSystemOnce;
         self.world
@@ -608,6 +679,7 @@ impl BattleWorld {
         crate::formation::rebuild_formation_derived(&mut self.world);
         crate::combat::rebuild_attackers(&mut self.world);
         crate::combat::rebuild_charge_mass(&mut self.world);
+        crate::abilities::rebuild_status_mults(&mut self.world);
     }
 }
 

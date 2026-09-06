@@ -337,8 +337,33 @@ pub enum RejectReason {
     /// `FireMode` addressed a regiment whose unit has no `ranged` block
     /// (T2-030).
     NotRanged(RegimentId),
+    /// `UseAbility` failed one of SIM-ABIL-003's checks (T2-050).
+    Ability {
+        regiment: RegimentId,
+        ability: ContentId,
+        why: AbilityFail,
+    },
+    /// A hidden enemy regiment was named as a target (SIM-VIS-004, T2-060).
+    NotVisible(RegimentId),
     /// The variant has no implementation yet; never silently dropped.
     NotImplemented,
+}
+
+/// Why `UseAbility` was refused (SIM-ABIL-003).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AbilityFail {
+    /// Neither the unit nor its living general lists the ability.
+    NotOwned,
+    OnCooldown,
+    NoEnergy,
+    /// The target does not fit the targeting kind (wrong side, empty,
+    /// hidden, off the map).
+    BadTarget,
+    OutOfRange,
+    /// `requires_not_engaged` while engaged.
+    Engaged,
+    /// `requires_not_moving` while the anchor follows a path.
+    Moving,
 }
 
 /// Stage 0 (TDD §4.5 `apply_commands`). Exclusive so ownership checks and
@@ -703,6 +728,18 @@ fn validate_and_apply(
                 },
             );
             Ok(())
+        }
+        // SIM-ABIL-003 (T2-050): Battle and Pursuit only.
+        CommandKind::UseAbility {
+            ability, target, ..
+        } => {
+            if !matches!(
+                world.resource::<Phase>().0,
+                BattlePhase::Battle | BattlePhase::Pursuit
+            ) {
+                return Err(RejectReason::WrongPhase);
+            }
+            crate::abilities::use_ability(world, entities[0], ability, target, current)
         }
         _ => Err(RejectReason::NotImplemented),
     }

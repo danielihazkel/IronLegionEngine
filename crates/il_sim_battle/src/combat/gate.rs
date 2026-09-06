@@ -11,7 +11,10 @@
 use bevy_ecs::prelude::*;
 use il_core::{RegimentId, S, Scalar};
 
-use crate::components::{Anchor, GeneralTag, Morale, MoraleState, Order, OrderKind, Pos, Regiment};
+use crate::combat::formulas::StatMults;
+use crate::components::{
+    Anchor, GeneralTag, Morale, MoraleState, Order, OrderKind, Pos, Regiment, Statuses,
+};
 use crate::resources::{AnchorGridRes, Ids, MeleeGateRes, Regs, Sides};
 use crate::spatial::Entry;
 
@@ -41,6 +44,7 @@ pub fn melee_gate(world: &mut World) {
     let mut may = vec![false; n];
     let mut extent = vec![S::ZERO; n];
     let mut anchors = vec![il_core::V2::ZERO; n];
+    let mut status = vec![StatMults::default(); n];
     for (i, (_, entity)) in regiment_entities.iter().enumerate() {
         let (Some(regiment), Some(anchor), Some(order), Some(morale)) = (
             world.get::<Regiment>(*entity),
@@ -53,6 +57,10 @@ pub fn melee_gate(world: &mut World) {
         side[i] = regiment.side;
         may[i] = may_fight(regiment, order, morale);
         anchors[i] = anchor.pos;
+        // SIM-ABIL-005 (T2-050): the cached multipliers, for Stage 10.
+        status[i] = world
+            .get::<Statuses>(*entity)
+            .map_or_else(StatMults::default, |s| s.mults);
         let ids = world.resource::<Ids>();
         let mut far = S::ZERO;
         for &sid in &regiment.soldiers {
@@ -137,4 +145,5 @@ pub fn melee_gate(world: &mut World) {
     gate.near_enemy = near;
     gate.extent = extent;
     gate.in_aura = in_aura;
+    gate.status = status;
 }

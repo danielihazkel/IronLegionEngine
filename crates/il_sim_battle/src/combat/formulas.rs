@@ -5,10 +5,11 @@
 
 use il_core::{Angle, S, Scalar, TICKS_PER_SECOND, V2};
 use il_data::{
-    CombatRules, FatigueRules, GeneralRules, MoraleRules, MovementRules, ProjectileArc, StateMults,
+    CombatRules, Effect, FatigueRules, GeneralRules, MoraleRules, MovementRules, ProjectileArc,
+    Registries, Stat, StateMults,
 };
 
-use crate::components::{MoraleState, OrderKind};
+use crate::components::{MoraleState, OrderKind, StatusEffect};
 use crate::movement::regiment::deg_to_rad;
 
 /// SIM-CMBT-014: where an attack comes from, seen by the defender.
@@ -93,9 +94,89 @@ pub fn morale_mults(state: MoraleState, r: &MoraleRules) -> &StateMults {
     r.state_mults.for_state(state as u8)
 }
 
-/// SIM-ABIL-005 placeholder until T2-050: no status effects exist.
-pub fn status_mult() -> S {
-    S::ONE
+/// SIM-ABIL-005: the multipliers of a regiment's active status effects,
+/// one per `Stat` (identity when none). Multiplicative parts multiply
+/// across every status (once per status, whatever its stack count);
+/// additive parts sum, scaled by the stack count, and join the
+/// multiplier as `+ add` except for armour (`unit.armour × armour_mult +
+/// armour_add`, in points) and `morale_per_s` (purely additive, morale per
+/// second). A hostile status (applied by an enemy) contributes its debuff
+/// effects only.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StatMults {
+    pub attack: S,
+    pub defence: S,
+    pub armour_mult: S,
+    pub armour_add: S,
+    pub damage: S,
+    pub speed: S,
+    pub attack_interval: S,
+    pub morale_per_s: S,
+    pub fatigue_rate: S,
+    pub los_radius: S,
+    pub accuracy: S,
+}
+
+impl Default for StatMults {
+    fn default() -> Self {
+        Self {
+            attack: S::ONE,
+            defence: S::ONE,
+            armour_mult: S::ONE,
+            armour_add: S::ZERO,
+            damage: S::ONE,
+            speed: S::ONE,
+            attack_interval: S::ONE,
+            morale_per_s: S::ZERO,
+            fatigue_rate: S::ONE,
+            los_radius: S::ONE,
+            accuracy: S::ONE,
+        }
+    }
+}
+
+impl StatMults {
+    /// `unit.armour` under these statuses.
+    pub fn armour(&self, armour: S) -> S {
+        armour * self.armour_mult + self.armour_add
+    }
+}
+
+/// SIM-ABIL-005: the multipliers of `statuses` (see `StatMults`).
+pub fn status_mults(statuses: &[StatusEffect], regs: &Registries) -> StatMults {
+    let mut m = StatMults::default();
+    for s in statuses {
+        let a = regs.abilities.get(s.source);
+        let stacks = S::from_i32(i32::from(s.stacks.max(1)));
+        for e in &a.effects {
+            let (stat, mult, add) = match e {
+                Effect::Buff { stat, mult, add } if !s.hostile => (*stat, *mult, *add * stacks),
+                Effect::Debuff { stat, mult, add } => (*stat, *mult, *add * stacks),
+                _ => continue,
+            };
+            let slot = match stat {
+                Stat::Attack => &mut m.attack,
+                Stat::Defence => &mut m.defence,
+                Stat::Armour => {
+                    m.armour_mult = m.armour_mult * mult;
+                    m.armour_add = m.armour_add + add;
+                    continue;
+                }
+                Stat::Damage => &mut m.damage,
+                Stat::Speed => &mut m.speed,
+                Stat::AttackInterval => &mut m.attack_interval,
+                Stat::MoralePerS => {
+                    m.morale_per_s = m.morale_per_s + add;
+                    continue;
+                }
+                Stat::FatigueRate => &mut m.fatigue_rate,
+                Stat::LosRadius => &mut m.los_radius,
+                Stat::Accuracy => &mut m.accuracy,
+            };
+            *slot = *slot * mult + add;
+        }
+    }
+    m
 }
 
 /// SIM-GEN-002: `1 + general.aura_attack` inside a living general's aura

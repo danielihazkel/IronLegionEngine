@@ -174,5 +174,6 @@ fn structural_diff(prev: &Registries, next: &Registries) -> (IdList, IdList) {
     diff!(zones, KindTag::Zone);
     diff!(maps, KindTag::Map);
     diff!(sprite_sets, KindTag::SpriteSet);
+    diff!(abilities, KindTag::Ability);
     (added, removed)
 }
