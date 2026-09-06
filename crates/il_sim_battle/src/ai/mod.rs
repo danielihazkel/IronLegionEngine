@@ -11,14 +11,21 @@
 //! plans cross the tick boundary and are therefore hashed and snapshotted
 //! (plan decision 23).
 
+pub mod deploy;
+pub mod inputs;
+pub mod regiment;
+
 use bevy_ecs::prelude::*;
 use il_core::hash::{Hashable, StateHasher};
-use il_core::{Angle, PlayerId, RegimentId, S, Tick, V2, impl_hashable_fieldless_enum};
+use il_core::{
+    Angle, PlayerId, RegimentId, RngStream, S, StreamId, Tick, V2, impl_hashable_fieldless_enum,
+};
 use il_data::{AiProfile, Handle};
 use serde::{Deserialize, Serialize};
 
 use crate::command::{Command, CommandKind};
-use crate::resources::{BattlePhase, Clock, Phase, Regs, SetupRes, Sides};
+use crate::components::MoraleState;
+use crate::resources::{BattlePhase, Clock, Phase, Regs, Rng, SetupRes, Sides};
 
 /// SIM-AI-010: the army's posture.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash, Serialize, Deserialize)]
@@ -277,11 +284,12 @@ pub fn ai_decide(world: &mut World) {
 
 /// SIM-AI-020 (T2-081): places the side and confirms.
 fn deploy_side(world: &mut World, side: u8, profile: Handle<AiProfile>, out: &mut Decisions) {
-    let _ = (world, side, profile, out);
+    deploy::commands(world, side, profile, out);
 }
 
 /// SIM-AI-010..014 and SIM-AI-021 (T2-081/082): the army plan when due,
-/// then the due regiments.
+/// then the due regiments, each drawing its noise from the regiment stream
+/// in decision order.
 fn decide_side(
     world: &mut World,
     side: u8,
@@ -289,5 +297,23 @@ fn decide_side(
     tick: Tick,
     out: &mut Decisions,
 ) {
-    let _ = (world, side, profile, tick, out);
+    let regs = world.resource::<Regs>().0.clone();
+    let profile = regs.ai_profiles.get(profile);
+    let Some(set) = profile.regiment_set.map(|h| regs.ai_action_sets.get(h)) else {
+        return;
+    };
+    let snap = inputs::SideSnapshot::build(world, side);
+    let plan = world.resource::<AiState>().plan(side).cloned();
+    let mut rng: RngStream = world.resource::<Rng>().streams[StreamId::AiRegiment.index()].clone();
+    for me in &snap.own {
+        if matches!(
+            me.morale_state,
+            MoraleState::Routing | MoraleState::Shattered
+        ) || !il_ai::due(tick, profile.regiment_period_ticks, me.id.0)
+        {
+            continue;
+        }
+        regiment::decide(&regs, &snap, me, profile, set, plan.as_ref(), &mut rng, out);
+    }
+    world.resource_mut::<Rng>().streams[StreamId::AiRegiment.index()] = rng;
 }

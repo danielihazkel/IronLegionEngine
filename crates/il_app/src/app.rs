@@ -78,6 +78,8 @@ pub struct Launch {
     pub threads: usize,
     /// Render the synthetic sprite bench instead of the game (T1-051).
     pub bench_sprites: bool,
+    /// Players handed to the engine AI at tick 1 (`--ai`, T2-081).
+    pub ai: Vec<PlayerId>,
 }
 
 pub struct App {
@@ -129,11 +131,17 @@ pub fn start_battle(
     path: &Path,
     regs: Arc<Registries>,
     threads: usize,
+    ai: Vec<PlayerId>,
 ) -> anyhow::Result<BattleSession> {
     let scenario = il_cli::load_scenario(path)?;
     let mut world = BattleWorld::new(&scenario.setup, regs).map_err(|e| anyhow!("{e}"))?;
     world.set_threads(threads);
-    Ok(BattleSession::new(world, PlayerId(0), scenario.script()))
+    Ok(BattleSession::new(
+        world,
+        PlayerId(0),
+        scenario.script(),
+        ai,
+    ))
 }
 
 fn speed_mode(run: bool) -> SpeedMode {
@@ -350,6 +358,7 @@ impl App {
                 (Action::DebugMorale, &mut flags.morale),
                 (Action::DebugFlow, &mut flags.flow),
                 (Action::DebugLos, &mut flags.los),
+                (Action::DebugAi, &mut flags.ai),
             ] {
                 if input.pressed(b, action) {
                     *flag = !*flag;
@@ -924,11 +933,12 @@ impl App {
         };
         let regs = self.regs.clone();
         let threads = self.launch.threads;
+        let ai = self.launch.ai.clone();
         let menu = self.menu();
         let state = std::mem::replace(&mut self.state, AppState::MainMenu(MenuState::default()));
         self.state = state.apply(
             transition,
-            |path| start_battle(path, regs, threads),
+            |path| start_battle(path, regs, threads, ai),
             || menu,
         );
         self.reset_battle_state();
@@ -979,6 +989,7 @@ impl App {
                         ("paused", &paused),
                     ],
                 ) + &debug_suffix(self.debug)
+                    + &ai_suffix(&session.world.view(), self.debug)
             }
         };
         window.set_title(&title);
@@ -1022,6 +1033,30 @@ impl Picker<'_, '_> {
 }
 
 /// ` — dbg: nav slots` for the enabled overlays, empty when none.
+/// With the AI overlay on, each engine-owned side's stance (T2-081).
+fn ai_suffix(view: &il_sim_battle::BattleView, flags: DebugFlags) -> String {
+    if !flags.ai {
+        return String::new();
+    }
+    let stances: Vec<String> = view
+        .sides()
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.player == PlayerId::ENGINE_AI)
+        .map(|(i, _)| {
+            let stance = view.ai_plan(i as u8).map_or("no plan".to_string(), |p| {
+                format!("{:?}", p.stance).to_lowercase()
+            });
+            format!("s{i} {stance}")
+        })
+        .collect();
+    if stances.is_empty() {
+        String::new()
+    } else {
+        format!(" — ai: {}", stances.join(", "))
+    }
+}
+
 fn debug_suffix(flags: DebugFlags) -> String {
     let names = [
         (flags.nav_grid, "nav"),
@@ -1031,6 +1066,8 @@ fn debug_suffix(flags: DebugFlags) -> String {
         (flags.spatial_cells, "cells"),
         (flags.morale, "morale"),
         (flags.flow, "flow"),
+        (flags.los, "los"),
+        (flags.ai, "ai"),
     ];
     let on: Vec<&str> = names.iter().filter(|(f, _)| *f).map(|(_, n)| *n).collect();
     if on.is_empty() {

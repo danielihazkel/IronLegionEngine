@@ -7,7 +7,7 @@
 //! or fights before the deployment ends and nothing changes after the end.
 
 use bevy_ecs::prelude::*;
-use il_core::{Angle, PlayerId, RegimentId, S, Scalar, Tick, V2};
+use il_core::{Angle, RegimentId, S, Scalar, Tick, V2};
 use il_data::{
     ContentId, GroupFormationTemplate, GroupKind, Handle, Layout, MapEdge, TimeoutWinner, UnitType,
 };
@@ -397,23 +397,8 @@ pub fn battle_flow(world: &mut World) {
     let rules = world.resource::<Regs>().0.rules.battle_flow.clone();
     match phase {
         BattlePhase::Deployment => {
-            // SIM-FLOW-011 (plan I21): engine-AI sides confirm at once.
-            let mut confirmed_now = Vec::new();
-            {
-                let mut sides = world.resource_mut::<Sides>();
-                for (s, side) in sides.0.iter_mut().enumerate() {
-                    if side.player == PlayerId::ENGINE_AI && !side.deployment_confirmed {
-                        side.deployment_confirmed = true;
-                        confirmed_now.push(s as u8);
-                    }
-                }
-            }
-            for side in confirmed_now {
-                world
-                    .resource_mut::<Events>()
-                    .0
-                    .push(tick, BattleEvent::DeploymentConfirmed { side });
-            }
+            // SIM-FLOW-011: engine-AI sides deploy and confirm through
+            // Stage 1 commands (T2-081); everyone confirms at Stage 0.
             let all = world
                 .resource::<Sides>()
                 .0

@@ -5,10 +5,12 @@ use std::path::Path;
 use std::sync::Arc;
 
 use glam::Vec2;
-use il_core::{Angle, PlayerId, RegimentId, Tick, V2};
+use il_core::{Angle, PlayerId, RegimentId, Scalar, Tick, V2};
 use il_data::Registries;
 use il_render::{Camera, DebugFlags, LineScene, build_debug_lines};
-use il_sim_battle::{BattleWorld, Command, CommandKind, SpeedMode};
+use il_sim_battle::{
+    AiState, ArmyPlan, Assignment, BattleWorld, Command, CommandKind, Role, SpeedMode,
+};
 
 const SCREEN: Vec2 = Vec2::new(1280.0, 800.0);
 
@@ -144,4 +146,38 @@ fn every_toggle_adds_segments_from_the_view() {
         ),
         0
     );
+}
+
+/// T2-081: the AI overlay draws an engine-owned side's plan (line, slot
+/// links, charge targets) and nothing for a player's side.
+#[test]
+fn ai_overlay_draws_the_engine_sides_plan() {
+    let mut world = world();
+    let near = Camera::new(Vec2::new(300.0, 170.0));
+    let flags = DebugFlags {
+        ai: true,
+        ..DebugFlags::default()
+    };
+    // A player's side with a plan draws nothing.
+    let plan = ArmyPlan {
+        line_anchor: V2::from_f32_data(300.0, 160.0),
+        line_facing: Angle::from_degrees_data(90.0),
+        line_width: il_core::S::from_i32(40),
+        assignments: vec![Assignment {
+            regiment: RegimentId(0),
+            role: Role::Line {
+                slot: V2::from_f32_data(310.0, 170.0),
+            },
+        }],
+        ..ArmyPlan::default()
+    };
+    world.ecs_mut().resource_mut::<AiState>().plans = vec![Some(plan)];
+    world.recompute_hash();
+    assert_eq!(segments(&world, flags, &near), 0);
+    world
+        .ecs_mut()
+        .resource_mut::<il_sim_battle::resources::Sides>()
+        .0[0]
+        .player = PlayerId::ENGINE_AI;
+    assert!(segments(&world, flags, &near) > 0);
 }

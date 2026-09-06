@@ -68,5 +68,6 @@
     { action: "debug_morale", keys: ["F10"] },
     { action: "debug_flow", keys: ["F11"] },
     { action: "debug_los", keys: ["Ctrl+F5"] },
+    { action: "debug_ai", keys: ["Ctrl+F6"] },
   ],
 }

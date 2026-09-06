@@ -12,7 +12,7 @@
   actions: [
     // ---- movement --------------------------------------------------------
     {
-      name: "engage_nearest", kind: "engage_nearest", base: 1.0,
+      name: "engage_nearest", kind: "engage_nearest", base: 1.5,
       considerations: [
         { input: "distance_to_nearest_enemy", scale: 80, curve: { type: "linear", m: -1, b: 1 } },
         { input: "strength_ratio", curve: { type: "logistic", k: 8, mid: 0.4 } },
@@ -20,7 +20,7 @@
       ],
     },
     {
-      name: "hold_position", kind: "hold_position", base: 0.5,
+      name: "hold_position", kind: "hold_position", base: 0.25,
       considerations: [ { input: "constant", curve: { type: "step", threshold: 0.5 } } ],
     },
     {
@@ -39,8 +39,10 @@
     {
       name: "square", kind: "switch_formation", layout: "square", base: 1.5, threshold: 0.5,
       considerations: [
-        { input: "cavalry_approaching", scale: 60, curve: { type: "linear", m: 1, b: 0 } },
-        { input: "infantry_threat", scale: 60, curve: { type: "linear", m: -1, b: 1 } },
+        // Distances: 1 with cavalry at contact, 0 beyond 60 m; 1 with no
+        // infantry within 60 m.
+        { input: "cavalry_approaching", scale: 60, curve: { type: "linear", m: -1, b: 1 } },
+        { input: "infantry_threat", scale: 60, curve: { type: "linear", m: 1, b: 0 } },
       ],
     },
     {

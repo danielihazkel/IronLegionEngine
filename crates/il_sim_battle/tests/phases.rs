@@ -300,7 +300,8 @@ fn deploy_checks_the_zone_and_the_phase_and_the_timeout_ends_the_deployment() {
     // timeout of 0 (none)...
     run(&mut w, &[], 500);
     assert_eq!(w.phase(), BattlePhase::Deployment);
-    // ...and an engine-AI side confirms by itself.
+    // ...and an engine-AI side deploys and confirms by itself through
+    // its Stage 1 commands (T2-081): queued at tick 1, applied at tick 2.
     let mut ai = all_four();
     ai.sides[1].player = PlayerId::ENGINE_AI;
     let mut w = BattleWorld::new(&ai, regs.clone()).unwrap();
@@ -308,7 +309,7 @@ fn deploy_checks_the_zone_and_the_phase_and_the_timeout_ends_the_deployment() {
     assert!(
         out.events
             .iter()
-            .any(|(t, e)| *t == 1 && matches!(e, BattleEvent::DeploymentConfirmed { side: 1 }))
+            .any(|(t, e)| *t == 2 && matches!(e, BattleEvent::DeploymentConfirmed { side: 1 }))
     );
     assert_eq!(
         phases(&out.events),

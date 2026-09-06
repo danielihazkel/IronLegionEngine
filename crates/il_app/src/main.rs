@@ -45,6 +45,10 @@ struct Args {
     /// Show localisation keys instead of strings (REQ-LOC-001 check).
     #[arg(long)]
     show_keys: bool,
+    /// Hand this player's sides to the engine AI at tick 1 (repeatable;
+    /// T2-081): `--ai 1` makes any two-player scenario a fight against it.
+    #[arg(long = "ai")]
+    ai: Vec<u8>,
 }
 
 /// With the `dev` feature the app watches the mod folders and swaps
@@ -91,9 +95,15 @@ fn main() -> anyhow::Result<()> {
         scenarios_dir: args.scenarios_dir.clone(),
         threads: args.threads,
         bench_sprites: args.bench_sprites,
+        ai: args.ai.iter().map(|p| il_core::PlayerId(*p)).collect(),
     };
     let state = match &args.scenario {
-        Some(path) => AppState::Battle(Box::new(start_battle(path, regs.clone(), args.threads)?)),
+        Some(path) => AppState::Battle(Box::new(start_battle(
+            path,
+            regs.clone(),
+            args.threads,
+            launch.ai.clone(),
+        )?)),
         None => {
             let mut mods = vec![args.content_root.clone()];
             mods.extend(args.mods.iter().cloned());

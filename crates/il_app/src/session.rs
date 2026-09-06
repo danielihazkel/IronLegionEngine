@@ -47,10 +47,17 @@ pub struct BattleSession {
     corpses: Vec<Corpse>,
     /// The result carried by `Ended` (T2-070); the sim stops stepping then.
     result: Option<il_sim_battle::BattleResult>,
+    /// Players whose sides go to the engine AI at tick 1 (`--ai`, T2-081).
+    ai_players: Vec<PlayerId>,
 }
 
 impl BattleSession {
-    pub fn new(world: BattleWorld, local_player: PlayerId, script: ScriptedCommands) -> Self {
+    pub fn new(
+        world: BattleWorld,
+        local_player: PlayerId,
+        script: ScriptedCommands,
+        ai_players: Vec<PlayerId>,
+    ) -> Self {
         Self {
             world,
             accumulator: 0.0,
@@ -65,6 +72,7 @@ impl BattleSession {
             events: VecDeque::with_capacity(EVENT_RING),
             corpses: Vec::new(),
             result: None,
+            ai_players,
         }
     }
 
@@ -163,8 +171,26 @@ impl BattleSession {
             self.pending.drain(..).partition(|c| c.tick <= next);
         self.pending = later;
         now.extend(self.script.take_for(next));
+        // `--ai` (T2-081, SIM-CMD-002): the engine takes the listed players'
+        // sides at tick 1, issued as the engine so ownership passes.
+        if next == Tick(1) {
+            for (seq, from) in self.ai_players.iter().enumerate() {
+                now.push(Command {
+                    tick: next,
+                    player: PlayerId::ENGINE_AI,
+                    seq: seq as u16,
+                    kind: CommandKind::TransferControl {
+                        from: *from,
+                        to: PlayerId::ENGINE_AI,
+                    },
+                });
+            }
+        }
         self.command_log.extend(now.iter().cloned());
         let out = self.world.step_observed(&now, observer);
+        // Networking Spec §2.7: the AI's commands for the next tick join the
+        // log (a replay may feed them with the AI off, T2-101).
+        self.command_log.extend(out.ai_commands.iter().cloned());
         self.route_events(next, &out);
         out
     }
@@ -241,7 +267,7 @@ mod tests {
 
     fn session() -> BattleSession {
         let world = BattleWorld::empty(42, Arc::new(Registries::default()), BattlePhase::Battle);
-        BattleSession::new(world, PlayerId(0), ScriptedCommands::default())
+        BattleSession::new(world, PlayerId(0), ScriptedCommands::default(), Vec::new())
     }
 
     #[test]
@@ -354,7 +380,37 @@ mod tests {
             victory: Default::default(),
         };
         let world = BattleWorld::new(&setup, regs).unwrap();
-        BattleSession::new(world, PlayerId(0), ScriptedCommands::default())
+        BattleSession::new(world, PlayerId(0), ScriptedCommands::default(), Vec::new())
+    }
+
+    /// T2-081: `--ai` hands the listed players' sides to the engine at
+    /// tick 1 and the AI's commands join the log.
+    #[test]
+    fn ai_players_are_transferred_at_tick_one_and_logged() {
+        let mut s = game_session();
+        s.ai_players = vec![PlayerId(0)];
+        let outs = s.advance(TICK * 1.5);
+        assert_eq!(outs.len(), 1);
+        assert!(outs[0].rejected.is_empty(), "{:?}", outs[0].rejected);
+        assert!(s.command_log().iter().any(|c| matches!(
+            c.kind,
+            CommandKind::TransferControl {
+                from: PlayerId(0),
+                to: PlayerId::ENGINE_AI
+            }
+        )));
+        assert!(
+            s.world.view().sides()[0].player == PlayerId::ENGINE_AI,
+            "side 0 belongs to the engine"
+        );
+        // Whatever tick 1's Stage 1 decided for the new side is logged for
+        // tick 2 (a lone regiment with nobody in sight decides nothing).
+        let logged_ai = s
+            .command_log()
+            .iter()
+            .filter(|c| c.player == PlayerId::ENGINE_AI && c.tick == Tick(2))
+            .count();
+        assert_eq!(logged_ai, outs[0].ai_commands.len());
     }
 
     #[test]

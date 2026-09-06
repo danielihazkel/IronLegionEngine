@@ -20,6 +20,7 @@ cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --thread
 - The positional argument is a scenario file. Without it the main menu opens and lists every `*.json5` under `tests/scenarios/` (change the folder with `--scenarios-dir`).
 - `--threads 8` runs the sim on eight workers; the default is one thread.
 - `--mod <folder>` loads an extra mod after the game, repeatable (see §6).
+- `--ai <player>` hands that player's sides to the engine AI at tick 1, repeatable (T2-081): `--ai 1` turns any two-player scenario into a fight against the AI. The engine's sides deploy and confirm by themselves; the AI's commands join the command count in the title.
 - `--show-keys` shows localisation keys instead of text, to spot a label that bypasses the locale.
 - `--content-root <folder>` points at a different game root (default `game`).
 
@@ -73,6 +74,7 @@ Developer keys (`dev` feature, on by default):
 | `F10` | morale: a ring per regiment coloured by state (green steady, yellow unsettled, orange shaken, red-orange broken, red routing, grey shattered), one extra ring per fatigue state above fresh, and a morale bar (T2-041) |
 | `F11` | escape flow field of the selected regiment's side (side 0 with nothing selected): one arrow per nav cell toward that side's escape edge (T2-042) |
 | `Ctrl+F5` | line of sight (T2-060): a ring at each regiment's `los_radius` for the selected regiment's side and a red X on every enemy anchor that side cannot see |
+| `Ctrl+F6` | the engine AI's plans (T2-081): each AI side's battle line with a facing tick, a faint link from every regiment to its planned slot, an orange line to its charge or commit target; the title shows the stance per AI side (`no plan` until the army AI of T2-082 decides) |
 
 ## 4. The M4 check: drag ten regiments into a line
 
@@ -113,6 +115,14 @@ The file scripts a hastati line fighting velites and, forty seconds in, Persian 
 ### 4d. The hill check (Phase 2, T2-060)
 
 The window shows your side's fog of war: enemy regiments you cannot see are not drawn, and one you saw earlier leaves a grey diamond with a facing tick at its last known anchor for twenty seconds (`visibility.memory_ticks`). Run any scenario and march a regiment behind the south-east hill of `rome:test_field` (around x 600, y 460) or into the forest in the south-west: the enemy vanishes as the crest or the trees come between you, and reappears within half a second of cresting the hill or closing to 25 m of the trees. `Ctrl+F5` draws your regiments' sight rings and marks the enemies you cannot see; an attack or fire order on a hidden regiment is refused (`NotVisible` in the event panel), and archers at will do not shoot what they cannot see.
+
+### 4e. The AI check (Phase 2, T2-081)
+
+```
+cargo run --release -p il_app -- tests/scenarios/bands/melee_hoplites_vs_cavalry.json5 --ai 0
+```
+
+The Persian cavalry (yours, player 1) charge on their own from the file; the hoplites are the engine's now. Expect: as the wedge closes to about 40 m the hoplites switch from phalanx to square (`F6` shows the slots re-lay), take the charge, and the AI hoplites throw nothing they do not have. With `melee_hoplites_vs_hastati.json5 --ai 1` the hastati are the engine's: they raise the testudo when the hoplites are still out of reach only if javelins fly, engage the phalanx once it is within about 25 m, and their general's regiment (the first one) hangs back. `Ctrl+F6` draws the plan links (the army-level line arrives with T2-082); a refused AI command would show in the event panel and never should.
 
 ## 5. Headless tools (`il_cli`)
 

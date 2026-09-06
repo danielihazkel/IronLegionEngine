@@ -107,6 +107,7 @@ mod tests {
             world,
             PlayerId(0),
             ScriptedCommands::default(),
+            Vec::new(),
         ))
     }
 

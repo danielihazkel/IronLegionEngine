@@ -3,7 +3,7 @@
 //! `BattleView` (never `&mut`) into the frame's `LineScene`.
 
 use glam::Vec2;
-use il_core::{Scalar, V2};
+use il_core::{PlayerId, Scalar, V2};
 use il_sim_battle::components::Anchor;
 use il_sim_battle::{BattleView, slot_world};
 
@@ -27,6 +27,9 @@ pub struct DebugFlags {
     /// Line-of-sight rings of `flow_side`'s regiments and marks on the
     /// enemies it cannot see (T2-060).
     pub los: bool,
+    /// The engine AI's plans: each AI side's line, its regiments' slots and
+    /// their charge or commit targets (T2-081).
+    pub ai: bool,
 }
 
 impl DebugFlags {
@@ -39,6 +42,7 @@ impl DebugFlags {
             || self.morale
             || self.flow
             || self.los
+            || self.ai
     }
 }
 
@@ -50,6 +54,8 @@ const NARROW: [u8; 4] = [255, 90, 200, 240];
 const ANCHOR: [u8; 4] = [255, 255, 255, 230];
 const LOS: [u8; 4] = [120, 200, 255, 160];
 const HIDDEN: [u8; 4] = [255, 80, 80, 230];
+const AI_SLOT: [u8; 4] = [255, 255, 255, 120];
+const AI_TARGET: [u8; 4] = [255, 120, 60, 220];
 /// Morale overlay colours by state: steady, unsettled, shaken, broken,
 /// routing, shattered.
 const MORALE: [[u8; 4]; 6] = [
@@ -108,6 +114,48 @@ pub fn build_debug_lines(
                     let tip = c + d;
                     lines.segment(proj(c - d), proj(tip), tint);
                     lines.circle(proj(tip), 2.0, 4, tint);
+                }
+            }
+        }
+    }
+
+    if flags.ai {
+        // SIM-AI-010 (T2-081): each engine-owned side's plan.
+        for (s, side) in view.sides().iter().enumerate() {
+            if side.player != PlayerId::ENGINE_AI {
+                continue;
+            }
+            let Some(plan) = view.ai_plan(s as u8) else {
+                continue;
+            };
+            let tint = side_tint(s as u8);
+            let forward = v2(plan.line_facing.direction());
+            let right = Vec2::new(forward.y, -forward.x);
+            let a = v2(plan.line_anchor);
+            let half = plan.line_width.to_f32_render() * 0.5;
+            lines.segment(proj(a - right * half), proj(a + right * half), tint);
+            lines.segment(proj(a), proj(a + forward * 12.0), tint);
+            lines.circle(proj(a), 5.0, 8, tint);
+            for assignment in &plan.assignments {
+                let Some(r) = view.regiment(assignment.regiment) else {
+                    continue;
+                };
+                let from = v2(r.anchor_pos);
+                if let Some(slot) = assignment.role.slot() {
+                    lines.segment(proj(from), proj(v2(slot)), AI_SLOT);
+                    lines.circle(proj(v2(slot)), 3.0, 6, AI_SLOT);
+                }
+                let target = match assignment.role {
+                    il_sim_battle::Role::Flank {
+                        charge: Some(t), ..
+                    }
+                    | il_sim_battle::Role::Committed { target: t } => Some(t),
+                    _ => None,
+                };
+                if let Some(t) = target
+                    && let Some(tr) = view.regiment(t)
+                {
+                    lines.segment(proj(from), proj(v2(tr.anchor_pos)), AI_TARGET);
                 }
             }
         }

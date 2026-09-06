@@ -127,6 +127,8 @@ pub enum Action {
     DebugFlow,
     /// Line-of-sight overlay (T2-060).
     DebugLos,
+    /// Engine-AI plan overlay (T2-081).
+    DebugAi,
     QuitToMenu,
 }
 
@@ -165,6 +167,7 @@ const FIXED_ACTIONS: &[(&str, Action)] = &[
     ("debug_morale", Action::DebugMorale),
     ("debug_flow", Action::DebugFlow),
     ("debug_los", Action::DebugLos),
+    ("debug_ai", Action::DebugAi),
     ("quit_to_menu", Action::QuitToMenu),
 ];
 
