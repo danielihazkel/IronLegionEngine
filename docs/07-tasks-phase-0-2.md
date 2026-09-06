@@ -484,6 +484,7 @@ flowchart LR
 - [ ] **T2-082 Army AI** · L · Refs SIM-AI-010..014, REQ-AI-003
   Stance selection, battle line advance with skirmishers forward then behind, cavalry flank groups and charge trigger, defend on high ground, retreat with cavalry screen, reserves commitment.
   **Done when** the AI army beats a passive player army (Phase 2 exit criterion) in 100 % of 20 seeds and beats a "charge everything straight ahead" scripted opponent in over 60 %.
+  Built 2026-09-06, **done-when not yet met**: `ai/army.rs` (`ArmyContext` inputs, `choose_stance` with the hysteresis margin, `build_plan`: roles, the line through `arrange_group` deepened to the enemy frontage and stepping toward the enemy's nearer wing while its laggards are within twice `line_tolerance`, the stand-off phase at `approach_distance` while the missile units shoot from beyond the enemy's reach and until the line is fresh, the charge from `charge_trigger_dist` at run, reserves with commitment, flank groups, counter-charges on defend, the fixed cavalry screen and `Withdraw`s on retreat, `highest_ground` for defend, every slot pulled to passable ground), the plan stored in `AiState` before the regiments decide; non-line roles never pick their own fights; a bodyguard with nobody left to guard fights as a line regiment; `il_cli autoresolve --ai all|none|<players>` (default all); `tests/scenarios/ai_skirmish_300.json5` in the determinism corpus; `tests/ai_army.rs` (nine tests) and the CLI test; profile tuned (`charge_trigger_dist` 60, `flank_offset` 40, `advance_step` 8), army set tuned (attack base 1.5, retreat 1.2 with its curves at 0.35), the `charging` input keeps the testudo off the run in. Bands (20 seeds, release, 2026-09-06): `ai_vs_charge` 16/20 (needs 12), `ai_vs_passive` 3/20 (needs 20). Finding for review (plan R1): against an equal, pre-placed army whose three hastati regiments keep their pila and whose velites and archers shoot at will, the assault meets a casualty-rate shock at contact (SIM-MOR-010) that breaks the attacker as often as the defender, whatever the approach; every AI-side tactic tried (matching the frontage, striking a wing, standing off with the archers, resting before the close, marching, running the last 60 m, holding the skirmishers out of reach, an early cavalry charge on the missile units) moved the band by a few seeds at most. The remaining levers are the morale and missile tunables (§15.1) or the band's army composition, both the owner's call.
 
 ### UI — battle UI and menus
 
@@ -528,7 +529,7 @@ flowchart LR
 ### Phase 2 exit checklist
 
 - [ ] 10,000 soldiers fight to a conclusion at 60 FPS with the sim tick at or under 25 ms (profiler screenshot under `docs/evidence/phase2/`).
-- [ ] The AI wins against a passive player (T2-082).
+- [ ] The AI wins against a passive player (T2-082): `ai_vs_passive` 3/20 seeds on 2026-09-06 in release (`ai_vs_charge` 16/20); see the T2-082 finding.
 - [ ] Scenario band tests pass (T2-110).
 - [ ] Determinism test passes with all combat systems at 1 and 8 threads, including snapshot/restore (T2-112).
 - [ ] A recorded replay verifies (T2-101).

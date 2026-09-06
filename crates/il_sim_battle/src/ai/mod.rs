@@ -11,6 +11,7 @@
 //! plans cross the tick boundary and are therefore hashed and snapshotted
 //! (plan decision 23).
 
+pub mod army;
 pub mod deploy;
 pub mod inputs;
 pub mod regiment;
@@ -303,6 +304,22 @@ fn decide_side(
         return;
     };
     let snap = inputs::SideSnapshot::build(world, side);
+    // SIM-AI-010 (T2-082): the army decides first when due, and its
+    // regiments read the fresh plan.
+    if il_ai::due(tick, profile.army_period_ticks, u32::from(side)) {
+        let mut army_rng: RngStream =
+            world.resource::<Rng>().streams[StreamId::AiArmy.index()].clone();
+        let plan = army::decide(world, &snap, side, profile, tick, &mut army_rng, out);
+        world.resource_mut::<Rng>().streams[StreamId::AiArmy.index()] = army_rng;
+        if let Some(plan) = plan {
+            let mut state = world.resource_mut::<AiState>();
+            let i = usize::from(side);
+            if state.plans.len() <= i {
+                state.plans.resize(i + 1, None);
+            }
+            state.plans[i] = Some(plan);
+        }
+    }
     let plan = world.resource::<AiState>().plan(side).cloned();
     let mut rng: RngStream = world.resource::<Rng>().streams[StreamId::AiRegiment.index()].clone();
     for me in &snap.own {

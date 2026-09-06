@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use il_cli::autoresolve::{AutoresolveOptions, autoresolve};
+use il_cli::autoresolve::{AiPlayers, AutoresolveOptions, autoresolve};
 use il_sim_battle::BattleResult;
 
 fn root() -> PathBuf {
@@ -19,7 +19,29 @@ fn options(max_ticks: Option<u32>) -> AutoresolveOptions {
         json: None,
         content_root: root().join("game"),
         mods: Vec::new(),
+        ai: AiPlayers::None,
     }
+}
+
+/// T2-082 (plan decision 17): by default every side goes to the engine and
+/// the script is dropped; the AI-versus-AI skirmish ends with a winner.
+/// (The four-phase scenario's blind armies aim at each other's zone
+/// centres, which on the test map never brings them within sight.)
+#[test]
+fn the_default_hands_every_side_to_the_engine() {
+    let mut out = Vec::new();
+    let opts = AutoresolveOptions {
+        ai: AiPlayers::All,
+        scenario: root().join("tests/scenarios/ai_skirmish_300.json5"),
+        max_ticks: Some(12_000),
+        ..options(None)
+    };
+    let (result, ended) = autoresolve(&opts, &mut out).unwrap();
+    assert!(ended);
+    assert!(result.winner.is_some(), "{result:?}");
+    assert!(result.duration_ticks > 0);
+    let total_killed = result.summary.total_killed;
+    assert!(total_killed > 0, "the armies fought: {result:?}");
 }
 
 #[test]

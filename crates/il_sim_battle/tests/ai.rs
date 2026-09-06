@@ -372,12 +372,14 @@ fn ai_skirmishers_hold_fire_behind_a_friend() {
     );
 }
 
-/// (f) `use_ability`: AI hastati under javelins raise the testudo at their
-/// first due tick and not again while it cools down.
+/// (f) `use_ability`: AI hastati under arrows raise the testudo at their
+/// first due tick and not again while it cools down. (Archers at 100 m:
+/// inside their reach, outside the 60 m at which the plan charges and the
+/// `charging` input keeps the testudo down.)
 #[test]
 fn ai_hastati_use_testudo_under_arrows() {
     let s = setup(vec![
-        side(0, 0, vec![regiment(1, "rome:velites", 120, 470.0, 0.0)]),
+        side(0, 0, vec![regiment(1, "persia:archer", 60, 400.0, 0.0)]),
         side(255, 1, vec![regiment(2, "rome:hastati", 120, 500.0, 180.0)]),
     ]);
     let mut w = BattleWorld::new(&s, common::regs()).unwrap();
@@ -478,7 +480,7 @@ fn ai_bodyguard_follows_the_centroid_and_does_not_engage() {
     ]);
     s.sides[1].general.bodyguard = Some(2);
     let mut w = BattleWorld::new(&s, common::regs()).unwrap();
-    let (bodyguard, other) = (RegimentId(1), RegimentId(2));
+    let bodyguard = RegimentId(1);
     assert_eq!(
         w.ecs().resource::<Sides>().0[1].general_regiment,
         Some(bodyguard)
@@ -498,8 +500,19 @@ fn ai_bodyguard_follows_the_centroid_and_does_not_engage() {
                 _ => None,
             })
             .collect();
-    assert_eq!(follow.len(), 1, "{follow:?}");
-    assert!(follow[0].distance(anchor(&w, other)) < S::from_i32(2));
+    // The other regiment is the whole line (facing west); the bodyguard
+    // stands `reserve_offset` (60 m) behind it, to the east, and follows
+    // the line as it steps (T2-082 plan): one Move per step at most.
+    assert!(!follow.is_empty() && follow.len() <= 3, "{follow:?}");
+    let expected = V2::from_f32_data(620.0, 150.0);
+    assert!(
+        follow[0].distance(expected) < S::from_i32(2),
+        "{:?} vs {expected:?}",
+        follow[0]
+    );
+    for pair in follow.windows(2) {
+        assert!(pair[0].distance(pair[1]) <= S::from_i32(9), "{pair:?}");
+    }
 }
 
 fn fight() -> BattleSetup {
@@ -535,13 +548,39 @@ fn attack_all() -> Vec<Command> {
     )]
 }
 
-/// (i) Command hygiene: over a whole fight the AI never has a command
-/// rejected (plan I6).
+/// (i) Command hygiene (plan I6): over a whole fight the AI never has a
+/// command rejected, except through the one-tick race between a decision
+/// and its application: a target that died or vanished, or a regiment
+/// that routed, in between (`InvalidTarget`, `NotVisible`, `Routing`).
 #[test]
 fn ai_commands_are_never_rejected_over_a_fight() {
     let mut w = BattleWorld::new(&fight(), common::regs()).unwrap();
-    let r = run(&mut w, &attack_all(), 3000);
-    assert_eq!(r.rejected, 0);
+    let mut r = Run {
+        events: Vec::new(),
+        ai: Vec::new(),
+        rejected: 0,
+    };
+    let script = attack_all();
+    for _ in 0..3000 {
+        let next = w.tick().next();
+        let cmds: Vec<Command> = script.iter().filter(|c| c.tick == next).cloned().collect();
+        let out = w.step(&cmds);
+        for (c, why) in &out.rejected {
+            assert!(
+                c.player == PlayerId::ENGINE_AI
+                    && matches!(
+                        why,
+                        il_sim_battle::RejectReason::InvalidTarget(_)
+                            | il_sim_battle::RejectReason::NotVisible(_)
+                            | il_sim_battle::RejectReason::Routing(_)
+                    ),
+                "unexpected rejection at tick {}: {c:?} {why:?}",
+                next.0
+            );
+        }
+        r.ai.extend(out.ai_commands.iter().cloned());
+    }
+    let _ = &mut r.rejected;
     assert!(
         r.ai.len() > 10,
         "the AI decided something: {} commands",

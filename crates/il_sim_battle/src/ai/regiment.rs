@@ -59,23 +59,34 @@ fn already_moving_to(me: &RegRow, target: V2, tolerance: S) -> bool {
     me.order == OrderKind::Move && me.order_target.distance(target) <= tolerance
 }
 
-/// A `Move` at walk toward `target` facing `facing`, unless the regiment
-/// is there or already going there.
+/// A `Move` toward `target` facing `facing` (at walk, or at run for a
+/// flank group, plan decision 24), unless the regiment is there or already
+/// going there.
 fn move_to(
     me: &RegRow,
     target: V2,
     facing: Option<Angle<S>>,
     tolerance: S,
     reform_angle_deg: S,
+    run: bool,
     out: &mut Decisions,
 ) {
     if me.anchor.distance(target) > tolerance {
+        // No facing on the move: a formation that must keep facing the
+        // enemy while stepping sideways crabs at a fraction of walk speed;
+        // the facing is dressed on arrival below (SIM-MOVE-013).
         if !already_moving_to(me, target, S::ONE) {
+            // The approach marches (walk pace, half the fatigue of walking
+            // in formation, SIM-FAT-002); flank groups and the charge run.
             out.push(CommandKind::Move {
                 regiments: vec![me.id],
                 target,
-                facing,
-                speed: SpeedMode::Walk,
+                facing: None,
+                speed: if run {
+                    SpeedMode::Run
+                } else {
+                    SpeedMode::March
+                },
             });
         }
     } else if me.order.moves() {
@@ -124,11 +135,18 @@ pub fn decide(
 ) {
     let role = plan.and_then(|p| p.role_of(me.id));
     let slot = role.and_then(|r| r.slot());
-    let ctx = RegimentContext::new(snap, me, slot, regs);
-    let tolerance = profile.line_tolerance;
+    let ctx = RegimentContext::new(snap, me, slot, plan.is_some_and(|p| p.charging), regs);
+    // A slot within twice the waypoint radius is held (the line steps by
+    // `advance_step`, which must exceed this for the line to move).
+    let tolerance = (regs.rules.movement.waypoint_radius * S::from_i32(2)).max(S::ONE);
     let reform_angle = regs.rules.formation.reform_angle;
     let line_facing = plan.map(|p| p.line_facing);
-    let is_bodyguard = snap.bodyguard == Some(me.id) && snap.general_alive;
+    let is_bodyguard = snap.is_bodyguard(me.id);
+    // Flank groups always run; the line runs the last stretch once the plan
+    // is charging (SIM-AI-011, T2-082 tuning).
+    let charging = plan.is_some_and(|p| p.charging);
+    let run = matches!(role, Some(Role::Flank { .. }))
+        || (charging && matches!(role, Some(Role::Line { .. }) | Some(Role::Reserve { .. })));
 
     // ---- movement (plan I13: some roles decide it themselves) ----------
     let overridden = match role {
@@ -151,8 +169,13 @@ pub fn decide(
             set,
             Channel::Movement,
             &mut |_, a| match a.kind {
+                // Only the line (and a regiment without a plan) picks its own
+                // fights; skirmishers, reserves, flank groups, counters and
+                // screens hold their slots until the plan commits them.
                 ActionKind::EngageNearest => {
-                    nearest.is_some() && (!is_bodyguard || profile.general_aggression > enemy_share)
+                    nearest.is_some()
+                        && (!is_bodyguard || profile.general_aggression > enemy_share)
+                        && matches!(role, None | Some(Role::Line { .. }) | Some(Role::Bodyguard))
                 }
                 ActionKind::FollowCentroid => is_bodyguard,
                 ActionKind::FallBack => plan.is_some(),
@@ -165,7 +188,7 @@ pub fn decide(
         match winner.map(|c| &c.action.kind) {
             Some(ActionKind::EngageNearest) => {
                 if let Some(e) = nearest {
-                    attack(me, e.id, false, out);
+                    attack(me, e.id, run, out);
                 }
             }
             Some(ActionKind::HoldPosition) => {
@@ -174,20 +197,20 @@ pub fn decide(
                 if !me.engaged
                     && let Some(s) = slot
                 {
-                    move_to(me, s, line_facing, tolerance, reform_angle, out);
+                    move_to(me, s, line_facing, tolerance, reform_angle, run, out);
                 }
             }
             Some(ActionKind::FallBack) => {
                 if let Some(p) = plan {
                     let target = reserve_position(p, me.anchor, profile.reserve_offset);
-                    move_to(me, target, line_facing, tolerance, reform_angle, out);
+                    move_to(me, target, line_facing, tolerance, reform_angle, false, out);
                 }
             }
             Some(ActionKind::FollowCentroid) => {
                 if !me.engaged
                     && let Some(target) = general_position(snap, me, plan, profile.reserve_offset)
                 {
-                    move_to(me, target, line_facing, tolerance, reform_angle, out);
+                    move_to(me, target, line_facing, tolerance, reform_angle, false, out);
                 }
             }
             _ => {}

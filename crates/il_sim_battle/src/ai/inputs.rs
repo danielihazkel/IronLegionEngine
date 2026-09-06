@@ -57,7 +57,10 @@ pub struct RegRow {
     /// `count × unit.cost` (plan I12).
     pub weight: S,
     pub layout: Layout,
+    pub template: Handle<il_data::FormationTemplate>,
     pub morphing: bool,
+    /// Soldiers at spawn (`Morale.initial`).
+    pub initial: u16,
     /// Ability slots with their cooldowns (own rows only).
     pub slots: Vec<(Handle<Ability>, u16)>,
     pub energy: S,
@@ -77,6 +80,10 @@ pub struct SideSnapshot {
     pub enemy_zone: V2,
     pub bodyguard: Option<RegimentId>,
     pub general_alive: bool,
+    /// Soldiers the side started with, every regiment (dead ones too).
+    pub own_initial: u32,
+    /// Soldiers the side has on the field now.
+    pub own_alive: u32,
 }
 
 fn row(
@@ -152,7 +159,9 @@ fn row(
         half_width,
         weight: S::from_i32(r.soldiers.len() as i32) * S::from_i32(unit.cost.min(1 << 20) as i32),
         layout: template.layout,
+        template: f.template,
         morphing: f.prior_template.is_some(),
+        initial: m.initial,
         slots,
         energy: world.get::<Energy>(entity).map_or(S::ZERO, |e| e.e),
         ammo,
@@ -169,10 +178,18 @@ impl SideSnapshot {
         let entities: Vec<(RegimentId, Entity)> = world.resource::<Ids>().regiment_entities.clone();
         let mut own = Vec::new();
         let mut enemies = Vec::new();
+        let mut own_initial = 0u32;
+        let mut own_alive = 0u32;
         for (i, (id, entity)) in entities.iter().enumerate() {
             let Some(r) = world.get::<Regiment>(*entity) else {
                 continue;
             };
+            if r.side == side {
+                own_initial += world
+                    .get::<Morale>(*entity)
+                    .map_or(0, |m| u32::from(m.initial));
+                own_alive += r.soldiers.len() as u32;
+            }
             if r.soldiers.is_empty() {
                 continue;
             }
@@ -208,7 +225,25 @@ impl SideSnapshot {
             enemy_zone,
             bodyguard,
             general_alive,
+            own_initial,
+            own_alive,
         }
+    }
+
+    /// SIM-AI-022 applies while the side has another standing regiment to
+    /// guard; the last regiment fights like any other (T2-082).
+    pub fn is_bodyguard(&self, id: RegimentId) -> bool {
+        self.bodyguard == Some(id) && self.general_alive && self.standing().any(|r| r.id != id)
+    }
+
+    /// Own regiments that stand (not Routing or Shattered).
+    pub fn standing(&self) -> impl Iterator<Item = &RegRow> {
+        self.own.iter().filter(|r| {
+            !matches!(
+                r.morale_state,
+                MoraleState::Routing | MoraleState::Shattered
+            )
+        })
     }
 
     /// The visible enemy nearest to `p` (ties by ascending id).
@@ -270,6 +305,8 @@ pub struct RegimentContext<'a> {
     pub me: &'a RegRow,
     /// The plan slot the regiment holds, if any (T2-082).
     pub slot: Option<V2>,
+    /// The side's plan is charging (SIM-AI-011).
+    pub charging: bool,
     pub nearest: Option<&'a RegRow>,
     pub friendly_block_dist: S,
     pub outnumber_radius: S,
@@ -281,12 +318,14 @@ impl<'a> RegimentContext<'a> {
         snap: &'a SideSnapshot,
         me: &'a RegRow,
         slot: Option<V2>,
+        charging: bool,
         regs: &Registries,
     ) -> Self {
         Self {
             snap,
             me,
             slot,
+            charging,
             nearest: snap.nearest_enemy(me.anchor),
             friendly_block_dist: regs.rules.combat.friendly_block_dist,
             outnumber_radius: regs.rules.morale.outnumber_radius,
@@ -429,8 +468,20 @@ impl InputProvider for RegimentContext<'_> {
             InputId::EnemyInOwnRange => Self::bool(self.enemy_in_own_range()),
             InputId::FriendlyInLineOfFire => Self::bool(self.friendly_in_line_of_fire()),
             InputId::Outnumbered => self.outnumbered(),
+            InputId::Charging => Self::bool(self.charging),
             InputId::SlotError => self.slot.map_or(S::ZERO, |s| s.distance(self.me.anchor)),
-            InputId::Ammo => self.me.ammo,
+            // Missiles of a missile unit: infantry pila do not make a
+            // regiment a skirmisher.
+            InputId::Ammo => {
+                if matches!(
+                    self.me.category,
+                    UnitCategory::Ranged | UnitCategory::Skirmisher
+                ) {
+                    self.me.ammo
+                } else {
+                    S::ZERO
+                }
+            }
             // Army inputs never reach a regiment set (checked at load).
             InputId::ArmyStrengthRatio
             | InputId::ArmyMoraleMean

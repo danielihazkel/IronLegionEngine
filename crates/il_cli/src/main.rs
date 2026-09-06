@@ -50,6 +50,10 @@ struct AutoresolveArgs {
     /// Extra mod roots loaded after the game, in order.
     #[arg(long = "mod")]
     mods: Vec<PathBuf>,
+    /// Players the engine AI takes at tick 1: `all` (default; the scenario's
+    /// scripted commands are dropped), `none` (scripted run) or `1,2`.
+    #[arg(long, default_value = "all")]
+    ai: String,
 }
 
 #[derive(Args)]
@@ -256,6 +260,7 @@ fn main() -> anyhow::Result<()> {
                 json: a.json,
                 content_root: a.content_root,
                 mods: a.mods,
+                ai: il_cli::autoresolve::AiPlayers::parse(&a.ai)?,
             };
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();

@@ -14,9 +14,11 @@
     {
       name: "engage_nearest", kind: "engage_nearest", base: 1.5,
       considerations: [
-        { input: "distance_to_nearest_enemy", scale: 80, curve: { type: "linear", m: -1, b: 1 } },
+        { input: "distance_to_nearest_enemy", scale: 120, curve: { type: "linear", m: -1, b: 1 } },
         { input: "strength_ratio", curve: { type: "logistic", k: 8, mid: 0.4 } },
         { input: "engaged", curve: { type: "linear", m: 0.5, b: 0.5 } },
+        // A unit with missiles left shoots instead of charging.
+        { input: "ammo", curve: { type: "linear", m: -1, b: 1 } },
       ],
     },
     {
@@ -69,6 +71,8 @@
       considerations: [
         { input: "enemy_ranged_in_range", curve: { type: "step", threshold: 0.5 } },
         { input: "engaged", curve: { type: "linear", m: -1, b: 1 } },
+        // Not on the run in: half speed and weaker blows would meet the enemy.
+        { input: "charging", curve: { type: "linear", m: -1, b: 1 } },
       ],
     },
     {

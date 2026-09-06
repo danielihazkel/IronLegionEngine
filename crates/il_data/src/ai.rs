@@ -57,6 +57,8 @@ pub enum InputId {
     Outnumbered = 15,
     SlotError = 16,
     Ammo = 17,
+    /// 1 while the side's plan is charging (SIM-AI-011).
+    Charging = 26,
     // Army scope.
     ArmyStrengthRatio = 18,
     ArmyMoraleMean = 19,
@@ -90,7 +92,8 @@ impl InputId {
             | InputId::FriendlyInLineOfFire
             | InputId::Outnumbered
             | InputId::SlotError
-            | InputId::Ammo => Some(InputScope::Regiment),
+            | InputId::Ammo
+            | InputId::Charging => Some(InputScope::Regiment),
             InputId::ArmyStrengthRatio
             | InputId::ArmyMoraleMean
             | InputId::ArmyFatigueMean

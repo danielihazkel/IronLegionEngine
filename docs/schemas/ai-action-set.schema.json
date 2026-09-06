@@ -13,7 +13,7 @@
         "distance_to_nearest_enemy", "strength_ratio", "enemy_share", "own_morale", "own_fatigue",
         "engaged", "engaged_frontal", "is_flank_exposed", "enemy_flank_open", "cavalry_approaching",
         "infantry_threat", "enemy_ranged_in_range", "enemy_in_own_range", "friendly_in_line_of_fire",
-        "outnumbered", "slot_error", "ammo",
+        "outnumbered", "slot_error", "ammo", "charging",
         "army_strength_ratio", "army_morale_mean", "army_fatigue_mean", "terrain_advantage",
         "time_remaining", "aggression", "casualty_fraction", "enemy_visible"
       ],

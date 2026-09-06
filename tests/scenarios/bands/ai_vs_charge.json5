@@ -1,0 +1,50 @@
+// Simulation Spec 15.3 row 10 (T2-082): the engine AI (side 1) beats a
+// scripted opponent that charges everything straight ahead at tick 1 in
+// more than 60 % of seeds. Same armies as ai_vs_passive.json5.
+//
+// RegimentIds: side 0 = 0..6 (hastati 0-2, velites 3, archers 4, cavalry 5,
+// the general's 20-man bodyguard 6), side 1 = 7..13 in the same order.
+{
+  map_id: "rome:test_field",
+  seed: 0,
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder", bodyguard: 7 },
+      regiments: [
+        { id: 1, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [250, 150], facing_deg: 0 },
+        { id: 2, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [250, 200], facing_deg: 0 },
+        { id: 3, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [250, 100], facing_deg: 0 },
+        { id: 4, unit_type: "rome:velites", count: 120, formation: "rome:loose", position: [270, 150], facing_deg: 0 },
+        { id: 5, unit_type: "persia:archer", count: 60, formation: "rome:loose", position: [225, 150], facing_deg: 0 },
+        { id: 6, unit_type: "persia:cavalry", count: 60, formation: "rome:wedge", position: [230, 250], facing_deg: 0 },
+        { id: 7, unit_type: "rome:hastati", count: 20, formation: "rome:line", position: [210, 150], facing_deg: 0 },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 255, deployment_zone: 1,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder", bodyguard: 14 },
+      regiments: [
+        { id: 7, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [500, 150], facing_deg: 180 },
+        { id: 8, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [500, 200], facing_deg: 180 },
+        { id: 9, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [500, 100], facing_deg: 180 },
+        { id: 10, unit_type: "rome:velites", count: 120, formation: "rome:loose", position: [480, 150], facing_deg: 180 },
+        { id: 11, unit_type: "persia:archer", count: 60, formation: "rome:loose", position: [525, 150], facing_deg: 180 },
+        { id: 12, unit_type: "persia:cavalry", count: 60, formation: "rome:wedge", position: [520, 250], facing_deg: 180 },
+        { id: 14, unit_type: "rome:hastati", count: 20, formation: "rome:line", position: [540, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    // Everything straight ahead, at once.
+    { tick: 1, player: 0, seq: 0, kind: { AttackMove: { regiments: [0, 1, 2, 3, 4, 5, 6], target: [520, 150] } } },
+  ],
+  bands: {
+    seeds: 20,
+    seed_base: 9500,
+    tick_limit: 12000,
+    assertions: [
+      { name: "the AI beats a blind charge", kind: "winner", side: 1, min_fraction: 0.6 },
+    ],
+  },
+}
