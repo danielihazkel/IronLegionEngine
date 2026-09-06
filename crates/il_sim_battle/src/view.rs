@@ -114,6 +114,9 @@ pub struct RegimentRow {
     pub morale: S,
     pub morale_state: MoraleState,
     pub soldier_count: u32,
+    /// Soldiers the regiment spawned with (`Morale.initial`; the regiment
+    /// cards' strength bar, T2-090).
+    pub initial: u16,
     /// SIM-FORM-030, as of the last `integrity_period_ticks` boundary.
     pub integrity: S,
     pub formation: Handle<FormationTemplate>,
@@ -241,6 +244,7 @@ fn regiment_row(
         morale: morale.m,
         morale_state: morale.state,
         soldier_count: r.soldiers.len() as u32,
+        initial: morale.initial,
         integrity: formation.integrity,
         formation: formation.template,
         ranks: formation.ranks,

@@ -49,6 +49,17 @@ pub struct BattleSession {
     result: Option<il_sim_battle::BattleResult>,
     /// Players whose sides go to the engine AI at tick 1 (`--ai`, T2-081).
     ai_players: Vec<PlayerId>,
+    /// Per side, the soldiers lost so far, tallied from the events
+    /// (T2-090, plan decision 11): the casualties line reads these.
+    casualties: Vec<SideCasualties>,
+}
+
+/// One side's running losses (T2-090); `alive` comes from the view.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SideCasualties {
+    pub killed: u32,
+    pub fled: u32,
+    pub withdrawn: u32,
 }
 
 impl BattleSession {
@@ -73,12 +84,24 @@ impl BattleSession {
             corpses: Vec::new(),
             result: None,
             ai_players,
+            casualties: Vec::new(),
         }
     }
 
     /// The battle's result once the phase is Ended (T2-070).
     pub fn result(&self) -> Option<&il_sim_battle::BattleResult> {
         self.result.as_ref()
+    }
+
+    /// Per side, the soldiers killed, fled and withdrawn so far (T2-090).
+    pub fn casualties(&self) -> &[SideCasualties] {
+        &self.casualties
+    }
+
+    /// `Surrender` for every side the local player owns (T2-090, pause
+    /// menu; SIM-FLOW-017).
+    pub fn surrender(&mut self) {
+        self.queue(CommandKind::Surrender);
     }
 
     pub fn speed(&self) -> f32 {
@@ -202,9 +225,31 @@ impl BattleSession {
         let corpse_ticks = u32::from(self.world.registries().rules.combat.corpse_ticks);
         self.corpses
             .retain(|c| tick.0.saturating_sub(c.died.0) < corpse_ticks);
+        let sides = self.world.view().sides().len();
+        if self.casualties.len() < sides {
+            self.casualties.resize(sides, SideCasualties::default());
+        }
         for e in &out.events {
             if let BattleEvent::Ended { result } = e {
                 self.result = Some((**result).clone());
+            }
+            // T2-090: the casualties line's tallies (the regiment row
+            // outlives its last soldier, so the side is always known).
+            let lost = match e {
+                BattleEvent::SoldierDied { regiment, .. } => Some((*regiment, 0)),
+                BattleEvent::SoldierFled { regiment, .. } => Some((*regiment, 1)),
+                BattleEvent::SoldierWithdrew { regiment, .. } => Some((*regiment, 2)),
+                _ => None,
+            };
+            if let Some((regiment, kind)) = lost
+                && let Some(side) = self.world.view().regiment(regiment).map(|r| r.side)
+                && let Some(c) = self.casualties.get_mut(usize::from(side))
+            {
+                match kind {
+                    0 => c.killed += 1,
+                    1 => c.fled += 1,
+                    _ => c.withdrawn += 1,
+                }
             }
             if let BattleEvent::SoldierDied { regiment, pos, .. } = e
                 && corpse_ticks > 0
@@ -452,5 +497,92 @@ mod tests {
         s.set_speed(0.5);
         assert!(s.advance(TICK).is_empty());
         assert_eq!(s.advance(TICK).len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod casualty_tests {
+    use super::*;
+    use il_core::{RegimentId, SoldierId, V2};
+
+    /// T2-090 (decision 11): deaths, flights and withdrawals are tallied per
+    /// side from the events.
+    #[test]
+    fn casualties_are_tallied_per_side_from_events() {
+        use il_data::ContentId;
+        use il_sim_battle::{BattleSetup, GeneralSetup, RegimentSetup, SideSetup};
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
+        let regs = il_cli::load_registries(&root).unwrap_or_else(|e| panic!("{e:#}"));
+        let cid = |s: &str| ContentId::new(s).unwrap();
+        let side = |player: u8, zone: u8, id: u32, x: f32| SideSetup {
+            faction: cid("rome:rome"),
+            player: PlayerId(player),
+            deployment_zone: zone,
+            general: GeneralSetup {
+                unit_type: cid("rome:general"),
+                rank: 1,
+                name_key: String::new(),
+                bodyguard: None,
+            },
+            regiments: vec![RegimentSetup {
+                id,
+                unit_type: cid("rome:hastati"),
+                count: 5,
+                experience: 0,
+                fatigue: 0.0,
+                formation: None,
+                position: Some([x, 150.0]),
+                facing_deg: Some(0.0),
+            }],
+            reinforcements: vec![],
+            ai_profile: None,
+        };
+        let setup = BattleSetup {
+            map_id: cid("rome:test_field"),
+            seed: 1,
+            weather: Default::default(),
+            time_of_day: 12,
+            time_limit_ticks: 48_000,
+            reveal_deployment: false,
+            sides: vec![side(0, 0, 1, 300.0), side(1, 1, 2, 500.0)],
+            victory: Default::default(),
+        };
+        let world = BattleWorld::new(&setup, regs).unwrap();
+        let mut s = BattleSession::new(world, PlayerId(0), ScriptedCommands::default(), Vec::new());
+        let pos = V2::from_f32_data(300.0, 150.0);
+        let out = StepOutput {
+            hash: s.world.hash(),
+            events: vec![
+                BattleEvent::SoldierDied {
+                    id: SoldierId(0),
+                    regiment: RegimentId(0),
+                    killer: None,
+                    pos,
+                },
+                BattleEvent::SoldierDied {
+                    id: SoldierId(1),
+                    regiment: RegimentId(0),
+                    killer: None,
+                    pos,
+                },
+                BattleEvent::SoldierFled {
+                    id: SoldierId(2),
+                    regiment: RegimentId(0),
+                    pos,
+                },
+                BattleEvent::SoldierWithdrew {
+                    id: SoldierId(7),
+                    regiment: RegimentId(1),
+                    pos,
+                },
+            ],
+            rejected: Vec::new(),
+            ai_commands: Vec::new(),
+        };
+        s.route_events(Tick(1), &out);
+        let c = s.casualties();
+        assert_eq!(c.len(), 2);
+        assert_eq!((c[0].killed, c[0].fled, c[0].withdrawn), (2, 1, 0));
+        assert_eq!((c[1].killed, c[1].fled, c[1].withdrawn), (0, 0, 1));
     }
 }

@@ -15,6 +15,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use glam::Vec2;
 use il_core::{Angle, RegimentId, S, Scalar, V2};
 use il_data::{ContentId, GroupKind, Targeting};
+use il_sim_battle::flow_battle::{facing_toward, zone_centre};
+use il_sim_battle::formation::{RegimentInfo, arrange_group};
 use il_sim_battle::{
     AbilityTarget, BattlePhase, BattleView, CommandKind, FireMode, RegimentRow, SpeedMode,
     ranks_for_width,
@@ -68,8 +70,25 @@ pub fn drag_formation(from: Vec2, to: Vec2, centroid: Vec2, flip: bool) -> Optio
 }
 
 /// What the player asked for; see [`commands_for`] for what the sim gets.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum UiIntent {
+    /// The armed attack-move cursor's click on the ground (T2-090, plan
+    /// decision 5): `AttackMove` there. Nothing during the deployment.
+    AttackMove {
+        target: Vec2,
+    },
+    /// A right-click on a visible enemy regiment (T2-090): `AttackRegiment`.
+    AttackRegiment {
+        target: RegimentId,
+    },
+    /// `Withdraw` for the selection (T2-090, REQ-SIM-033).
+    Withdraw,
+    /// A group-formation preset (T2-090, plan I3): in the Battle phase the
+    /// selection forms it where it stands; during the deployment the whole
+    /// side is re-laid in its zone.
+    GroupPreset {
+        template: ContentId,
+    },
     /// Right click: walk or run there, keep the current facing rule.
     Move {
         target: Vec2,
@@ -160,6 +179,16 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
                 };
                 return deploy_commands(ctx, &regiments, drag.anchor, drag.facing(), spacing);
             }
+            UiIntent::GroupPreset { template } => {
+                let Some(side) = ctx.view.regiment(regiments[0]).map(|r| r.side) else {
+                    return Vec::new();
+                };
+                return preset_deploy_commands(ctx.view, side, template);
+            }
+            // Combat orders are `WrongPhase` in the sim; do not send them.
+            UiIntent::AttackMove { .. } | UiIntent::AttackRegiment { .. } | UiIntent::Withdraw => {
+                return Vec::new();
+            }
             _ => {}
         }
     }
@@ -170,6 +199,23 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
             facing: None,
             speed: ctx.speed,
         }],
+        UiIntent::AttackMove { target } => vec![CommandKind::AttackMove {
+            regiments,
+            target: v2(*target),
+        }],
+        UiIntent::AttackRegiment { target } => {
+            // Attacking one of our own is `NotOwner`-adjacent nonsense; the
+            // picker never offers it, but a stale id could.
+            if ctx.regiments.contains(target) {
+                return Vec::new();
+            }
+            vec![CommandKind::AttackRegiment {
+                regiments,
+                target: *target,
+            }]
+        }
+        UiIntent::Withdraw => vec![CommandKind::Withdraw { regiments }],
+        UiIntent::GroupPreset { template } => preset_commands(ctx, regiments, template),
         UiIntent::Halt => vec![CommandKind::Halt { regiments }],
         UiIntent::SpeedMode(mode) => vec![CommandKind::SetSpeedMode {
             regiments,
@@ -229,6 +275,143 @@ fn deploy_commands(
             }
         })
         .collect()
+}
+
+/// The selection's mean facing: the normalised sum of the anchor facing
+/// vectors, or the first regiment's facing when they cancel out (plan I3).
+fn mean_facing(rows: &[RegimentRow]) -> Angle<S> {
+    let sum = rows
+        .iter()
+        .fold(V2::ZERO, |acc, r| acc + r.anchor_facing.direction());
+    if sum.length_sq() > S::ZERO {
+        Angle::from_direction(sum)
+    } else {
+        rows.first()
+            .map_or_else(Angle::default, |r| r.anchor_facing)
+    }
+}
+
+/// Extent of `points` along the right-hand axis of `facing`, in metres.
+fn lateral_extent(points: impl Iterator<Item = V2>, facing: Angle<S>) -> f32 {
+    let f = facing.direction();
+    let right = Vec2::new(f.y.to_f32_render(), -f.x.to_f32_render());
+    let (mut min, mut max) = (f32::INFINITY, f32::NEG_INFINITY);
+    for p in points {
+        let x = Vec2::new(p.x.to_f32_render(), p.y.to_f32_render()).dot(right);
+        min = min.min(x);
+        max = max.max(x);
+    }
+    if min.is_finite() { max - min } else { 0.0 }
+}
+
+/// Minimum width a preset is laid out at, and the margin added to the
+/// selection's own extent (plan I3).
+const PRESET_MIN_WIDTH_M: f32 = 40.0;
+const PRESET_MARGIN_M: f32 = 20.0;
+/// Share of the deployment zone's width a deployment preset uses (plan I3).
+const DEPLOY_PRESET_WIDTH_FRACTION: f32 = 0.8;
+
+/// Battle phase preset (plan I3): `GroupFormation` at the selection's
+/// centroid, mean facing and current lateral width, at the run/walk speed.
+fn preset_commands(
+    ctx: &OrderContext<'_, '_>,
+    regiments: Vec<RegimentId>,
+    template: &ContentId,
+) -> Vec<CommandKind> {
+    let rows: Vec<RegimentRow> = regiments
+        .iter()
+        .filter_map(|id| ctx.view.regiment(*id))
+        .collect();
+    if rows.is_empty() {
+        return Vec::new();
+    }
+    let facing = mean_facing(&rows);
+    let width = (lateral_extent(rows.iter().map(|r| r.anchor_pos), facing) + PRESET_MARGIN_M)
+        .max(PRESET_MIN_WIDTH_M);
+    let n = S::from_i32(rows.len() as i32);
+    let anchor = rows.iter().fold(V2::ZERO, |acc, r| acc + r.anchor_pos) * (S::ONE / n);
+    vec![
+        CommandKind::SetSpeedMode {
+            regiments: regiments.clone(),
+            mode: ctx.speed,
+        },
+        CommandKind::GroupFormation {
+            regiments,
+            template: template.clone(),
+            anchor,
+            facing,
+            width: S::from_f32_data(width),
+        },
+    ]
+}
+
+/// Deployment preset (plan I3, decision 6): the whole side re-laid in its
+/// zone with `arrange_group`, centred on the zone, facing the other sides'
+/// zones, at `DEPLOY_PRESET_WIDTH_FRACTION` of the zone's width; one
+/// `Deploy` per regiment. Empty when the side has no zone polygon or the
+/// template is unknown.
+pub fn preset_deploy_commands(
+    view: &BattleView,
+    side: u8,
+    template: &ContentId,
+) -> Vec<CommandKind> {
+    let regs = view.regs();
+    let map = view.map();
+    let Some(t) = regs
+        .group_formations
+        .lookup(template)
+        .map(|h| regs.group_formations.get(h))
+    else {
+        return Vec::new();
+    };
+    let sides = view.sides();
+    let Some(state) = sides.get(usize::from(side)) else {
+        return Vec::new();
+    };
+    let Some(poly) = map.deployment_polygon(state.deployment_zone) else {
+        return Vec::new();
+    };
+    let centre = zone_centre(map, state.deployment_zone);
+    let others: Vec<V2> = sides
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| *i != usize::from(side))
+        .map(|(_, s)| zone_centre(map, s.deployment_zone))
+        .collect();
+    let facing = facing_toward(map, centre, &others);
+    let width = lateral_extent(poly.iter().copied(), facing) * DEPLOY_PRESET_WIDTH_FRACTION;
+    let infos: Vec<RegimentInfo> = view
+        .regiments()
+        .filter(|r| r.side == side && r.soldier_count > 0)
+        .map(|r| {
+            let unit = regs.units.get(r.unit);
+            RegimentInfo {
+                id: r.id,
+                pos: r.anchor_pos,
+                category: unit.category,
+                count: u16::try_from(r.soldier_count).unwrap_or(u16::MAX),
+                template: r.formation,
+                radius: unit.soldier_radius,
+            }
+        })
+        .collect();
+    arrange_group(
+        t,
+        &infos,
+        centre,
+        facing,
+        S::from_f32_data(width),
+        &regs.rules.formation,
+        regs,
+    )
+    .into_iter()
+    .map(|p| CommandKind::Deploy {
+        regiment: p.id,
+        position: p.anchor,
+        facing: p.facing,
+        template: None,
+    })
+    .collect()
 }
 
 /// One `UseAbility` per selected regiment that has the slot (plan decision

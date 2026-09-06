@@ -157,3 +157,69 @@ fn double_click_selects_the_type_on_screen() {
 fn S(v: f32) -> il_core::S {
     il_core::S::from_f32_data(v)
 }
+
+/// T2-090 (plan I5): a right-click on a visible enemy finds its regiment;
+/// own regiments and hidden enemies are never returned.
+#[test]
+fn enemy_picking_takes_visible_enemies_only() {
+    use il_ui::pick_enemy_regiment;
+    let world = world();
+    let view = world.view();
+    let on_enemy = a_soldier_of(&view, 3);
+    // Side 0 sees regiment 3 forty metres away.
+    assert!(view.visible(0, RegimentId(3)));
+    assert_eq!(
+        pick_enemy_regiment(&view, &project, PPM, 0, on_enemy),
+        Some(RegimentId(3))
+    );
+    // Our own soldiers are not enemies.
+    let on_own = a_soldier_of(&view, 1);
+    assert_eq!(pick_enemy_regiment(&view, &project, PPM, 0, on_own), None);
+    // From side 1 the roles swap.
+    assert_eq!(
+        pick_enemy_regiment(&view, &project, PPM, 1, on_own),
+        Some(RegimentId(1))
+    );
+    assert_eq!(pick_enemy_regiment(&view, &project, PPM, 1, on_enemy), None);
+    // Open ground.
+    assert_eq!(
+        pick_enemy_regiment(&view, &project, PPM, 0, Vec2::new(1200.0, 20.0)),
+        None
+    );
+}
+
+/// A hidden enemy (far beyond the line of sight) cannot be picked even with
+/// the cursor on one of its soldiers.
+#[test]
+fn a_hidden_enemy_is_not_pickable() {
+    use il_ui::pick_enemy_regiment;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../game");
+    let regs = Arc::new(il_data::load_roots(&[root]).unwrap_or_else(|e| panic!("{e}")));
+    let setup: BattleSetup = json5::from_str(
+        r#"{
+          map_id: "rome:test_field",
+          seed: 7,
+          sides: [
+            { faction: "rome:rome", player: 0, deployment_zone: 0,
+              general: { unit_type: "rome:general", name_key: "g0" },
+              regiments: [
+                { id: 1, unit_type: "rome:hastati", count: 12, position: [40, 40], facing_deg: 90 },
+              ] },
+            { faction: "rome:rome", player: 1, deployment_zone: 1,
+              general: { unit_type: "rome:general", name_key: "g1" },
+              regiments: [
+                { id: 4, unit_type: "rome:hastati", count: 12, position: [760, 560], facing_deg: 270 },
+              ] },
+          ],
+        }"#,
+    )
+    .expect("setup parses");
+    let world = BattleWorld::new(&setup, regs).expect("world builds");
+    let view = world.view();
+    assert!(
+        !view.visible(0, RegimentId(1)),
+        "900 m away is out of sight"
+    );
+    let on_enemy = a_soldier_of(&view, 1);
+    assert_eq!(pick_enemy_regiment(&view, &project, PPM, 0, on_enemy), None);
+}

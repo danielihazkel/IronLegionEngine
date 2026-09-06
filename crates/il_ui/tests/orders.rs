@@ -226,3 +226,162 @@ fn ten_regiments_dragged_into_a_battle_line_face_the_drag_direction() {
     assert!(ymax - ymin < 30.0, "line depth {} m", ymax - ymin);
     assert_eq!(world.tick(), Tick(1801));
 }
+
+/// T2-090: the combat intents and the group preset in the Battle phase.
+#[test]
+fn attack_move_attack_regiment_withdraw_and_presets_become_commands() {
+    let world = world();
+    let view = world.view();
+    let two: BTreeSet<RegimentId> = [RegimentId(0), RegimentId(6)].into_iter().collect();
+    let ctx = OrderContext {
+        view: &view,
+        regiments: &two,
+        speed: SpeedMode::Walk,
+    };
+    let am = commands_for(
+        &UiIntent::AttackMove {
+            target: Vec2::new(300.0, 400.0),
+        },
+        &ctx,
+    );
+    assert!(matches!(
+        &am[..],
+        [CommandKind::AttackMove { regiments, target }]
+            if regiments == &[RegimentId(0), RegimentId(6)] && (f(target.y) - 400.0).abs() < 1e-3
+    ));
+    let ar = commands_for(
+        &UiIntent::AttackRegiment {
+            target: RegimentId(3),
+        },
+        &ctx,
+    );
+    assert!(matches!(
+        &ar[..],
+        [CommandKind::AttackRegiment { regiments, target: RegimentId(3) }] if regiments.len() == 2
+    ));
+    // Attacking a selected regiment is refused before the sim sees it.
+    assert!(
+        commands_for(
+            &UiIntent::AttackRegiment {
+                target: RegimentId(6),
+            },
+            &ctx,
+        )
+        .is_empty()
+    );
+    assert!(matches!(
+        &commands_for(&UiIntent::Withdraw, &ctx)[..],
+        [CommandKind::Withdraw { regiments }] if regiments.len() == 2
+    ));
+    // A preset: the speed mode, then a GroupFormation at the centroid facing
+    // the mean facing, at least 40 m wide (plan I3).
+    let template = il_ui::battle_line_template(&view).expect("battle line");
+    let preset = commands_for(
+        &UiIntent::GroupPreset {
+            template: template.clone(),
+        },
+        &ctx,
+    );
+    let r0 = view.regiment(RegimentId(0)).unwrap();
+    let r6 = view.regiment(RegimentId(6)).unwrap();
+    match &preset[..] {
+        [
+            CommandKind::SetSpeedMode {
+                mode: SpeedMode::Walk,
+                ..
+            },
+            CommandKind::GroupFormation {
+                regiments,
+                template: t,
+                anchor,
+                width,
+                ..
+            },
+        ] => {
+            assert_eq!(regiments, &[RegimentId(0), RegimentId(6)]);
+            assert_eq!(t, &template);
+            let cx = (f(r0.anchor_pos.x) + f(r6.anchor_pos.x)) * 0.5;
+            let cy = (f(r0.anchor_pos.y) + f(r6.anchor_pos.y)) * 0.5;
+            assert!((f(anchor.x) - cx).abs() < 1e-2 && (f(anchor.y) - cy).abs() < 1e-2);
+            assert!(f(*width) >= 40.0);
+        }
+        other => panic!("unexpected preset commands {other:?}"),
+    }
+}
+
+/// T2-090 (decision 6): during the deployment a preset re-lays the whole
+/// side inside its zone, and the combat intents send nothing.
+#[test]
+fn a_deployment_preset_re_lays_the_side_and_combat_intents_wait() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let regs =
+        Arc::new(il_data::load_roots(&[root.join("game")]).unwrap_or_else(|e| panic!("{e}")));
+    let setup: il_sim_battle::BattleSetup = json5::from_str(
+        r#"{
+          map_id: "rome:test_field",
+          seed: 3,
+          sides: [
+            { faction: "rome:rome", player: 0, deployment_zone: 0,
+              general: { unit_type: "rome:general", name_key: "g0" },
+              regiments: [
+                { id: 1, unit_type: "rome:hastati", count: 40 },
+                { id: 2, unit_type: "rome:velites", count: 20 },
+                { id: 3, unit_type: "persia:cavalry", count: 12 },
+              ] },
+            { faction: "greece:greece", player: 1, deployment_zone: 1,
+              general: { unit_type: "greece:general", name_key: "g1" },
+              regiments: [ { id: 4, unit_type: "greece:hoplite", count: 40 } ] },
+          ],
+        }"#,
+    )
+    .expect("setup parses");
+    let world = BattleWorld::new(&setup, regs).expect("world builds");
+    let view = world.view();
+    assert_eq!(view.phase(), il_sim_battle::BattlePhase::Deployment);
+    let one: BTreeSet<RegimentId> = [RegimentId(0)].into_iter().collect();
+    let ctx = OrderContext {
+        view: &view,
+        regiments: &one,
+        speed: SpeedMode::Walk,
+    };
+    for intent in [
+        UiIntent::AttackMove {
+            target: Vec2::new(300.0, 300.0),
+        },
+        UiIntent::AttackRegiment {
+            target: RegimentId(3),
+        },
+        UiIntent::Withdraw,
+    ] {
+        assert!(commands_for(&intent, &ctx).is_empty(), "{intent:?}");
+    }
+    let template = il_ui::battle_line_template(&view).expect("battle line");
+    let deploys = commands_for(&UiIntent::GroupPreset { template }, &ctx);
+    assert_eq!(
+        deploys.len(),
+        3,
+        "one Deploy per regiment of the side: {deploys:?}"
+    );
+    let map = view.map();
+    let zone = map.deployment_polygon(0).expect("zone 0");
+    let mut ids = Vec::new();
+    for c in &deploys {
+        let CommandKind::Deploy {
+            regiment, position, ..
+        } = c
+        else {
+            panic!("not a Deploy: {c:?}");
+        };
+        assert!(
+            il_sim_battle::polygon_contains(zone, *position),
+            "{regiment:?} placed outside the zone at {position:?}"
+        );
+        ids.push(*regiment);
+    }
+    ids.sort();
+    assert_eq!(ids, [RegimentId(0), RegimentId(1), RegimentId(2)]);
+    // The sim accepts every one of them.
+    let mut world = world;
+    let out = world.step(&stamp(&world, deploys));
+    assert!(out.rejected.is_empty(), "{:?}", out.rejected);
+}

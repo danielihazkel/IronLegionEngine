@@ -42,6 +42,10 @@
     { action: "order_drag_formation", keys: ["RightDrag"] },
     { action: "order_flip_facing", keys: ["Alt"] },
     { action: "order_halt", keys: ["H"] },
+    // T2-090: T arms the attack-move cursor (the next left-click on the
+    // ground attack-moves; Escape or a right-click cancels), Shift+H withdraws.
+    { action: "order_attack_move", keys: ["T"] },
+    { action: "order_withdraw", keys: ["Shift+H"] },
     { action: "toggle_run", keys: ["R"] },
     { action: "toggle_fire", keys: ["F"] },
     // Ability slots (T2-050): the unit's abilities, then its general's.
@@ -57,7 +61,11 @@
     { action: "pause", keys: ["Space"] },
     { action: "speed_up", keys: ["Ctrl+Equal", "NumpadAdd"] },
     { action: "speed_down", keys: ["Ctrl+Minus", "NumpadSubtract"] },
-    { action: "quit_to_menu", keys: ["Escape"] },
+    // T2-090: Escape opens the pause menu (resume, surrender, settings, quit).
+    { action: "pause_menu", keys: ["Escape"] },
+    // T2-101: battle quick save and load.
+    { action: "quick_save", keys: ["Ctrl+S"] },
+    { action: "quick_load", keys: ["Ctrl+L"] },
     // Developer tooling (`dev` builds only).
     { action: "toggle_profiler", keys: ["F12"] },
     { action: "debug_nav_grid", keys: ["F5"] },

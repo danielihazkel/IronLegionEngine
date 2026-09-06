@@ -22,15 +22,15 @@ use il_render::{
     Renderer, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_debug_lines, build_snapshot,
     deployment_outlines, ground_height, scene_from_snapshot,
 };
-use il_sim_battle::components::{MoraleState, OrderKind};
-use il_sim_battle::morale::{FatigueState, fatigue_state};
-use il_sim_battle::{BattleView, BattleWorld, SpeedMode};
+use il_sim_battle::{BattlePhase, BattleView, BattleWorld, SpeedMode};
 use il_ui::{
-    Action, Bindings, DragFormation, Gesture, HudAction, HudModel, InputState, MenuChoice,
-    MenuModel, OrderContext, SelectedRegiment, Selection, UiContext, UiIntent, battle_hud,
-    commands_for, drag_formation, drag_formation_preview, event_panel, main_menu, own_regiments,
-    pick_regiment, profiler_overlay, regiments_in_box, regiments_of_type_on_screen, selection_box,
-    selection_centroid,
+    Action, Bindings, CardAction, CardStripModel, CommandAction, DragFormation, Gesture, HudAction,
+    HudModel, InputState, MenuChoice, MenuModel, MinimapAction, MinimapInput, OrderContext,
+    PauseAction, PauseModel, Selection, UiContext, UiIntent, battle_hud, card_strip,
+    casualties_line, command_card, commands_for, drag_formation, drag_formation_preview,
+    event_panel, main_menu, own_regiments, pause_menu, pick_enemy_regiment, pick_regiment,
+    preset_deploy_commands, profiler_overlay, regiments_in_box, regiments_of_type_on_screen,
+    selection_box, selection_centroid,
 };
 use winit::application::ApplicationHandler;
 use winit::event::WindowEvent;
@@ -38,6 +38,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::{Window, WindowId};
 
 use crate::HotReloadHandle;
+use crate::battle_ui::{self, Armed, BattleUi};
 use crate::bench::SpriteBench;
 use crate::profiler::Profiler;
 use crate::session::BattleSession;
@@ -109,6 +110,12 @@ pub struct App {
     bench: Option<SpriteBench>,
     /// Requested this frame, applied after rendering.
     transition: Option<Transition>,
+    /// The battle screen's panels' state (T2-090).
+    battle_ui: BattleUi,
+    /// The settings' `ui_scale` (1.0 until T2-091).
+    ui_scale_user: f32,
+    /// The egui zoom factor last applied (decision 7).
+    zoom_applied: f32,
     started: Instant,
     last_frame: Option<Instant>,
     frames: u32,
@@ -185,6 +192,9 @@ impl App {
             lines: LineScene::default(),
             bench: None,
             transition: None,
+            battle_ui: BattleUi::default(),
+            ui_scale_user: 1.0,
+            zoom_applied: 1.0,
             started: Instant::now(),
             last_frame: None,
             frames: 0,
@@ -231,7 +241,54 @@ impl App {
         self.snapshot = RenderSnapshot::default();
         self.scene = SpriteScene::default();
         self.lines.clear();
+        self.battle_ui = BattleUi::default();
         self.load_terrain();
+    }
+
+    /// Opens or closes the pause menu (decision 10): opening pauses, closing
+    /// restores the pause state from before.
+    fn toggle_pause_menu(&mut self) {
+        let open = !self.battle_ui.pause_open;
+        let Some(session) = self.state.session_mut() else {
+            return;
+        };
+        if open {
+            self.battle_ui.pause_was_paused = session.paused();
+            if !session.paused() {
+                session.set_paused(true);
+            }
+        } else if !self.battle_ui.pause_was_paused && session.paused() {
+            session.set_paused(false);
+        }
+        self.battle_ui.pause_open = open;
+        self.refresh_title();
+    }
+
+    /// Queues the commands the intents mean for the current selection
+    /// (REQ-INP-006); the keys and the panels both end here.
+    fn send_intents(&mut self, intents: &[UiIntent]) {
+        if intents.is_empty() || self.selection.is_empty() {
+            return;
+        }
+        let run = self.run;
+        let Some(session) = self.state.session_mut() else {
+            return;
+        };
+        let mut kinds = Vec::new();
+        {
+            let view = session.world.view();
+            let ctx = OrderContext {
+                view: &view,
+                regiments: &self.selection.regiments,
+                speed: speed_mode(run),
+            };
+            for intent in intents {
+                kinds.extend(commands_for(intent, &ctx));
+            }
+        }
+        for kind in kinds {
+            session.queue(kind);
+        }
     }
 
     fn screen(&self) -> Vec2 {
@@ -338,10 +395,17 @@ impl App {
         }
     }
 
-    /// Developer toggles, pause, speed and quit-to-menu (bindings
+    /// Developer toggles, pause, speed and the pause menu (bindings
     /// `toggle_profiler`, `debug_*`, `pause`, `speed_up`, `speed_down`,
-    /// `quit_to_menu`).
+    /// `pause_menu`; Escape first disarms an attack-move, plan I4).
     fn apply_toggles(&mut self) {
+        if self.input.pressed(&self.bindings, Action::PauseMenu) {
+            if self.battle_ui.armed.is_some() {
+                self.battle_ui.armed = None;
+            } else {
+                self.toggle_pause_menu();
+            }
+        }
         let b = &self.bindings;
         let input = &self.input;
         if DEV {
@@ -383,17 +447,20 @@ impl App {
         if input.pressed(b, Action::SpeedDown) {
             hud = Some(HudAction::SpeedDown);
         }
-        if input.pressed(b, Action::QuitToMenu) {
-            hud = Some(HudAction::QuitToMenu);
-        }
         if let Some(action) = hud {
             self.hud_action(action);
         }
     }
 
-    /// Pause and speed go to the session (as commands and multipliers);
-    /// quitting is a state transition applied after the frame.
+    /// Pause and speed go to the session (as commands and multipliers); the
+    /// Menu button opens the pause menu; Confirm ends the deployment.
     fn hud_action(&mut self, action: HudAction) {
+        if action == HudAction::OpenMenu {
+            if !self.battle_ui.pause_open {
+                self.toggle_pause_menu();
+            }
+            return;
+        }
         let Some(session) = self.state.session_mut() else {
             return;
         };
@@ -404,9 +471,110 @@ impl App {
             }
             HudAction::SpeedUp => session.set_speed((session.speed() * 2.0).min(MAX_SPEED)),
             HudAction::SpeedDown => session.set_speed((session.speed() * 0.5).max(MIN_SPEED)),
-            HudAction::QuitToMenu => self.transition = Some(Transition::QuitToMenu),
+            HudAction::ConfirmDeployment => {
+                session.queue(il_sim_battle::CommandKind::ConfirmDeployment);
+            }
+            HudAction::OpenMenu => {}
         }
         self.refresh_title();
+    }
+
+    /// The pause menu's clicks (decision 10).
+    fn pause_action(&mut self, action: PauseAction) {
+        match action {
+            PauseAction::Resume => self.toggle_pause_menu(),
+            PauseAction::Surrender => {
+                if let Some(session) = self.state.session_mut() {
+                    session.surrender();
+                }
+                self.toggle_pause_menu();
+            }
+            // The settings screen arrives with T2-091.
+            PauseAction::Settings => {}
+            PauseAction::Quit => self.transition = Some(Transition::QuitToMenu),
+        }
+    }
+
+    /// The card strip's clicks (decision 8).
+    fn card_actions(&mut self, actions: &[CardAction]) {
+        for action in actions {
+            match *action {
+                CardAction::Select { id, add } => self.selection.click(Some(id), add),
+                CardAction::Centre(id) => {
+                    let anchor = self
+                        .state
+                        .session()
+                        .and_then(|s| s.world.view().regiment(id))
+                        .map(|r| {
+                            Vec2::new(
+                                r.anchor_pos.x.to_f32_render(),
+                                r.anchor_pos.y.to_f32_render(),
+                            )
+                        });
+                    if let Some(a) = anchor {
+                        self.camera_mut().center = a;
+                    }
+                }
+            }
+        }
+    }
+
+    /// The command card's clicks (decision 9): the same intents as the keys.
+    fn command_action(&mut self, action: CommandAction) {
+        let intent = match action {
+            CommandAction::Halt => UiIntent::Halt,
+            CommandAction::ArmAttackMove => {
+                self.battle_ui.armed = match self.battle_ui.armed {
+                    Some(Armed::AttackMove) => None,
+                    None => Some(Armed::AttackMove),
+                };
+                return;
+            }
+            CommandAction::Withdraw => UiIntent::Withdraw,
+            CommandAction::ToggleFire => UiIntent::ToggleFire,
+            CommandAction::ToggleRun => {
+                self.run = !self.run;
+                UiIntent::SpeedMode(speed_mode(self.run))
+            }
+            CommandAction::Formation(n) => UiIntent::Formation(n),
+            CommandAction::Ability(n) => {
+                let cursor = self
+                    .input
+                    .cursor()
+                    .and_then(|c| self.camera.map(|cam| cam.screen_to_world(c, self.screen())))
+                    .unwrap_or(Vec2::ZERO);
+                UiIntent::Ability { slot: n, cursor }
+            }
+            CommandAction::Preset(template) => {
+                // During the deployment the preset re-lays the whole side,
+                // selection or not (decision 6).
+                let deploying = self
+                    .state
+                    .session()
+                    .is_some_and(|s| s.world.phase() == BattlePhase::Deployment);
+                if deploying {
+                    if let Some(session) = self.state.session_mut()
+                        && let Some(side) = session.observer_side()
+                    {
+                        let kinds = preset_deploy_commands(&session.world.view(), side, &template);
+                        for kind in kinds {
+                            session.queue(kind);
+                        }
+                    }
+                    return;
+                }
+                UiIntent::GroupPreset { template }
+            }
+        };
+        self.send_intents(&[intent]);
+    }
+
+    /// The minimap's clicks (decision 11).
+    fn minimap_action(&mut self, action: MinimapAction) {
+        match action {
+            MinimapAction::Pan(world) => self.camera_mut().center = world,
+            MinimapAction::Order(world) => self.send_intents(&[UiIntent::Move { target: world }]),
+        }
     }
 
     /// Selection gestures (REQ-INP-002): click, shift-click, box, double
@@ -417,6 +585,10 @@ impl App {
         let Some(camera) = self.camera else {
             return;
         };
+        // An armed cursor owns the left button (plan I4).
+        if self.battle_ui.armed.is_some() {
+            return;
+        }
         let Some(session) = self.state.session() else {
             return;
         };
@@ -469,25 +641,48 @@ impl App {
         self.selection.retain(|id| own.contains(&id));
     }
 
-    /// Orders (REQ-INP-003): right click moves, right drag lays a line
-    /// (T1-062 gesture), halt, run toggle, formation hotkeys. Every intent
-    /// becomes Commands queued on the session (REQ-INP-006).
+    /// Orders (REQ-INP-003): right click moves, or attacks a visible enemy
+    /// under the cursor; right drag lays a line (T1-062 gesture); the armed
+    /// attack-move cursor's left click (T2-090); halt, withdraw, run toggle,
+    /// formation and ability hotkeys. Every intent becomes Commands queued
+    /// on the session (REQ-INP-006).
     fn apply_order_input(&mut self) {
         let screen = self.screen();
         let Some(camera) = self.camera else {
             return;
         };
         if self.selection.is_empty() {
+            self.battle_ui.armed = None;
             return;
         }
-        let Some(session) = self.state.session_mut() else {
+        let Some(session) = self.state.session() else {
             return;
         };
         let b = &self.bindings;
         let input = &self.input;
         let unproject = |p: Vec2| camera.screen_to_world(p, screen);
         let mut intents: Vec<UiIntent> = Vec::new();
-        if let Some(Gesture::DragEnd { from, to, .. }) =
+        let mut armed = self.battle_ui.armed;
+        if input.pressed(b, Action::OrderAttackMove) {
+            armed = match armed {
+                Some(Armed::AttackMove) => None,
+                None => Some(Armed::AttackMove),
+            };
+        }
+        if armed == Some(Armed::AttackMove) {
+            // The armed cursor: a left click on the ground attack-moves, a
+            // right click only cancels (plan decision 5).
+            if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::Select) {
+                intents.push(UiIntent::AttackMove {
+                    target: unproject(pos),
+                });
+                armed = None;
+            } else if input.gesture(b, Action::OrderMove).is_some()
+                || input.gesture(b, Action::OrderDragFormation).is_some()
+            {
+                armed = None;
+            }
+        } else if let Some(Gesture::DragEnd { from, to, .. }) =
             input.gesture(b, Action::OrderDragFormation)
         {
             let centroid = selection_centroid(&session.world.view(), &self.selection.regiments)
@@ -497,12 +692,29 @@ impl App {
                 intents.push(UiIntent::DragFormation(drag));
             }
         } else if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::OrderMove) {
-            intents.push(UiIntent::Move {
-                target: unproject(pos),
+            let view = session.world.view();
+            let enemy = session.observer_side().and_then(|side| {
+                let picker = Picker {
+                    view: &view,
+                    camera,
+                    screen,
+                    player: session.local_player(),
+                };
+                pick_enemy_regiment(&view, &picker.project(), camera.zoom, side, pos)
+            });
+            intents.push(match enemy {
+                Some(target) => UiIntent::AttackRegiment { target },
+                None => UiIntent::Move {
+                    target: unproject(pos),
+                },
             });
         }
+        self.battle_ui.armed = armed;
         if input.pressed(b, Action::OrderHalt) {
             intents.push(UiIntent::Halt);
+        }
+        if input.pressed(b, Action::OrderWithdraw) {
+            intents.push(UiIntent::Withdraw);
         }
         if input.pressed(b, Action::ToggleRun) {
             self.run = !self.run;
@@ -522,24 +734,7 @@ impl App {
                 intents.push(UiIntent::Formation(n));
             }
         }
-        if intents.is_empty() {
-            return;
-        }
-        let mut kinds = Vec::new();
-        {
-            let view = session.world.view();
-            let ctx = OrderContext {
-                view: &view,
-                regiments: &self.selection.regiments,
-                speed: speed_mode(self.run),
-            };
-            for intent in &intents {
-                kinds.extend(commands_for(intent, &ctx));
-            }
-        }
-        for kind in kinds {
-            session.queue(kind);
-        }
+        self.send_intents(&intents);
     }
 
     /// The drag-formation preview (line and facing arrow) while the right
@@ -566,113 +761,6 @@ impl App {
         } = drag_formation(from, to, centroid, flip)?;
         let tip = anchor + forward * (width * PREVIEW_ARROW_FRACTION).max(PREVIEW_ARROW_MIN_M);
         Some((drag.from, drag.to, camera.world_to_screen(tip, 0.0, screen)))
-    }
-
-    /// The selection card's rows, with localised names.
-    fn selection_rows(&self) -> Vec<SelectedRegiment> {
-        fn ticks_to_seconds(ticks: u16) -> f32 {
-            f32::from(ticks) * il_core::TICK_SECONDS
-        }
-        let Some(session) = self.state.session() else {
-            return Vec::new();
-        };
-        let view = session.world.view();
-        let regs = view.regs();
-        self.selection
-            .regiments
-            .iter()
-            .filter_map(|id| view.regiment(*id))
-            .map(|r| SelectedRegiment {
-                id: r.id,
-                unit: regs
-                    .locale
-                    .get(&regs.units.get(r.unit).name_key)
-                    .to_string(),
-                soldiers: r.soldier_count,
-                formation: regs
-                    .locale
-                    .get(&regs.formations.get(r.formation).name_key)
-                    .to_string(),
-                ranks: r.ranks,
-                order: regs
-                    .locale
-                    .get(match r.order {
-                        OrderKind::Idle => "il.order.idle",
-                        OrderKind::Move => "il.order.move",
-                        OrderKind::AttackMove => "il.order.attack_move",
-                        OrderKind::AttackRegiment => "il.order.attack_regiment",
-                        OrderKind::Withdraw => "il.order.withdraw",
-                    })
-                    .to_string(),
-                morale: regs.locale.fmt(
-                    "il.battle.morale",
-                    &[
-                        ("value", &format!("{:.0}", r.morale.to_f32_render())),
-                        (
-                            "state",
-                            &regs.locale.get(match r.morale_state {
-                                MoraleState::Steady => "il.morale.steady",
-                                MoraleState::Unsettled => "il.morale.unsettled",
-                                MoraleState::Shaken => "il.morale.shaken",
-                                MoraleState::Broken => "il.morale.broken",
-                                MoraleState::Routing => "il.morale.routing",
-                                MoraleState::Shattered => "il.morale.shattered",
-                            }),
-                        ),
-                    ],
-                ),
-                fatigue: regs
-                    .locale
-                    .get(match fatigue_state(r.fatigue_mean, &regs.rules.fatigue) {
-                        FatigueState::Fresh => "il.fatigue.fresh",
-                        FatigueState::Active => "il.fatigue.active",
-                        FatigueState::Tired => "il.fatigue.tired",
-                        FatigueState::Exhausted => "il.fatigue.exhausted",
-                    })
-                    .to_string(),
-                abilities: view
-                    .abilities(r.id)
-                    .iter()
-                    .enumerate()
-                    .map(|(i, a)| {
-                        let name = regs.locale.get(&regs.abilities.get(a.ability).name_key);
-                        let state = if a.cooldown == 0 {
-                            regs.locale.get("il.battle.ready").to_string()
-                        } else {
-                            regs.locale.fmt(
-                                "il.battle.seconds",
-                                &[("seconds", &format!("{:.0}", ticks_to_seconds(a.cooldown)))],
-                            )
-                        };
-                        regs.locale.fmt(
-                            "il.battle.ability",
-                            &[
-                                ("key", &(i + 1) as &dyn std::fmt::Display),
-                                ("name", &name),
-                                ("state", &state),
-                            ],
-                        )
-                    })
-                    .collect(),
-                statuses: view
-                    .statuses(r.id)
-                    .iter()
-                    .map(|s| {
-                        regs.locale.fmt(
-                            "il.battle.status",
-                            &[
-                                (
-                                    "name",
-                                    &regs.locale.get(&regs.abilities.get(s.ability).name_key)
-                                        as &dyn std::fmt::Display,
-                                ),
-                                ("seconds", &format!("{:.0}", ticks_to_seconds(s.remaining))),
-                            ],
-                        )
-                    })
-                    .collect(),
-            })
-            .collect()
     }
 
     /// Steps the sim for this frame's wall time (hot reload first).
@@ -800,8 +888,16 @@ impl App {
         }
 
         let drag_preview = self.drag_preview();
-        let rows = self.selection_rows();
         let mut ui_out = None;
+        // REQ-UI-006 (decision 7): text scales with the window height.
+        if let (Some(ui), Some(window)) = (self.ui.as_ref(), self.window.as_ref()) {
+            let logical_height = (screen.y / window.scale_factor() as f32).max(1.0);
+            let zoom = battle_ui::zoom_factor(logical_height, self.ui_scale_user);
+            if (zoom - self.zoom_applied).abs() > 1e-3 {
+                ui.ctx().set_zoom_factor(zoom);
+                self.zoom_applied = zoom;
+            }
+        }
         if let (Some(ui), Some(window), None) =
             (self.ui.as_mut(), self.window.as_ref(), &self.bench)
         {
@@ -825,25 +921,68 @@ impl App {
                             .regs
                             .locale
                             .get(match phase {
-                                il_sim_battle::BattlePhase::Deployment => {
-                                    "il.battle.phase.deployment"
-                                }
-                                il_sim_battle::BattlePhase::Battle => "il.battle.phase.battle",
-                                il_sim_battle::BattlePhase::Pursuit => "il.battle.phase.pursuit",
-                                il_sim_battle::BattlePhase::Ended => "il.battle.phase.ended",
+                                BattlePhase::Deployment => "il.battle.phase.deployment",
+                                BattlePhase::Battle => "il.battle.phase.battle",
+                                BattlePhase::Pursuit => "il.battle.phase.pursuit",
+                                BattlePhase::Ended => "il.battle.phase.ended",
                             })
                             .to_string(),
-                        deploying: phase == il_sim_battle::BattlePhase::Deployment,
+                        deploying: phase == BattlePhase::Deployment,
                         paused: session.paused(),
                         speed: session.speed(),
                         run: self.run,
-                        selection: &rows,
                         commands: session.command_log().len(),
                         locale: &self.regs.locale,
                     };
                     let locale = &self.regs.locale;
                     let events: Vec<_> = session.events().iter().cloned().collect();
-                    let mut action = None;
+                    // T2-090: the panels' models.
+                    let rows = battle_ui::selection_rows(session, &self.selection);
+                    let cards = battle_ui::card_models(session, &self.selection);
+                    let card_model = CardStripModel {
+                        cards: &cards,
+                        locale,
+                    };
+                    let command = battle_ui::command_model(
+                        session,
+                        &self.selection,
+                        &rows,
+                        &self.regs,
+                        self.run,
+                        self.battle_ui.armed,
+                    );
+                    let tallies = battle_ui::tallies(session);
+                    let camera = self.camera.unwrap_or_else(|| Camera::new(Vec2::ZERO));
+                    let mini = battle_ui::minimap_data(
+                        session,
+                        &self.selection.regiments,
+                        &camera,
+                        screen,
+                    );
+                    let map = session.world.map();
+                    let minimap_input = MinimapInput {
+                        map,
+                        zone_colours: &mini.zone_colours,
+                        zone_crossing: &mini.zone_crossing,
+                        discs: &mini.discs,
+                        blocks: &mini.blocks,
+                        viewport: mini.viewport,
+                    };
+                    let pause = PauseModel {
+                        can_surrender: session.observer_side().is_some()
+                            && phase != BattlePhase::Ended,
+                        has_settings: false,
+                        locale,
+                    };
+                    let pause_open = self.battle_ui.pause_open;
+                    let armed = self.battle_ui.armed;
+                    let minimap = &mut self.battle_ui.minimap;
+                    let mut hud_click = None;
+                    let mut card_clicks = Vec::new();
+                    let mut command_click = None;
+                    let mut minimap_click = None;
+                    let mut pause_click = None;
+                    let mut result_back = false;
                     let out = ui.run(window, |ctx| {
                         if show_profiler {
                             profiler_overlay(ctx, locale, &stats);
@@ -855,17 +994,39 @@ impl App {
                         if let Some((from, to, tip)) = drag_preview {
                             drag_formation_preview(ctx, from, to, tip);
                         }
-                        action = battle_hud(ctx, &hud);
+                        if armed.is_some() {
+                            ctx.set_cursor_icon(egui::CursorIcon::Crosshair);
+                        }
+                        casualties_line(ctx, &tallies, locale);
+                        card_clicks = card_strip(ctx, &card_model);
+                        command_click = command_card(ctx, &command);
+                        minimap_click = minimap.show(ctx, &minimap_input, locale);
+                        hud_click = battle_hud(ctx, &hud);
+                        if pause_open {
+                            pause_click = pause_menu(ctx, &pause);
+                        }
                         // T2-070: the result window once the battle ended.
-                        if let Some(result) = session.result()
-                            && il_ui::result_window(ctx, &il_ui::ResultModel { result, locale })
-                        {
-                            action = Some(HudAction::QuitToMenu);
+                        if let Some(result) = session.result() {
+                            result_back =
+                                il_ui::result_window(ctx, &il_ui::ResultModel { result, locale });
                         }
                     });
                     ui_out = Some(out);
-                    if let Some(action) = action {
+                    if let Some(action) = hud_click {
                         self.hud_action(action);
+                    }
+                    self.card_actions(&card_clicks);
+                    if let Some(action) = command_click {
+                        self.command_action(action);
+                    }
+                    if let Some(action) = minimap_click {
+                        self.minimap_action(action);
+                    }
+                    if let Some(action) = pause_click {
+                        self.pause_action(action);
+                    }
+                    if result_back {
+                        self.transition = Some(Transition::QuitToMenu);
                     }
                 }
                 AppState::MainMenu(menu) => {

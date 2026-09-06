@@ -100,7 +100,6 @@ pub struct HudModel<'a> {
     pub speed: f32,
     /// The run toggle for new orders.
     pub run: bool,
-    pub selection: &'a [SelectedRegiment],
     /// Commands recorded so far (the replay-to-be).
     pub commands: usize,
     pub locale: &'a Locale,
@@ -111,7 +110,10 @@ pub enum HudAction {
     TogglePause,
     SpeedUp,
     SpeedDown,
-    QuitToMenu,
+    /// The Menu button: opens the pause menu (T2-090).
+    OpenMenu,
+    /// The deployment's Confirm button (T2-090, decision 6).
+    ConfirmDeployment,
 }
 
 /// `mm:ss` of battle time.
@@ -150,7 +152,7 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
                     action = Some(HudAction::TogglePause);
                 }
                 if ui.small_button(l.get("il.battle.menu")).clicked() {
-                    action = Some(HudAction::QuitToMenu);
+                    action = Some(HudAction::OpenMenu);
                 }
             });
             let mode = if model.run {
@@ -162,39 +164,16 @@ pub fn battle_hud(ctx: &egui::Context, model: &HudModel<'_>) -> Option<HudAction
                 "il.battle.commands",
                 &[("count", &model.commands as &dyn Display), ("mode", &mode)],
             ));
-            ui.label(&model.phase);
+            ui.horizontal(|ui| {
+                ui.label(&model.phase);
+                if model.deploying && ui.button(l.get("il.battle.confirm")).clicked() {
+                    action = Some(HudAction::ConfirmDeployment);
+                }
+            });
             if model.deploying {
                 ui.label(l.get("il.battle.deploy_hint"));
             }
         });
-    if !model.selection.is_empty() {
-        egui::Window::new("il_selection")
-            .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -8.0))
-            .title_bar(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                egui::Grid::new("selection").striped(true).show(ui, |ui| {
-                    for r in model.selection {
-                        ui.monospace(format!("#{}", r.id.0));
-                        ui.label(&r.unit);
-                        ui.label(l.fmt("il.battle.soldiers", &[("count", &r.soldiers)]));
-                        ui.label(l.fmt(
-                            "il.battle.formation",
-                            &[
-                                ("formation", &r.formation as &dyn Display),
-                                ("ranks", &r.ranks),
-                            ],
-                        ));
-                        ui.label(&r.order);
-                        ui.label(&r.morale);
-                        ui.label(&r.fatigue);
-                        ui.label(r.abilities.join(" \u{b7} "));
-                        ui.label(r.statuses.join(" \u{b7} "));
-                        ui.end_row();
-                    }
-                });
-            });
-    }
     action
 }
 

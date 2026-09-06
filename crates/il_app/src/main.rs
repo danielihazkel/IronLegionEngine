@@ -5,6 +5,7 @@
 //! through bindings (T1-070). A scenario on the command line skips the menu.
 
 mod app;
+mod battle_ui;
 mod bench;
 mod profiler;
 mod session;

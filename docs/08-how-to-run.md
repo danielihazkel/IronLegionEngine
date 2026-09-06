@@ -24,7 +24,9 @@ cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --thread
 - `--show-keys` shows localisation keys instead of text, to spot a label that bypasses the locale.
 - `--content-root <folder>` points at a different game root (default `game`).
 
-A regiment with a `position` in the file starts deployed there; a side whose every regiment has one skips the deployment phase, and when every side does the battle opens in the Battle phase (that is every file under `tests/scenarios/` except `phases_all_four.json5`). Leave the positions out and the battle opens in Deployment: the regiments stand in a battle line at their zone centre, right-click or right-drag moves the selection inside the zone (a red `OutsideDeploymentZone` in the event panel otherwise), `Enter` confirms, and the HUD shows the phase. A battle ends in a result window (winner, duration, per side survivors, killed, fled, the general's fate, loot) with a button back to the menu; the sim stops stepping then (T2-070).
+A regiment with a `position` in the file starts deployed there; a side whose every regiment has one skips the deployment phase, and when every side does the battle opens in the Battle phase (that is every file under `tests/scenarios/` except `phases_all_four.json5`). Leave the positions out and the battle opens in Deployment: the regiments stand in a battle line at their zone centre, right-click or right-drag moves the selection inside the zone (a red `OutsideDeploymentZone` in the event panel otherwise), the command card's "Deploy the army as…" picker re-lays the whole army in a group formation, `Enter` or the Confirm button next to the phase label starts the battle. A battle ends in a result window (winner, duration, per side survivors, killed, fled, the general's fate, loot) with a button back to the menu; the sim stops stepping then (T2-070).
+
+The battle screen (T2-090): a column of regiment cards down the left edge, one per regiment of yours (unit, strength bar, a morale dot coloured like the `F10` overlay, fatigue, volleys left for ranged units, an "engaged" mark, the control group); the casualties line at the top (alive, killed, fled per side); the command card at the bottom for the selection (the regiment rows, then Halt, Attack-move, Withdraw, the fire and run toggles, the unit's formations, its abilities and the group-formation picker); the minimap bottom right (terrain, fog outside your regiments' sight, regiment blocks, the camera's viewport); the clock, speed and phase top right. Everything a key does, a button does too, so a battle can be fought with the mouse alone (§4f). Text scales with the window height (1440p rows give 1.33 × the 1080p size).
 
 `move_reform_2000.json5` starts with ten regiments north of the river and a scripted command stream: at one second everyone runs south over the bridge and the ford, later some change formation, wheel, form a battle line and march back. `idle_1000.json5` is a thousand soldiers standing still. The band files under `tests/scenarios/bands/` are small fights (§4a, §4b).
 
@@ -48,16 +50,21 @@ Every key comes from `game/content/input/bindings.json5`; a mod may rebind any o
 | Select all | `Ctrl+A` |
 | Save / recall control group | `Ctrl+0`..`Ctrl+9` / `0`..`9` |
 | Move the selection | right-click on the ground |
+| Attack a regiment | right-click on an enemy soldier you can see (T2-090) |
+| Attack-move | `T` (or the command card's button) arms the cursor, then left-click the ground; `Escape` or a right-click cancels (T2-090) |
+| Withdraw the selection | `Shift+H` (T2-090) |
 | Drag a formation line | right-drag: the line's width is the drag, the regiments face away from where they stand; hold `Alt` to face the other way |
 | Halt | `H` |
 | Run toggle for new orders | `R` (the HUD shows `running` or `walking`) |
 | Fire toggle for the selected ranged regiments | `F` (hold fire / fire at will; regiments start at fire at will) |
 | Formation templates of the selected unit type | `F1`..`F4` in the order the unit lists them (hastati: line, column, loose, square) |
-| Confirm the deployment (Deployment phase) | `Enter` |
+| Confirm the deployment (Deployment phase) | `Enter`, or the Confirm button beside the phase label |
+| Select a regiment from its card | left-click the card, `Shift` adds, double-click centres the camera on it (T2-090) |
+| Minimap | left-click or drag moves the camera there, right-click orders the selection there (T2-090) |
 | Abilities of the selected regiments | `Z`, `X`, `C` for the first three slots (the unit's abilities, then its general's; T2-050): hastati testudo, hoplites shield wall, Persian cavalry war cry on the nearest enemy regiment within 60 m |
 | Pause | `Space`, or the HUD button |
 | Speed | `Ctrl+=` / `Ctrl+-` or the numpad `+` / `-`, or the HUD buttons |
-| Back to the menu | `Escape` |
+| Pause menu: resume, surrender, quit to the menu | `Escape`, or the HUD's Menu button (T2-090; the battle pauses while it is open) |
 
 Only your own regiments (player 0 in the scenarios) can be selected. A single selected regiment that is right-dragged gets its rank count from the drag width; two or more get a battle line. The selection card at the bottom lists each selected regiment's soldiers, formation, order, morale (value and state), fatigue state (fresh, active, tired, exhausted; T2-040), the ability slots with their cooldowns and the active status effects with their remaining seconds (T2-050). A refused ability (on cooldown, engaged, out of range) shows in the event panel.
 
@@ -123,6 +130,24 @@ cargo run --release -p il_app -- tests/scenarios/bands/melee_hoplites_vs_cavalry
 ```
 
 The Persian cavalry (yours, player 1) charge on their own from the file; the hoplites are the engine's now. Expect: as the wedge closes to about 40 m the hoplites switch from phalanx to square (`F6` shows the slots re-lay), take the charge, and the AI hoplites throw nothing they do not have. With `melee_hoplites_vs_hastati.json5 --ai 1` the hastati are the engine's: they raise the testudo when the hoplites are still out of reach only if javelins fly, engage the phalanx once it is within about 25 m, and their general's regiment (the first one) hangs back. `Ctrl+F6` draws the plan: the AI's battle line with its facing tick, each regiment's link to its slot, the cavalry's flank slot beyond your line and, once the lines are within 60 m, the orange charge line to your rear-most regiment (T2-082); against a static line the AI's archers stand off and shoot first while the line rests at 150 m, then everyone runs the last stretch at the enemy's nearer wing; the title shows the stance (`attack` against an even enemy, `defend` when outmatched, `retreat` when beaten). A refused AI command would show in the event panel and never should. `cargo run -p il_cli -- autoresolve tests/scenarios/ai_skirmish_300.json5` fights the same kind of battle headless, AI against AI, and prints the result.
+
+### 4f. The mouse-only battle (Phase 2, T2-090)
+
+```
+cargo run --release -p il_app -- tests/scenarios/bands/melee_hoplites_vs_hastati.json5 --ai 1
+```
+
+Put the keyboard aside. Expect, in order:
+
+1. The three hastati cards down the left edge show full strength bars and green morale dots; the casualties line at the top shows both sides alive with nothing lost; the minimap bottom right shows the field, your blocks red, the hoplites' blocks blue where you can see them, the terrain dark outside your regiments' sight, and the white viewport rectangle.
+2. Click a card: it gets a yellow outline, the regiment's soldiers get the selection ring, and the command card appears at the bottom with the regiment's row and the buttons. Shift-click a second card adds it. Double-click a card: the camera jumps to that regiment.
+3. Click Attack-move: the button turns red and the cursor becomes a crosshair; left-click the ground ahead of the hoplites and the regiments attack-move there (`AttackMove` in the event panel). Right-click on a hoplite you can see: the selection attacks that regiment (`AttackRegiment`); the enemy's card is not needed.
+4. Right-click on the minimap: the selection moves there. Left-click the minimap: the camera goes there.
+5. Click Hold fire on a velites regiment if the file had one (this one has none: the fire button is absent for units without missiles), Run/Walk to toggle the run flag, a formation button (`F1: Line` …) to reform, the ability button (`1: Testudo (ready)`) to raise the testudo.
+6. As soldiers fall the strength bars shrink, the morale dots turn yellow, orange, red, the casualties line counts the dead and the fled, and an engaged regiment shows "engaged" in orange.
+7. Click Menu (top right) or press nothing at all: the pause menu opens and the clock stops. Resume continues. Open it again and click Surrender: the battle ends against you and the result window appears; its button returns to the menu.
+
+Things that would be wrong: a button that does nothing visible, a click on a card that also orders a move, an attack-move that goes off on the first click of the button, a minimap block for a hoplite regiment you cannot see, and a `--show-keys` run (`cargo run -p il_app -- <scenario> --show-keys`) that shows any English word instead of an `il.*` key.
 
 ## 5. Headless tools (`il_cli`)
 

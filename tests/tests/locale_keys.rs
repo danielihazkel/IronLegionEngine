@@ -77,24 +77,36 @@ fn every_engine_key_used_by_the_ui_exists_in_the_flagship_locale() {
 #[test]
 fn panels_have_no_bare_english_labels() {
     // egui calls with a string literal are the only way a label could bypass
-    // the locale; ids and format specs are allowed.
+    // the locale; ids and format specs are allowed. Every il_ui module is
+    // checked (the panels grew past panels.rs in T2-090).
     let root = workspace_root();
-    let src = std::fs::read_to_string(root.join("crates/il_ui/src/panels.rs")).unwrap();
-    for call in [
-        "ui.label(\"",
-        "ui.heading(\"",
-        "ui.button(\"",
-        "ui.small_button(\"",
-        "ui.strong(\"",
-    ] {
-        for (i, _) in src.match_indices(call) {
-            let rest = &src[i + call.len()..];
-            let literal = &rest[..rest.find('"').unwrap()];
-            // Symbols such as "+" and "-" are not words.
-            assert!(
-                !literal.bytes().any(|b| b.is_ascii_alphabetic()),
-                "bare label in panels.rs: {call}{literal}\""
-            );
+    let mut files = Vec::new();
+    rust_files(&root.join("crates/il_ui/src"), &mut files);
+    for file in files {
+        let src = std::fs::read_to_string(&file).unwrap();
+        for call in [
+            "ui.label(\"",
+            "ui.heading(\"",
+            "ui.button(\"",
+            "ui.small_button(\"",
+            "ui.strong(\"",
+            "ui.weak(\"",
+            "ui.selectable_label(false, \"",
+            "Button::new(\"",
+            "Window::new(\"",
+            ".selected_text(\"",
+        ] {
+            for (i, _) in src.match_indices(call) {
+                let rest = &src[i + call.len()..];
+                let literal = &rest[..rest.find('"').unwrap()];
+                // Symbols such as "+" and "-" are not words; egui ids start
+                // with `il_`.
+                assert!(
+                    !literal.bytes().any(|b| b.is_ascii_alphabetic()) || literal.starts_with("il_"),
+                    "bare label in {}: {call}{literal}\"",
+                    file.display()
+                );
+            }
         }
     }
 }

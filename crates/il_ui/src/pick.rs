@@ -103,6 +103,44 @@ pub fn pick_regiment(
     best.map(|(_, id)| id)
 }
 
+/// The enemy regiment whose soldier is nearest to `cursor` within its hit
+/// circle, among the regiments of other sides that `observer_side`
+/// currently sees (T2-090, plan I5): a right-click on it attacks. Ghost
+/// markers are not soldiers, so a remembered regiment is never returned.
+pub fn pick_enemy_regiment(
+    view: &BattleView,
+    project: &Project<'_>,
+    pixels_per_metre: f32,
+    observer_side: u8,
+    cursor: Vec2,
+) -> Option<RegimentId> {
+    let cands: Vec<Candidate> = view
+        .regiments()
+        .filter(|r| r.side != observer_side && view.visible(observer_side, r.id))
+        .map(|r| Candidate {
+            id: r.id,
+            unit: r.unit,
+        })
+        .collect();
+    if cands.is_empty() {
+        return None;
+    }
+    let units = &view.regs().units;
+    let mut best: Option<(f32, RegimentId)> = None;
+    for s in view.soldiers_unordered() {
+        let Some(c) = candidate(&cands, s.regiment) else {
+            continue;
+        };
+        let radius_m = units.get(c.unit).soldier_radius.to_f32_render();
+        let (centre, r) = hit_circle(project(s.pos), radius_m, pixels_per_metre);
+        let d = (cursor - centre).length();
+        if d <= r && best.is_none_or(|(bd, _)| d < bd) {
+            best = Some((d, c.id));
+        }
+    }
+    best.map(|(_, id)| id)
+}
+
 /// Own regiments with at least one soldier whose ground point projects
 /// inside the rectangle spanned by `a` and `b` (any corner order).
 pub fn regiments_in_box(

@@ -106,7 +106,39 @@
       status: "{name} {seconds} s",
       // Battle phases (T2-070).
       phase: { deployment: "Deployment", battle: "Battle", pursuit: "Pursuit", ended: "Ended" },
-      deploy_hint: "Right-click or drag to place the selection inside your zone, Enter to confirm",
+      deploy_hint: "Right-click or drag to place the selection inside your zone, Enter or Confirm to start",
+      confirm: "Confirm deployment",
+    },
+    // The regiment card strip (T2-090).
+    cards: {
+      strength: "{soldiers}/{initial}",
+      volleys: "{count} volleys",
+      engaged: "engaged",
+      group: "[{n}]",
+    },
+    // The command card (T2-090).
+    command: {
+      halt: "Halt",
+      attack_move: "Attack-move",
+      attack_move_armed: "Attack-move: click the ground",
+      withdraw: "Withdraw",
+      fire_at_will: "Fire at will",
+      hold_fire: "Hold fire",
+      run: "Run",
+      walk: "Walk",
+      keyed: "{key}: {name}",
+      preset: "Group formation…",
+      preset_deploy: "Deploy the army as…",
+      none_selected: "Click a card or a regiment to select it, or pick a deployment preset",
+    },
+    casualties: { line: "{alive} alive · {killed} killed · {fled} fled" },
+    minimap: { title: "Minimap" },
+    pause: {
+      title: "Paused",
+      resume: "Resume",
+      surrender: "Surrender",
+      settings: "Settings",
+      quit: "Quit to the menu",
     },
     result: {
       title: "Battle over",

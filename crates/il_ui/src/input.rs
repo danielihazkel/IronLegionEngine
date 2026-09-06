@@ -287,6 +287,12 @@ impl InputState {
         self.buttons[index(button)].dragging
     }
 
+    /// Keys pressed this frame (no repeats) with the modifiers held at the
+    /// time; the settings screen's chord capture (T2-091).
+    pub fn key_presses(&self) -> &[(KeyCode, Mods)] {
+        &self.pressed
+    }
+
     /// The gestures completed this frame.
     pub fn gestures(&self) -> &[Gesture] {
         &self.gestures

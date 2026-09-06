@@ -74,6 +74,70 @@ pub struct Chord {
     pub trigger: Trigger,
 }
 
+impl Chord {
+    /// The canonical bindings-file text (`Ctrl+Shift+Alt+Key`), the inverse
+    /// of [`parse_chord`] for every chord it accepts (T2-091 settings).
+    pub fn to_text(&self) -> String {
+        let mut out = String::new();
+        if self.mods.ctrl {
+            out.push_str("Ctrl+");
+        }
+        if self.mods.shift {
+            out.push_str("Shift+");
+        }
+        if self.mods.alt {
+            out.push_str("Alt+");
+        }
+        match self.trigger {
+            Trigger::Key(code) => out.push_str(&key_code_name(code)),
+            Trigger::Click(b) => {
+                out.push_str(button_name(b));
+                out.push_str("Click");
+            }
+            Trigger::DoubleClick(b) => {
+                out.push_str("Double");
+                out.push_str(button_name(b));
+                out.push_str("Click");
+            }
+            Trigger::Drag(b) => {
+                out.push_str(button_name(b));
+                out.push_str("Drag");
+            }
+            Trigger::WheelUp => out.push_str("MouseWheelUp"),
+            Trigger::WheelDown => out.push_str("MouseWheelDown"),
+            Trigger::ModifierOnly => {
+                out.pop();
+            }
+        }
+        out
+    }
+}
+
+fn button_name(b: Button) -> &'static str {
+    match b {
+        Button::Left => "Left",
+        Button::Right => "Right",
+        Button::Middle => "Middle",
+    }
+}
+
+/// The bindings-file name of a key code: letters and digits as themselves
+/// (`W`, `3`), everything else its winit name (`ArrowUp`, `Numpad3`).
+pub fn key_code_name(code: KeyCode) -> String {
+    let name = format!("{code:?}");
+    if let Some(c) = name.strip_prefix("Key")
+        && c.len() == 1
+    {
+        return c.to_string();
+    }
+    if let Some(d) = name.strip_prefix("Digit")
+        && d.len() == 1
+    {
+        return d.to_string();
+    }
+    name
+}
+
 /// Every action the engine understands. Names in the bindings file are the
 /// snake_case of the variant; `group_set_3` / `group_recall_3` carry the
 /// group index.
@@ -102,6 +166,11 @@ pub enum Action {
     OrderDragFormation,
     OrderFlipFacing,
     OrderHalt,
+    /// Arms the attack-move cursor: the next `select` click on the ground
+    /// sends `AttackMove` (T2-090, plan decision 5).
+    OrderAttackMove,
+    /// `Withdraw` for the selection (T2-090).
+    OrderWithdraw,
     ToggleRun,
     /// Flips the selected ranged regiments between fire-at-will and hold
     /// (T2-030).
@@ -129,7 +198,12 @@ pub enum Action {
     DebugLos,
     /// Engine-AI plan overlay (T2-081).
     DebugAi,
-    QuitToMenu,
+    /// Opens the pause menu (resume, surrender, settings, quit); cancels an
+    /// armed attack-move first (T2-090, plan decision 10).
+    PauseMenu,
+    /// Battle quick save and load (T2-101).
+    QuickSave,
+    QuickLoad,
 }
 
 const FIXED_ACTIONS: &[(&str, Action)] = &[
@@ -152,6 +226,8 @@ const FIXED_ACTIONS: &[(&str, Action)] = &[
     ("order_drag_formation", Action::OrderDragFormation),
     ("order_flip_facing", Action::OrderFlipFacing),
     ("order_halt", Action::OrderHalt),
+    ("order_attack_move", Action::OrderAttackMove),
+    ("order_withdraw", Action::OrderWithdraw),
     ("toggle_run", Action::ToggleRun),
     ("toggle_fire", Action::ToggleFire),
     ("confirm_deployment", Action::ConfirmDeployment),
@@ -168,7 +244,9 @@ const FIXED_ACTIONS: &[(&str, Action)] = &[
     ("debug_flow", Action::DebugFlow),
     ("debug_los", Action::DebugLos),
     ("debug_ai", Action::DebugAi),
-    ("quit_to_menu", Action::QuitToMenu),
+    ("pause_menu", Action::PauseMenu),
+    ("quick_save", Action::QuickSave),
+    ("quick_load", Action::QuickLoad),
 ];
 
 impl Action {
@@ -522,6 +600,37 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    /// T2-091: `to_text` is the inverse of `parse_chord` over the SDK §4.11
+    /// examples and every default binding shape.
+    #[test]
+    fn chord_text_round_trips() {
+        for text in [
+            "W",
+            "7",
+            "Ctrl+Shift+A",
+            "Shift+LeftDrag",
+            "DoubleLeftClick",
+            "MouseWheelUp",
+            "MouseWheelDown",
+            "Alt",
+            "Ctrl+Alt",
+            "NumpadAdd",
+            "Numpad3",
+            "F12",
+            "ArrowUp",
+            "Ctrl+Equal",
+            "MiddleDrag",
+            "RightClick",
+            "Escape",
+        ] {
+            let chord = parse_chord(text).unwrap_or_else(|e| panic!("{text}: {e:?}"));
+            assert_eq!(chord.to_text(), text);
+        }
+        assert_eq!(key_code_name(KeyCode::KeyQ), "Q");
+        assert_eq!(key_code_name(KeyCode::Digit0), "0");
+        assert_eq!(key_code_name(KeyCode::Numpad0), "Numpad0");
     }
 
     #[test]
