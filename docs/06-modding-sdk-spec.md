@@ -66,6 +66,7 @@ mymod/
     zones/*.json5               terrain zone types (ZoneType)
     maps/*.json5                map definitions (MapDef); the heightmap sidecar lives under assets/maps/
     sprites/*.json5             sprite sheet frame tables (SpriteSet)
+    sounds/*.json5              battle sound sets (SoundSet, Phase 2)
     input/bindings.json5        key bindings (one merged object)
     rules/                      engine tunables, one merged object per file
       movement.json5
@@ -90,11 +91,11 @@ mymod/
   assets/                       assets_root (default)
     sprites/                    PNG sheets referenced by content/sprites/*.json5
     maps/*.hgt                  16-bit heightmaps referenced by content/maps/*.json5
-    sounds/                     (Phase 2)
-    music/                      (Phase 2)
+    sounds/                     WAV samples referenced by content/sounds/*.json5 and unit `sounds` (Phase 2)
+    music/                      (Phase 4)
 ```
 
-Folders marked with a phase are reserved for that phase; since T2-010 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `abilities` (T2-050), `ai/actions` and `ai/profiles` (T2-080), `input`, the eight `rules/*.json5` files (`movement`, `formation`, `combat`, `morale`, `fatigue`, `general`, `visibility`, `battle_flow`) and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png` and `assets/maps/test_field.hgt`). Schemas for every folder read are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `ability`, `ai-action-set`, `ai-profile`, `input-bindings`, `rules-movement`, `rules-formation`, `rules-combat`, `rules-morale`, `rules-fatigue`, `rules-general`, `rules-visibility`, `rules-battle_flow`, `mod-manifest`).
+Folders marked with a phase are reserved for that phase; since T2-010 the loader reads `units`, `factions`, `formations`, `group_formations`, `zones`, `maps`, `sprites`, `sounds` (T2-100), `abilities` (T2-050), `ai/actions` and `ai/profiles` (T2-080), `input`, the eight `rules/*.json5` files (`movement`, `formation`, `combat`, `morale`, `fatigue`, `general`, `visibility`, `battle_flow`) and `locale/`, and the flagship game at `game/` ships exactly those (with `assets/sprites/units/*.png`, `assets/sounds/*.wav` and `assets/maps/test_field.hgt`). Schemas for every folder read are in `docs/schemas/` (`unit-type`, `faction`, `formation-template`, `group-formation`, `zone-type`, `map-def`, `sprite-set`, `sound-set`, `ability`, `ai-action-set`, `ai-profile`, `input-bindings`, `rules-movement`, `rules-formation`, `rules-combat`, `rules-morale`, `rules-fatigue`, `rules-general`, `rules-visibility`, `rules-battle_flow`, `mod-manifest`).
 
 Rules:
 
@@ -337,7 +338,7 @@ Schema: [`schemas/unit-type.schema.json`](schemas/unit-type.schema.json). Satisf
 | `energy_regen` | f | ≥ 0 | 0 | Energy regenerated per second |
 | `formations` | [id] | | required | Formation templates this unit may use; first is default |
 | `sprite_set` | id | | required | Sprite set Content ID (`content/sprites/`, schema `sprite-set.schema.json`): atlas path, frame size, facings, animations |
-| `sounds` | object | | `{}` | `select`, `move`, `attack`, `charge`, `die` → paths under `assets_root` |
+| `sounds` | object | | `{}` | `select`, `move`, `attack`, `charge`, `die` → WAV paths under `assets_root`; since T2-100 `charge` and `die` override the sound set's samples for this unit's `Charge` and `SoldierDied` (§4.14), the other three wait for Phase 6 |
 | `cost` | i | gold | required | Recruitment cost |
 | `upkeep` | i | gold/turn | required | Per-turn upkeep |
 | `recruit_turns` | i | turns | 1 | Turns to recruit |
@@ -465,6 +466,7 @@ Schema: [`schemas/faction.schema.json`](schemas/faction.schema.json). Satisfies 
 | `ai_profile` | id | required | Content ID of an AI profile under `content/ai/profiles/` (§4.8); resolved at load, the engine AI decides with it (T2-080) |
 | `diplomacy_personality` | object | see schema | `aggression`, `loyalty`, `greed`, `expansionism` in 0..1 |
 | `tech_tree` | id | required | Content ID of a technology tree definition |
+| `sound_set` | id | none | Battle sound set (`content/sounds/`, §4.14) this faction's player hears; without it the app takes the registry's first set (T2-100) |
 
 Worked example:
 
@@ -486,6 +488,7 @@ Worked example:
   ai_profile: "mymod:tribal_raider",
   diplomacy_personality: { aggression: 0.8, loyalty: 0.3, greed: 0.6, expansionism: 0.5 },
   tech_tree: "greece:hellenic_tree",
+  sound_set: "rome:battle",
 }
 ```
 
@@ -625,6 +628,26 @@ A scenario file (`tests/scenarios/*.json5`, `il_cli run`, `il_cli autoresolve`, 
 | `sides[].regiments[]` | object | required | `{ id, unit_type, count, experience (0), fatigue (0), formation (the unit's first), position, facing_deg }`; a `position` pre-deploys the regiment (a fully placed side starts confirmed, a fully placed battle starts in the Battle phase), otherwise it is auto-placed at the zone centre and awaits `Deploy` |
 | `sides[].reinforcements[]` | object | `[]` | `{ arrival_tick (since the Battle phase began), edge ("north" … as the map lists for the zone), regiments }` (SIM-FLOW-016) |
 | `commands[]` | object | `[]` | `{ tick, player, seq, kind }`, `kind` an externally tagged `CommandKind` (`{ Move: {...} }`, `"ConfirmDeployment"`), applied at Stage 0 of `tick`; `il_cli autoresolve` drops the commands of players it hands to the engine (default all, `--ai`) |
+
+### 4.14 Sound sets — `content/sounds/`
+
+Schema: [`schemas/sound-set.schema.json`](schemas/sound-set.schema.json). Satisfies REQ-AUD-001, REQ-AUD-002 (TDD §12, T2-100). Audio only: never read by the simulation, so it is not part of the content hash and a mod that only changes sounds keeps replays and saves compatible.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `id` | id | required | |
+| `events` | object | required | One entry per event the router voices; a missing key is silent. Keys: `charge`, `cavalry_charge`, `clash`, `volley`, `arrow_hit`, `death`, `cavalry_death`, `rout`, `rally`, `shatter`, `general_died`, `ability`, `phase`, `victory`, `defeat` |
+| `events.*.samples` | [path] | required | WAV files under `assets_root`; the variant played is `(tick + id) mod n` |
+| `events.*.min_interval_ms` | i | 100 | A second play of the same event closer than this (or in the same frame) is dropped |
+| `events.*.max_voices` | i | 4 | Concurrent plays of the event |
+| `events.*.gain` | f | 1.0 | Linear gain of every play |
+| `roar.sample` | path | required | A seamless loop: the battle roar heard from afar |
+| `roar.ref_engaged` | i | required | Engaged soldiers at which the roar is at full gain |
+| `zoom.far` / `zoom.near` | f | required | Camera pixels per metre: at or below `far` only the roar plays, at or above `near` the individual effects are at full gain (`far` < `near`; the default camera zoom is 12, the limits 2 and 96) |
+| `max_voices` | i | 24 | Concurrent plays over every event |
+| `cull_pad_m` | f | 40 | A placed event this far outside the visible field still plays |
+
+The flagship ships `rome:battle` (`game/content/sounds/battle.json5`) with the eighteen placeholder samples `il_cli gensound` synthesises under `game/assets/sounds/`; every faction names it through `sound_set`. Units override `charge` and `death` for themselves through their `sounds` field (§4.1): `persia:cavalry` points at the hoof and horse samples. Missing files are warnings at battle start, not load errors.
 
 ## 5. Tier 2 Lua
 

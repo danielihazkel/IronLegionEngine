@@ -1,0 +1,31 @@
+// The flagship battle sound set (schema docs/schemas/sound-set.schema.json,
+// TDD 12, T2-100). Every sample is a placeholder written by
+// `il_cli gensound`; the factions name this set through `sound_set`.
+{
+  id: "rome:battle",
+  events: {
+    charge:         { samples: ["sounds/charge.wav"], min_interval_ms: 400, max_voices: 2, gain: 0.9 },
+    cavalry_charge: { samples: ["sounds/cavalry_charge.wav"], min_interval_ms: 400, max_voices: 2, gain: 1.0 },
+    clash:          { samples: ["sounds/clash_1.wav", "sounds/clash_2.wav"], min_interval_ms: 150, max_voices: 6, gain: 0.8 },
+    volley:         { samples: ["sounds/volley.wav"], min_interval_ms: 300, max_voices: 3, gain: 0.9 },
+    arrow_hit:      { samples: ["sounds/arrow_hit.wav"], min_interval_ms: 60, max_voices: 8, gain: 0.5 },
+    death:          { samples: ["sounds/death_1.wav", "sounds/death_2.wav"], min_interval_ms: 80, max_voices: 8, gain: 0.7 },
+    cavalry_death:  { samples: ["sounds/cavalry_death.wav"], min_interval_ms: 200, max_voices: 3, gain: 0.8 },
+    rout:           { samples: ["sounds/rout.wav"], min_interval_ms: 500, max_voices: 2, gain: 0.9 },
+    rally:          { samples: ["sounds/rally.wav"], min_interval_ms: 500, max_voices: 2, gain: 0.8 },
+    shatter:        { samples: ["sounds/shatter.wav"], min_interval_ms: 500, max_voices: 2, gain: 0.9 },
+    general_died:   { samples: ["sounds/general_died.wav"], min_interval_ms: 1000, max_voices: 1, gain: 1.0 },
+    ability:        { samples: ["sounds/ability.wav"], min_interval_ms: 300, max_voices: 2, gain: 0.8 },
+    phase:          { samples: ["sounds/phase.wav"], min_interval_ms: 500, max_voices: 1, gain: 1.0 },
+    victory:        { samples: ["sounds/victory.wav"], min_interval_ms: 1000, max_voices: 1, gain: 1.0 },
+    defeat:         { samples: ["sounds/defeat.wav"], min_interval_ms: 1000, max_voices: 1, gain: 1.0 },
+  },
+  // The far-zoom battle roar: full gain once this many soldiers fight.
+  roar: { sample: "sounds/roar_loop.wav", ref_engaged: 2000 },
+  // Camera pixels per metre: only the roar at or below `far`, the
+  // individual effects at full gain at or above `near` (the default zoom
+  // is 12, the strategic limit 2, the tactical limit 96).
+  zoom: { far: 3.0, near: 24.0 },
+  max_voices: 24,
+  cull_pad_m: 40,
+}

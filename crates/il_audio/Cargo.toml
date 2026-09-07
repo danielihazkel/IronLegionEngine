@@ -1,0 +1,21 @@
+[package]
+name = "il_audio"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Event-driven battle audio: sound sets, the event router with rate limits and zoom mixing, the kira engine (T2-100)"
+
+[dependencies]
+il_core.workspace = true
+il_data.workspace = true
+il_sim_battle.workspace = true
+kira.workspace = true
+
+# Not `workspace = true`: gain, pan and distance math is float math on the
+# app side of the sim boundary (TDD §12). Unsafe stays forbidden.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+float_arithmetic = "allow"

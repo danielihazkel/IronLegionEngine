@@ -12,6 +12,7 @@ il_data.workspace = true
 il_sim_battle.workspace = true
 il_render.workspace = true
 il_ui.workspace = true
+il_audio.workspace = true
 il_cli.workspace = true
 il_save.workspace = true
 egui.workspace = true

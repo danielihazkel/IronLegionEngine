@@ -39,6 +39,7 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::window::{Window, WindowId};
 
 use crate::HotReloadHandle;
+use crate::audio::AppAudio;
 use crate::battle_ui::{self, Armed, BattleUi};
 use crate::bench::SpriteBench;
 use crate::menus::draft_from;
@@ -91,6 +92,8 @@ pub struct Launch {
     /// The user's settings and where they are saved (T2-091).
     pub settings: Settings,
     pub settings_path: PathBuf,
+    /// `--mute`: the master volume starts at 0 (T2-100).
+    pub mute: bool,
 }
 
 pub struct App {
@@ -126,6 +129,8 @@ pub struct App {
     pub(crate) ui_scale_user: f32,
     /// The egui zoom factor last applied (decision 7).
     pub(crate) zoom_applied: f32,
+    /// The audio engine and router (T2-100).
+    pub(crate) audio: AppAudio,
     /// This battle's replay has been written (once per battle, T2-101).
     pub(crate) replay_written: bool,
     /// The replay file the last write produced (shown on the result window).
@@ -192,6 +197,7 @@ impl App {
     ) -> Self {
         let bindings = load_bindings(&regs, &launch.settings);
         let ui_scale_user = launch.settings.ui_scale;
+        let audio = AppAudio::new(launch.mute, &launch.settings.volume);
         Self {
             state,
             launch,
@@ -217,6 +223,7 @@ impl App {
             battle_ui: BattleUi::default(),
             ui_scale_user,
             zoom_applied: 1.0,
+            audio,
             replay_written: false,
             last_replay: None,
             started: Instant::now(),
@@ -267,6 +274,7 @@ impl App {
         self.lines.clear();
         self.battle_ui = BattleUi::default();
         self.replay_written = false;
+        self.audio.stop_battle();
         self.load_terrain();
     }
 
@@ -875,10 +883,39 @@ impl App {
             }
         }
         let before = Instant::now();
-        let stepped = session.advance_with(dt, &mut self.profiler).len() as u32;
+        let outputs = session.advance_with(dt, &mut self.profiler);
         self.step_seconds += before.elapsed().as_secs_f64();
+        let stepped = outputs.len() as u32;
+        self.audio.collect(&outputs);
         self.ticks_since_title += stepped;
         self.profiler.frame(dt, stepped);
+    }
+
+    /// T2-100: the frame's events to the audio router, starting the
+    /// battle's sound set on the first frame a session is up.
+    fn route_audio(&mut self, screen: Vec2) {
+        let camera = *self.camera_mut();
+        let Some(session) = self.state.session() else {
+            return;
+        };
+        let observer_side = session.observer_side();
+        if !self.audio.has_battle() {
+            let view = session.world.view();
+            let faction = observer_side
+                .and_then(|s| view.sides().get(usize::from(s)))
+                .map(|s| s.faction.clone());
+            let assets_root = self.launch.content_root.join("assets");
+            self.audio
+                .start_battle(&self.regs, faction.as_ref(), &assets_root);
+        }
+        let now_ms = self.started.elapsed().as_millis() as u64;
+        self.audio.frame(
+            &session.world.view(),
+            &camera,
+            screen,
+            now_ms,
+            observer_side,
+        );
     }
 
     /// Colour of a projectile segment (pale wood on any ground).
@@ -984,6 +1021,7 @@ impl App {
                 self.write_replay_now();
             }
             self.build_battle_scene(screen, time);
+            self.route_audio(screen);
         }
 
         let drag_preview = self.drag_preview();

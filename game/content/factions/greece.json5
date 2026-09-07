@@ -7,5 +7,6 @@
   colour_secondary: "#e8e2c8",
   units: ["greece:hoplite", "greece:general"],
   ai_profile: "rome:default_ai",
+  sound_set: "rome:battle",
   tech_tree: "greece:hellenic_tree",
 }

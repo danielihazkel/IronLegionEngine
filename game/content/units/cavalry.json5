@@ -34,7 +34,8 @@
   formations: ["rome:wedge", "rome:line", "rome:column"],
 
   sprite_set: "rome:sprites_cavalry",
-  sounds: {},
+  // T2-100: cavalry override the set's charge and death samples.
+  sounds: { charge: "sounds/cavalry_charge.wav", die: "sounds/cavalry_death.wav" },
 
   cost: 800,
   upkeep: 120,

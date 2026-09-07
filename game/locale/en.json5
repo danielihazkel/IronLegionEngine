@@ -124,7 +124,7 @@
       master: "Master volume",
       effects: "Effects volume",
       music: "Music volume",
-      audio_note: "Stored now; the audio engine arrives with the next task.",
+      audio_note: "Applied at once. The battle sounds follow the camera: zoomed out only the roar of the fight plays.",
       bindings_hint: "Click a chord and press the key or mouse button to rebind it; + adds a chord, − removes it, Reset restores the mod's default.",
       action: "Action",
       chords: "Keys",

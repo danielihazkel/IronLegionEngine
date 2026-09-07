@@ -26,6 +26,7 @@ use crate::rules::{
     MoraleRules, MovementRules, Rules, VisibilityRules,
 };
 use crate::schema::KindTag;
+use crate::sound_set::SoundSet;
 use crate::source::Sources;
 use crate::sprite_set::SpriteSet;
 use crate::text::nearest;
@@ -387,6 +388,7 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
     let zones = merge_kind::<ZoneType>(set, &mut sources, &mut diags);
     let maps = merge_kind::<MapDef>(set, &mut sources, &mut diags);
     let sprite_sets = merge_kind::<SpriteSet>(set, &mut sources, &mut diags);
+    let sound_sets = merge_kind::<SoundSet>(set, &mut sources, &mut diags);
     let abilities = merge_kind::<Ability>(set, &mut sources, &mut diags);
     let ai_action_sets = merge_kind::<AiActionSet>(set, &mut sources, &mut diags);
     let ai_profiles = merge_kind::<AiProfile>(set, &mut sources, &mut diags);
@@ -439,6 +441,7 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
     let (zones_ok, zones_order) = pass1!(zones, zones);
     let (maps_ok, maps_order) = pass1!(maps, maps);
     let (sprites_ok, sprites_order) = pass1!(sprite_sets, sprite_sets);
+    let (sounds_ok, sounds_order) = pass1!(sound_sets, sound_sets);
     let (abilities_ok, abilities_order) = pass1!(abilities, abilities);
     let (sets_ok, sets_order) = pass1!(ai_action_sets, ai_action_sets);
     let (profiles_ok, profiles_order) = pass1!(ai_profiles, ai_profiles);
@@ -574,6 +577,7 @@ pub fn load_report_with_prev(set: &ModSet, prev: Option<&Registries>) -> LoadRep
         zones: pass2!(zones, zones_ok, zones_order, zones),
         maps: pass2!(maps, maps_ok, maps_order, maps),
         sprite_sets: pass2!(sprite_sets, sprites_ok, sprites_order, sprite_sets),
+        sound_sets: pass2!(sound_sets, sounds_ok, sounds_order, sound_sets),
         abilities: pass2!(abilities, abilities_ok, abilities_order, abilities),
         ai_action_sets,
         ai_profiles: pass2!(ai_profiles, profiles_ok, profiles_order, ai_profiles),

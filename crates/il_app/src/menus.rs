@@ -251,6 +251,7 @@ impl App {
             eprintln!("bindings: {e}");
         }
         self.bindings = bindings;
+        self.audio.set_volumes(&self.launch.settings.volume);
         self.apply_window_settings();
     }
 

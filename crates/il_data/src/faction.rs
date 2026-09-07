@@ -11,6 +11,7 @@ use crate::de::{Rgb, de_s, s};
 use crate::handle::Handle;
 use crate::registry::{ContentKind, Lookup, ResolveError};
 use crate::schema::KindTag;
+use crate::sound_set::SoundSet;
 use crate::unit_type::UnitType;
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
@@ -60,6 +61,12 @@ pub struct Faction {
     #[serde(default)]
     pub diplomacy_personality: DiplomacyPersonality,
     pub tech_tree: ContentId,
+    /// The battle sound set this faction's player hears (T2-100); the app
+    /// falls back to the registry's first set when absent.
+    #[serde(default)]
+    pub sound_set: Option<ContentId>,
+    #[serde(skip)]
+    pub sound_set_handle: Option<Handle<SoundSet>>,
     #[serde(default)]
     pub deprecated: Option<String>,
 }
@@ -91,6 +98,17 @@ impl ContentKind for Faction {
                 self.ai_profile.clone(),
                 KindTag::AiProfile,
             ));
+        }
+        self.sound_set_handle = None;
+        if let Some(id) = &self.sound_set {
+            self.sound_set_handle = lookup.handle::<SoundSet>(id);
+            if self.sound_set_handle.is_none() {
+                errors.push(ResolveError::new(
+                    "sound_set",
+                    id.clone(),
+                    KindTag::SoundSet,
+                ));
+            }
         }
     }
 

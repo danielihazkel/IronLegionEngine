@@ -4,9 +4,10 @@
 //!   `il_sim_campaign`) must not depend on rendering, windowing, UI, audio,
 //!   OS-seeded randomness, or on any non-sim engine crate.
 //! - No `il_*` crate may depend on `game_rules` (REQ-VIS-020).
-//! - Presentation crates (`il_render`, `il_ui`) read the sim through
-//!   `il_core`, `il_data`, `il_sim_battle` only; the renderer never sees the
-//!   window library and the UI never sees the GPU library.
+//! - Presentation crates (`il_render`, `il_ui`, `il_audio`) read the sim
+//!   through `il_core`, `il_data`, `il_sim_battle` only; the renderer never
+//!   sees the window library, the UI never sees the GPU library, and the
+//!   audio crate sees neither (T2-100).
 
 use std::path::{Path, PathBuf};
 
@@ -46,11 +47,15 @@ const FORBIDDEN_IN_SIM: &[&str] = &[
 const PRESENTATION_ALLOWED: &[(&str, &[&str])] = &[
     ("il_render", &["il_core", "il_data", "il_sim_battle"]),
     ("il_ui", &["il_core", "il_data", "il_sim_battle"]),
+    ("il_audio", &["il_core", "il_data", "il_sim_battle"]),
 ];
 
 /// External crates a presentation crate must not pull in.
-const PRESENTATION_FORBIDDEN: &[(&str, &[&str])] =
-    &[("il_render", &["winit"]), ("il_ui", &["wgpu"])];
+const PRESENTATION_FORBIDDEN: &[(&str, &[&str])] = &[
+    ("il_render", &["winit"]),
+    ("il_ui", &["wgpu"]),
+    ("il_audio", &["wgpu", "winit", "egui"]),
+];
 
 const DEP_TABLES: &[&str] = &["dependencies", "dev-dependencies", "build-dependencies"];
 

@@ -21,6 +21,8 @@ pub enum KindTag {
     Zone,
     Map,
     SpriteSet,
+    /// T2-100.
+    SoundSet,
     Ability,
     AiActionSet,
     AiProfile,
@@ -36,7 +38,7 @@ pub enum KindTag {
 }
 
 impl KindTag {
-    pub const ALL: [KindTag; 20] = [
+    pub const ALL: [KindTag; 21] = [
         KindTag::Manifest,
         KindTag::Unit,
         KindTag::Formation,
@@ -45,6 +47,7 @@ impl KindTag {
         KindTag::Zone,
         KindTag::Map,
         KindTag::SpriteSet,
+        KindTag::SoundSet,
         KindTag::Ability,
         KindTag::AiActionSet,
         KindTag::AiProfile,
@@ -70,6 +73,7 @@ impl KindTag {
             KindTag::Zone => "zone type",
             KindTag::Map => "map",
             KindTag::SpriteSet => "sprite set",
+            KindTag::SoundSet => "sound set",
             KindTag::Ability => "ability",
             KindTag::AiActionSet => "AI action set",
             KindTag::AiProfile => "AI profile",
@@ -99,6 +103,7 @@ impl KindTag {
             KindTag::Zone => include_str!("../../../docs/schemas/zone-type.schema.json"),
             KindTag::Map => include_str!("../../../docs/schemas/map-def.schema.json"),
             KindTag::SpriteSet => include_str!("../../../docs/schemas/sprite-set.schema.json"),
+            KindTag::SoundSet => include_str!("../../../docs/schemas/sound-set.schema.json"),
             KindTag::Ability => include_str!("../../../docs/schemas/ability.schema.json"),
             KindTag::AiActionSet => {
                 include_str!("../../../docs/schemas/ai-action-set.schema.json")

@@ -500,9 +500,10 @@ flowchart LR
 
 ### AUD — audio
 
-- [ ] **T2-100 Audio event bus and zoom mixing** · M · Refs REQ-AUD-001, 002, TDD §12
+- [x] **T2-100 Audio event bus and zoom mixing** · M · Refs REQ-AUD-001, 002, TDD §12
   `kira` engine, `SoundSet` content kind, `EventRouter` consuming `StepOutput.events` with voice rate limits, battle-roar loop gain from engaged count, placeholder samples.
   **Done when** the sim has no audio dependency (dependency-rule test) and a charge is audible at near zoom while far zoom plays only the roar.
+  Done 2026-09-07: `il_data::sound_set` (`SoundSet` under `content/sounds/`, the closed `SoundEvent` list, `sound-set.schema.json`, `Faction.sound_set`), `crates/il_audio` (`EventRouter`: event → sound key, `(tick + id) mod n` variants, the camera listener with culling and panning, per-event intervals and voice caps and the global cap; `AudioEngine` over kira 0.12.4 with the main/effects/roar/music tracks; `NullSink`), `il_cli gensound` (eighteen synthesised WAVs under `game/assets/sounds/`, 536 KB, and `game/content/sounds/battle.json5`; the factions name `rome:battle`, `persia:cavalry` overrides its charge and death), `il_app::audio` (device or `audio disabled: …`, the frame's events routed after the render snapshot, the Audio tab live, `--mute`); `dep_rules.rs` lists `il_audio` as a presentation crate (wgpu, winit, egui forbidden) and the sim crates still forbid every audio crate. Tests: `crates/il_audio` (12), `gensound` (4), `dep_rules`. The near/far half of the done-when is the docs/08 §4h check for the owner's ears; the router test pins it (effects gain 0 at `zoom.far`).
 
 ### APP — integration
 

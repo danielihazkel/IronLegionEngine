@@ -29,6 +29,7 @@ pub mod registries;
 pub mod registry;
 pub mod rules;
 pub mod schema;
+pub mod sound_set;
 pub mod source;
 pub mod sprite_set;
 pub mod text;
@@ -64,6 +65,7 @@ pub use rules::{
     TimeoutWinner, VisibilityRules,
 };
 pub use schema::KindTag;
+pub use sound_set::{EventSounds, Roar, SoundEvent, SoundSet, Zoom};
 pub use source::{SourceFile, Sources};
 pub use sprite_set::{Anim, SpriteSet};
 pub use unit_type::{ExperienceTier, ProjectileArc, Ranged, UnitCategory, UnitSounds, UnitType};

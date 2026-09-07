@@ -7,5 +7,6 @@
   colour_secondary: "#5a2d82",
   units: ["persia:cavalry", "persia:archer", "persia:general"],
   ai_profile: "rome:default_ai",
+  sound_set: "rome:battle",
   tech_tree: "persia:achaemenid_tree",
 }

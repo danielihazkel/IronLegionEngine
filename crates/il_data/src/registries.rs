@@ -11,6 +11,7 @@ use crate::locale::Locale;
 use crate::map_def::MapDef;
 use crate::registry::{ContentKind, Registry};
 use crate::rules::{InputBindings, Rules};
+use crate::sound_set::SoundSet;
 use crate::sprite_set::SpriteSet;
 use crate::unit_type::UnitType;
 use crate::zone::ZoneType;
@@ -31,6 +32,8 @@ pub struct Registries {
     pub zones: Registry<ZoneType>,
     pub maps: Registry<MapDef>,
     pub sprite_sets: Registry<SpriteSet>,
+    /// T2-100 (audio only, not hashed).
+    pub sound_sets: Registry<SoundSet>,
     /// T2-050.
     pub abilities: Registry<Ability>,
     /// T2-080.
@@ -62,6 +65,7 @@ impl Default for Registries {
             zones: Registry::new(),
             maps: Registry::new(),
             sprite_sets: Registry::new(),
+            sound_sets: Registry::new(),
             abilities: Registry::new(),
             ai_action_sets: Registry::new(),
             ai_profiles: Registry::new(),

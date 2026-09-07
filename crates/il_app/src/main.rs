@@ -5,6 +5,7 @@
 //! through bindings (T1-070). A scenario on the command line skips the menu.
 
 mod app;
+mod audio;
 mod battle_ui;
 mod bench;
 mod menus;
@@ -58,6 +59,10 @@ struct Args {
     /// T2-081): `--ai 1` makes any two-player scenario a fight against it.
     #[arg(long = "ai")]
     ai: Vec<u8>,
+    /// Start with the master volume at 0 (T2-100); the settings file is
+    /// not changed.
+    #[arg(long)]
+    mute: bool,
     /// Watch a recorded battle (`.ilrp`) instead of playing one (T2-101):
     /// no orders are taken; the title reports the hash check.
     #[arg(long)]
@@ -134,6 +139,7 @@ fn main() -> anyhow::Result<()> {
             .unwrap_or_else(|| PathBuf::from(&user_settings.saves_dir)),
         settings: user_settings,
         settings_path,
+        mute: args.mute,
     };
     let state = match (&args.replay, &args.scenario) {
         (Some(replay), _) => AppState::Battle(Box::new(replay_io::load_replay(

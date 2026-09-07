@@ -36,6 +36,8 @@ glam = "0.33.6"
 png = "0.18.1"
 bytemuck = { version = "1", features = ["derive"] }
 pollster = "0.4"
+# Phase 2 pin (T2-100, TDD §1.2): audio.
+kira = "0.12.4"
 # Workspace crates
 il_core = { path = "crates/il_core" }
 il_data = { path = "crates/il_data" }
@@ -46,6 +48,7 @@ il_save = { path = "crates/il_save" }
 il_cli = { path = "crates/il_cli" }
 il_render = { path = "crates/il_render" }
 il_ui = { path = "crates/il_ui" }
+il_audio = { path = "crates/il_audio" }
 
 [workspace.lints.clippy]
 float_arithmetic = "deny"       # re-allowed only inside il_core::scalar

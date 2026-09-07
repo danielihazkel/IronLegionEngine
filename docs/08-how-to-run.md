@@ -26,6 +26,7 @@ cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --thread
 - `--content-root <folder>` points at a different game root (default `game`).
 - `--replay <file.ilrp>` watches a recorded battle instead of playing one (T2-101): no orders are taken, the camera, pause and speed still work, and the title shows `replay 120/600`, then `replay OK` or `replay MISMATCH at tick N`.
 - `--replays-dir <folder>` (default `replays`) is where every battle's replay lands, `--saves-dir <folder>` (default `saves`) where the quick save lives (§4g).
+- `--mute` starts with the master volume at 0 (T2-100); the settings file is untouched. Without an audio device the terminal prints `audio disabled: …` once and everything else works.
 
 A regiment with a `position` in the file starts deployed there; a side whose every regiment has one skips the deployment phase, and when every side does the battle opens in the Battle phase (that is every file under `tests/scenarios/` except `phases_all_four.json5`). Leave the positions out and the battle opens in Deployment: the regiments stand in a battle line at their zone centre, right-click or right-drag moves the selection inside the zone (a red `OutsideDeploymentZone` in the event panel otherwise), the command card's "Deploy the army as…" picker re-lays the whole army in a group formation, `Enter` or the Confirm button next to the phase label starts the battle. A battle ends in a result window (winner, duration, per side survivors, killed, fled, the general's fate, loot) with a button back to the menu; the sim stops stepping then (T2-070).
 
@@ -39,7 +40,7 @@ The window title is the quick telemetry line: tick, soldiers drawn, sim millisec
 
 ### 2a. Settings
 
-The settings screen (main menu → Settings, or the pause menu's Settings during a battle; T2-091) has three tabs. **Video**: the UI scale (multiplied by the window height over 1080, so 1440p text is a third larger by itself), vertical sync, borderless fullscreen, the simulation thread count for the next battle. **Audio**: the three volumes (stored now, played from T2-100). **Bindings**: every action with its keys; click a key and press the new key or mouse button (`+` adds a second chord, `−` removes one, Reset restores the mod's default); a chord bound to two actions is shown in red with the other action's name. Apply takes effect at once; Save writes `settings.json5` (the path is shown). The file holds only the bindings you changed, on top of the mods' bindings, plus the video and audio values and the replay and save folders.
+The settings screen (main menu → Settings, or the pause menu's Settings during a battle; T2-091) has three tabs. **Video**: the UI scale (multiplied by the window height over 1080, so 1440p text is a third larger by itself), vertical sync, borderless fullscreen, the simulation thread count for the next battle. **Audio**: the three volumes, applied at once (T2-100): master, effects (the battle sounds) and music (nothing plays on it before Phase 4). **Bindings**: every action with its keys; click a key and press the new key or mouse button (`+` adds a second chord, `−` removes one, Reset restores the mod's default); a chord bound to two actions is shown in red with the other action's name. Apply takes effect at once; Save writes `settings.json5` (the path is shown). The file holds only the bindings you changed, on top of the mods' bindings, plus the video and audio values and the replay and save folders.
 
 ## 3. Controls
 
@@ -177,6 +178,16 @@ Expect `verified N ticks` from the first, and the same battle unfolding on its o
 
 Things that would be wrong: a quick load that changes the clock, the casualties line or any soldier's place compared with the moment of the save; a replay that verifies headless but shows `MISMATCH` in the app (or the reverse); an order accepted during a playback.
 
+### 4h. The audio check (Phase 2, T2-100)
+
+```
+cargo run --release -p il_app -- tests/scenarios/ai_skirmish_300.json5 --threads 8
+```
+
+Two AI armies fight on their own. Expect: at the default zoom, as the lines close, a shout for each charge, clashes when they meet, whooshes for the volleys and thuds for the arrows, short cries for the dead, a falling tone when a regiment routs and a rising one when it rallies, a gong if a general dies, a drum at each phase change and a fanfare at the end. Zoom in (mouse wheel) and the individual sounds get louder and pan toward where they happen; zoom all the way out and they fade until only a low roar is left, whose loudness follows how many soldiers are fighting. The settings screen's Audio tab (from the pause menu) changes the volumes while the battle runs; `--mute` starts silent; `cargo run -p il_cli -- gensound` regenerates the placeholder samples under `game/assets/sounds/`.
+
+Things that would be wrong: a charge still audible at the strategic zoom (only the roar belongs there), the roar playing with nobody engaged, a sound for a fight off the edge of the screen, a machine-gun of clashes (the intervals cap them), or an `audio:` warning naming a missing sample.
+
 ## 5. Headless tools (`il_cli`)
 
 ```
@@ -190,6 +201,7 @@ cargo run --release -p il_cli -- autoresolve tests/scenarios/ai_skirmish_300.jso
 cargo run --release -p il_cli -- replay target/skirmish.ilrp --verify --threads 8
 cargo run -p il_cli -- genmap
 cargo run -p il_cli -- genart
+cargo run -p il_cli -- gensound
 ```
 
 - `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
@@ -198,7 +210,7 @@ cargo run -p il_cli -- genart
 - `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), kill a side's general at a tick through `bands.harness: [{ tick, kill_general }]` (row 7, T2-043), and a `mean_loss_matches` or `mean_loss_below` row compares two files' mean losses after both have run (`volley_testudo.json5` must lose at most 60 % of `volley_velites_vs_hastati.json5`, T2-050).
 - `autoresolve <scenario.json5>` runs the scenario to its end (or `--max-ticks`) with the engine AI commanding every side (`--ai all`, the default; the file's scripted commands are dropped with a note) and prints the `BattleResult` as JSON (`--json F` writes it to a file); `--ai none` replays the scripted commands instead, `--ai 1` hands over player 1 only; exit code 2 when the battle did not end (T2-082). The AI band rows `ai_vs_passive` and `ai_vs_charge` (20 seeds each, the Phase 2 exit criterion) run with the others under `bands`.
 - `autoresolve --record-replay <file>` also writes the battle's replay; `replay <file> --verify` re-simulates a replay (from the app or from `autoresolve`) with the loaded content and prints `verified N ticks`, or the first divergent tick with both hashes and exit code 1 (T2-101). Without `--verify` it prints the file's header (engine and schema versions, mods, content hash, time written, tick count). A replay written by different content is refused unless `--force`; `--threads 8` proves the recording on the parallel executor. The nightly workflow records `ai_skirmish_300` to its end and verifies it.
-- `genmap` and `genart` regenerate the test map and the placeholder sprite sheets; commit the output.
+- `genmap`, `genart` and `gensound` regenerate the test map, the placeholder sprite sheets and the placeholder battle sounds with their sound set (T2-100); commit the output.
 
 Criterion micro-benches:
 

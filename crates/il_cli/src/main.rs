@@ -22,6 +22,8 @@ enum Command {
     Genart(GenartArgs),
     /// Regenerate the Phase 1 test map and its heightmap (T1-030).
     Genmap(GenmapArgs),
+    /// Regenerate the placeholder battle sounds and the sound set (T2-100).
+    Gensound(GensoundArgs),
     /// Load the given mod roots and print every diagnostic; exit 1 on errors.
     Validate(ValidateArgs),
     /// Run the scenario outcome bands over many seeds and print the table (T2-110).
@@ -164,6 +166,14 @@ struct GenartArgs {
 }
 
 #[derive(Args)]
+struct GensoundArgs {
+    /// Mod root; samples go to `<root>/assets/sounds/`, the set to
+    /// `<root>/content/sounds/battle.json5`.
+    #[arg(long, default_value = "game")]
+    mod_root: PathBuf,
+}
+
+#[derive(Args)]
 struct GenmapArgs {
     /// Mod root; the map goes to `<root>/content/maps/`, the heightmap to
     /// `<root>/assets/maps/`.
@@ -250,6 +260,11 @@ fn main() -> anyhow::Result<()> {
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();
             il_cli::genart::generate(&a.mod_root, &mut lock)
+        }
+        Command::Gensound(a) => {
+            let stdout = std::io::stdout();
+            let mut lock = stdout.lock();
+            il_cli::gensound::generate(&a.mod_root, &mut lock)
         }
         Command::Genmap(a) => {
             let opts = il_cli::genmap::GenmapOptions {

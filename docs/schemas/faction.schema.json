@@ -62,6 +62,7 @@
         "expansionism": { "$ref": "#/$defs/unitInterval", "default": 0.5, "description": "Desire for more provinces." }
       }
     },
-    "tech_tree": { "$ref": "#/$defs/contentId", "description": "Technology tree content id." }
+    "tech_tree": { "$ref": "#/$defs/contentId", "description": "Technology tree content id." },
+    "sound_set": { "$ref": "#/$defs/contentId", "description": "Battle sound set (content/sounds/) this faction's player hears; the app falls back to the registry's first set when absent (T2-100)." }
   }
 }

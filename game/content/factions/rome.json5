@@ -9,5 +9,6 @@
   colour_secondary: "#e0c060",
   units: ["rome:hastati", "rome:general"],
   ai_profile: "rome:default_ai",
+  sound_set: "rome:battle",
   tech_tree: "rome:tree",
 }

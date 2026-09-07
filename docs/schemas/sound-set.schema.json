@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/sound-set.schema.json",
+  "title": "Iron Legion sound set",
+  "description": "Which sample plays for which battle event (content/sounds/*.json5), with rate limits, the battle-roar loop and the zoom curve (TDD 12, REQ-AUD-001, REQ-AUD-002). Audio only: never read by the simulation. Factions name the active set through sound_set.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "assetPath": { "type": "string", "pattern": "^(?!\\.\\.)(?!/)[^\\\\]*$" },
+    "eventSounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["samples"],
+      "properties": {
+        "samples": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/assetPath" }, "description": "WAV paths under assets_root; one is picked per play by (tick + id) mod n." },
+        "min_interval_ms": { "type": "integer", "minimum": 0, "maximum": 60000, "default": 100, "description": "Plays of this event closer together than this are dropped." },
+        "max_voices": { "type": "integer", "minimum": 1, "maximum": 64, "default": 4, "description": "Concurrent plays of this event." },
+        "gain": { "type": "number", "minimum": 0, "maximum": 4, "default": 1.0, "description": "Linear gain applied to every play." }
+      }
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "events", "roar", "zoom"],
+  "properties": {
+    "$override": { "enum": ["merge", "replace"] },
+    "$delete": { "const": true },
+    "$from": { "$ref": "#/$defs/contentId" },
+    "deprecated": { "type": "string" },
+    "id": { "$ref": "#/$defs/contentId" },
+    "events": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One entry per sound the router voices; a missing key is silent.",
+      "properties": {
+        "charge": { "$ref": "#/$defs/eventSounds", "description": "Charge (a unit's sounds.charge wins)." },
+        "cavalry_charge": { "$ref": "#/$defs/eventSounds", "description": "Charge by a cavalry unit without its own sounds.charge." },
+        "clash": { "$ref": "#/$defs/eventSounds", "description": "Engaged: a regiment's first soldier enters melee." },
+        "volley": { "$ref": "#/$defs/eventSounds", "description": "VolleyFired." },
+        "arrow_hit": { "$ref": "#/$defs/eventSounds", "description": "ProjectileLanded on a soldier." },
+        "death": { "$ref": "#/$defs/eventSounds", "description": "SoldierDied (a unit's sounds.die wins)." },
+        "cavalry_death": { "$ref": "#/$defs/eventSounds", "description": "SoldierDied of a cavalry unit without its own sounds.die." },
+        "rout": { "$ref": "#/$defs/eventSounds", "description": "MoraleChanged to Routing." },
+        "rally": { "$ref": "#/$defs/eventSounds", "description": "Rallied." },
+        "shatter": { "$ref": "#/$defs/eventSounds", "description": "Shattered." },
+        "general_died": { "$ref": "#/$defs/eventSounds", "description": "GeneralDied." },
+        "ability": { "$ref": "#/$defs/eventSounds", "description": "AbilityUsed." },
+        "phase": { "$ref": "#/$defs/eventSounds", "description": "PhaseChanged, and a drawn Ended." },
+        "victory": { "$ref": "#/$defs/eventSounds", "description": "Ended won by the observer's side." },
+        "defeat": { "$ref": "#/$defs/eventSounds", "description": "Ended won by another side." }
+      }
+    },
+    "roar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sample", "ref_engaged"],
+      "description": "The far-zoom battle roar: a seamless loop whose gain follows the engaged soldier count.",
+      "properties": {
+        "sample": { "$ref": "#/$defs/assetPath" },
+        "ref_engaged": { "type": "integer", "minimum": 1, "description": "Engaged soldiers at which the roar reaches full gain." }
+      }
+    },
+    "zoom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["far", "near"],
+      "description": "Camera pixels per metre: at or below far only the roar plays, at or above near the effects are at full gain; far must be below near.",
+      "properties": {
+        "far": { "type": "number", "exclusiveMinimum": 0 },
+        "near": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "max_voices": { "type": "integer", "minimum": 1, "maximum": 256, "default": 24, "description": "Concurrent plays over every event." },
+    "cull_pad_m": { "type": "number", "minimum": 0, "default": 40, "description": "Metres beyond the visible bounds inside which a placed event still plays." }
+  }
+}
