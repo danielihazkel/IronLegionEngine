@@ -14,7 +14,7 @@
 use std::path::{Path, PathBuf};
 
 use il_cli::bands::{HarnessEvent, SeedDriver, load_band_file};
-use il_core::StateHash;
+use il_core::{PlayerId, StateHash};
 use il_sim_battle::{Scenario, Snapshot};
 use il_tests::{band_scenario_files, game_regs, load_scenario, scenario_files};
 
@@ -147,6 +147,16 @@ fn plain(path: &Path) -> (PathBuf, Scenario, Vec<u8>, Vec<HarnessEvent>) {
     )
 }
 
+/// A scenario with an engine-owned side (plan I13): its AI may hit the
+/// documented one-tick race, so its rejections are compared, not banned.
+fn ai_driven(scenario: &Scenario) -> bool {
+    scenario
+        .setup
+        .sides
+        .iter()
+        .any(|s| s.player == PlayerId::ENGINE_AI)
+}
+
 /// The classic corpus: every top-level scenario but the 10k fight.
 #[test]
 fn every_scenario_is_deterministic_across_threads_and_restore() {
@@ -156,7 +166,9 @@ fn every_scenario_is_deterministic_across_threads_and_restore() {
         .map(|p| plain(p))
         .collect();
     assert!(!files.is_empty());
-    check_corpus(&files, Strictness::NoRejections);
+    let (ai, scripted): (Vec<_>, Vec<_>) = files.into_iter().partition(|f| ai_driven(&f.1));
+    check_corpus(&scripted, Strictness::NoRejections);
+    check_corpus(&ai, Strictness::SameRejections);
 }
 
 /// The band files (T2-112): pins and harness applied, the file's own seed.

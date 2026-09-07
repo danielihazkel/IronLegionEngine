@@ -516,6 +516,8 @@ Phases have exit criteria, not dates. A phase is complete when every exit criter
 
 **Exit criteria:** 10,000 soldiers fight to a conclusion at 60 FPS with sim tick ≤ 25 ms; the AI wins against a passive player; scenario tests pass; determinism test passes with all combat systems.
 
+*State on 2026-09-07 (T2-113):* every deliverable is built and every task but T2-082's done-when is ticked; the tick is 13.3 ms at 10k, the bands and the determinism corpus pass, and the AI-against-a-passive-player criterion stands at 8/50 seeds after the tuning pass recorded in the task list, with the decision on it (relax, rework, or carry into Phase 3) open.
+
 ### Phase 3 — Scaling
 
 **Deliverables:** HPA*; LOD rendering tiers; render thread separation; parallel sim systems under determinism rules; mixed regiments and group formations; rivers, fords, bridges; map editor; replays; per-system budgets enforced in CI.

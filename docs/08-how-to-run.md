@@ -250,6 +250,7 @@ CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of `idle
 
 - `docs/07-tasks-phase-0-2.md`: the task list and exit checklists.
 - `docs/evidence/phase1/`: the target machine spec and the profiler screenshot.
+- `docs/evidence/phase2/`: the machine delta, the 10k fight's stage table before and after T2-111, the band table at the close-out and the owner's 10k profiler screenshot.
 - `benches/baseline.json`: stage timings on the target machine.
 - `replays/` and `saves/` under the working directory (ignored by git): every battle's replay and the quick save (T2-101).
 - `settings.json5` in the user's config directory (§2): the UI scale, video and audio values, the rebound keys (T2-091).
