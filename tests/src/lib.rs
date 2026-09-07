@@ -39,8 +39,8 @@ pub fn scenario_files() -> Vec<PathBuf> {
     files
 }
 
-/// Band scenarios (T2-110) live one level down and are not enrolled in
-/// the determinism test until T2-112.
+/// Band scenarios (T2-110) live one level down; the determinism test
+/// enrols them through the band harness's driver (T2-112).
 pub fn band_scenario_dir() -> PathBuf {
     scenario_dir().join("bands")
 }

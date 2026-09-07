@@ -237,14 +237,14 @@ In `dev` builds the app watches every loaded mod folder. Edit a number in `game/
 ## 8. Tests and checks
 
 ```
-cargo test --workspace                                   # everything, including the ten-thousand-tick determinism test (a few minutes)
-cargo test -p il_tests --test determinism                # just determinism
+cargo test --workspace                                   # everything, including the determinism corpus (about 8 minutes)
+cargo test -p il_tests --test determinism                # just determinism: the classic scenarios (10,000 ticks), the band files (1,500) and the 10k fight (800), three tests side by side
 cargo test --release -p il_tests --test scenarios -- --ignored --nocapture   # the 50-seed outcome bands (nightly; minutes)
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of both scenarios and the bench comparison; `nightly.yml` runs the outcome bands every night and on demand.
+CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of `idle_1000`, `move_reform_2000` and the 10k fight `perf_10k` (T2-112) and the bench comparisons at 2k and on the fight; `nightly.yml` runs the outcome bands every night and on demand.
 
 ## 9. Where things are
 

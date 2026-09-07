@@ -22,10 +22,11 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context, anyhow, bail};
+use il_core::{StateHash, Tick};
 use il_data::Registries;
 use il_data::json5::{FileId, parse_json5};
 use il_sim_battle::components::{MoraleState, SoldierState};
-use il_sim_battle::{BattleWorld, Scenario};
+use il_sim_battle::{BattleWorld, Scenario, ScriptedCommands, Snapshot, StepOutput};
 use serde::{Deserialize, Serialize};
 
 /// Options of `il_cli bands`.
@@ -474,6 +475,91 @@ fn side_counts(view: &il_sim_battle::BattleView<'_>, sides: usize) -> (Vec<u32>,
     (counts, fled)
 }
 
+/// One seed of a band scenario stepping under its interventions (T2-112,
+/// plan I14): the harness before the tick, the morale pins after it. The
+/// band runner and the determinism test both drive their worlds through
+/// it, so the corpus runs exactly what the nightly measures.
+pub struct SeedDriver {
+    pub world: BattleWorld,
+    script: ScriptedCommands,
+    pin_morale: Vec<u8>,
+    harness: Vec<HarnessEvent>,
+}
+
+impl SeedDriver {
+    /// A fresh world for the scenario with `seed` (the file's own when
+    /// `None`), `threads` workers.
+    pub fn new(
+        scenario: &Scenario,
+        seed: Option<u64>,
+        pin_morale: &[u8],
+        harness: &[HarnessEvent],
+        regs: Arc<Registries>,
+        threads: usize,
+    ) -> anyhow::Result<Self> {
+        let mut setup = scenario.setup.clone();
+        if let Some(seed) = seed {
+            setup.seed = seed;
+        }
+        let mut world = BattleWorld::new(&setup, regs)?;
+        world.set_threads(threads);
+        Ok(Self {
+            world,
+            script: scenario.script(),
+            pin_morale: pin_morale.to_vec(),
+            harness: harness.to_vec(),
+        })
+    }
+
+    /// The same driver over a restored world (the determinism test's
+    /// mid-way restore): the script skips what the snapshot already saw.
+    pub fn restored(
+        snapshot: &Snapshot,
+        scenario: &Scenario,
+        pin_morale: &[u8],
+        harness: &[HarnessEvent],
+        regs: Arc<Registries>,
+        threads: usize,
+    ) -> anyhow::Result<Self> {
+        let mut world = BattleWorld::restore(snapshot, regs)?;
+        world.set_threads(threads);
+        let mut script = scenario.script();
+        script.take_for(world.tick());
+        Ok(Self {
+            world,
+            script,
+            pin_morale: pin_morale.to_vec(),
+            harness: harness.to_vec(),
+        })
+    }
+
+    pub fn tick(&self) -> Tick {
+        self.world.tick()
+    }
+
+    /// Steps one tick: the harness events due for it first, the step, then
+    /// the pins; returns the output and the hash after the pins.
+    pub fn step(&mut self) -> (StepOutput, StateHash) {
+        let next = self.world.tick().next();
+        for event in self.harness.iter().filter(|e| e.tick == next.0) {
+            kill_general(&mut self.world, event.kill_general);
+        }
+        let commands = self.script.take_for(next);
+        let out = self.world.step(&commands);
+        let hash = if self.pin_morale.is_empty() {
+            out.hash
+        } else {
+            hold_morale(&mut self.world, &self.pin_morale)
+        };
+        (out, hash)
+    }
+
+    /// The world as it stands (after any pins), for a mid-way restore.
+    pub fn snapshot(&self) -> Snapshot {
+        self.world.snapshot()
+    }
+}
+
 /// Runs one seed of a band scenario to its tick limit or the first
 /// annihilated side.
 pub fn run_seed(
@@ -484,33 +570,26 @@ pub fn run_seed(
     harness: &[HarnessEvent],
     regs: Arc<Registries>,
 ) -> anyhow::Result<SeedOutcome> {
-    let mut setup = scenario.setup.clone();
-    setup.seed = seed;
-    let mut world = BattleWorld::new(&setup, regs)?;
-    world.set_threads(1);
-    let mut script = scenario.script();
-    let sides = world.view().sides().len();
-    let regiment_side: BTreeMap<u32, u8> =
-        world.view().regiments().map(|r| (r.id.0, r.side)).collect();
-    let (initial, _) = side_counts(&world.view(), sides);
+    let mut driver = SeedDriver::new(scenario, Some(seed), pin_morale, harness, regs, 1)?;
+    let sides = driver.world.view().sides().len();
+    let regiment_side: BTreeMap<u32, u8> = driver
+        .world
+        .view()
+        .regiments()
+        .map(|r| (r.id.0, r.side))
+        .collect();
+    let (initial, _) = side_counts(&driver.world.view(), sides);
     let mut counts = Vec::with_capacity(tick_limit as usize);
     let mut fled_counts = Vec::with_capacity(tick_limit as usize);
     let mut first_contact = BTreeMap::new();
     let mut first_rout = BTreeMap::new();
     let mut rejected = 0u32;
-    let mut hash = world.hash();
-    while world.tick().0 < tick_limit {
-        let next = world.tick().next();
-        for event in harness.iter().filter(|e| e.tick == next.0) {
-            kill_general(&mut world, event.kill_general);
-        }
-        let commands = script.take_for(next);
-        let out = world.step(&commands);
+    let mut hash = driver.world.hash();
+    while driver.tick().0 < tick_limit {
+        let (out, h) = driver.step();
         rejected += out.rejected.len() as u32;
-        hash = out.hash;
-        if !pin_morale.is_empty() {
-            hash = hold_morale(&mut world, pin_morale);
-        }
+        hash = h;
+        let world = &driver.world;
         let view = world.view();
         let tick = view.tick().0;
         let (now, fled_now) = side_counts(&view, sides);
@@ -541,7 +620,7 @@ pub fn run_seed(
         .unwrap_or_else(|| vec![0; sides]);
     Ok(SeedOutcome {
         seed,
-        end_tick: world.tick().0,
+        end_tick: driver.tick().0,
         rejected,
         initial,
         survivors,
