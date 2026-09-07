@@ -13,7 +13,7 @@ use il_core::{RegimentId, S, Scalar};
 
 use crate::combat::formulas::StatMults;
 use crate::components::{
-    Anchor, GeneralTag, Morale, MoraleState, Order, OrderKind, Pos, Regiment, Statuses,
+    Anchor, GeneralTag, Morale, MoraleState, Order, OrderKind, Pos, Regiment, Soldier, Statuses,
 };
 use crate::resources::{AnchorGridRes, Ids, MeleeGateRes, Regs, Sides};
 use crate::spatial::Entry;
@@ -61,22 +61,29 @@ pub fn melee_gate(world: &mut World) {
         status[i] = world
             .get::<Statuses>(*entity)
             .map_or_else(StatMults::default, |s| s.mults);
+    }
+    // The extents in one pass over the living soldiers (T2-111): the
+    // regiment lists hold exactly the spawned soldiers, so a table scan
+    // gives the same maxima as walking each list through `Ids`.
+    {
+        let mut far_sq = vec![S::ZERO; n];
+        let mut soldiers = world.query::<(&Soldier, &Pos)>();
         let ids = world.resource::<Ids>();
-        let mut far = S::ZERO;
-        for &sid in &regiment.soldiers {
-            if let Some(e) = ids.soldier_entity(sid)
-                && let Some(pos) = world.get::<Pos>(e)
-            {
-                far = far.max(pos.p.distance_sq(anchor.pos));
+        for (soldier, pos) in soldiers.iter(world) {
+            if let Some(i) = ids.regiment_index(soldier.regiment) {
+                far_sq[i] = far_sq[i].max(pos.p.distance_sq(anchors[i]));
             }
         }
-        extent[i] = far.sqrt();
+        for (e, f) in extent.iter_mut().zip(far_sq) {
+            *e = f.sqrt();
+        }
     }
     let extent_max = extent.iter().fold(S::ZERO, |a, b| a.max(*b));
 
     // Pass 2: enemy within reach of each eligible regiment.
     let mut near = vec![false; n];
     let mut found: Vec<Entry<RegimentId>> = Vec::new();
+    let mut scratch: Vec<usize> = Vec::new();
     let grid = &world.resource::<AnchorGridRes>().0;
     let ids = world.resource::<Ids>();
     for i in 0..n {
@@ -84,7 +91,7 @@ pub fn melee_gate(world: &mut World) {
             continue;
         }
         let reach = extent[i] + extent_max + engage_radius + slack;
-        grid.query_circle(anchors[i], reach, &mut found);
+        grid.query_circle_with(anchors[i], reach, &mut scratch, &mut found);
         near[i] = found.iter().any(|e| {
             ids.regiment_index(e.id).is_some_and(|j| {
                 j != i

@@ -13,31 +13,31 @@ Each subsystem section has the same shape: responsibilities, public API (Rust si
 
 Stage numbers refer to SAD §6.2. Rule IDs refer to the Simulation Spec. Field names match the Modding SDK schemas.
 
-Budget table (sum must fit 50 ms at P3, 25 ms at P2). The measured columns are Phase 1 means from `il_cli bench --ticks 600` (release, 8 threads, the move/reform script, T1-083) on the target machine in `docs/evidence/phase1/machine.md`; stages 8 to 16 hold only a placeholder system, so their numbers are schedule overhead.
+Budget table (sum must fit 50 ms at P3, 25 ms at P2). The Phase 1 columns are the T1-083 means from `il_cli bench --ticks 600` (release, 8 threads, the move/reform script) when stages 8 to 16 held only a placeholder; the Phase 2 columns are the same three generated runs re-recorded with every combat system live (T2-111, 2026-09-07, `benches/baseline.json`) plus the 10k fight (`bench --scenario tests/scenarios/perf_10k.json5 --ticks 1200`: 10,042 soldiers, 52 regiments, side 0 attack-moving into the engine AI; `docs/evidence/phase2/bench_perf_10k.md`), all on the target machine in `docs/evidence/phase2/machine.md`. Milliseconds, means.
 
-| Stage | Budget at 20k (ms) | Measured 2k | Measured 10k | Measured 20k | Section |
-|---|---|---|---|---|---|
-| 0 ApplyCommands | 0.2 | 0.00 | 0.00 | 0.00 | §4 |
-| 1 AI | 2.0 | 0.03 | 0.05 | 0.07 | §8.5, §9 |
-| 2 Formation | 2.0 | 0.17 | 0.35 | 0.58 | §7 |
-| 3 RegimentMovement | 1.0 | 0.12 | 0.25 | 0.47 | §6 |
-| 4 SoldierSteering | 8.0 | 1.03 | 3.56 | 7.74 | §6 |
-| 5 Integrate | 0.5 | 0.10 | 0.19 | 0.33 | §6 |
-| 6 SpatialGrid | 2.0 | 0.14 | 0.25 | 0.49 | §5 |
-| 7 Collision | 8.0 | 1.94 | 5.61 | 11.16 | §6 |
-| 8 Visibility | 1.0 | 0.07 | 0.10 | 0.11 | §8.4 |
-| 9 Targeting | 4.0 | 0.06 | 0.06 | 0.08 | §8.1 |
-| 10 Combat | 4.0 | 0.04 | 0.05 | 0.06 | §8.1 |
-| 11 Projectiles | 3.0 | 0.04 | 0.04 | 0.06 | §8.2 |
-| 12 Abilities | 0.5 | 0.03 | 0.04 | 0.05 | §8.3 |
-| 13 Fatigue | 0.5 | 0.03 | 0.03 | 0.05 | §8.3 |
-| 14 Morale | 1.0 | 0.03 | 0.03 | 0.04 | §8.3 |
-| 15 Death | 1.0 | 0.03 | 0.03 | 0.04 | §8.1 |
-| 16 BattleFlow | 0.3 | 0.03 | 0.03 | 0.03 | §4 |
-| 17 Events + Hash | 3.0 | 0.12 | 0.49 | 1.07 | §2, §4 |
-| **Total** | **42.0** | **4.03** | **11.17** | **22.43** | headroom 8 ms; p95 tick 6.4 / 16.7 / 32.9 ms |
+| Stage | Budget at 20k (ms) | Phase 1 2k | Phase 1 10k | Phase 1 20k | Phase 2 2k | Phase 2 10k | Phase 2 20k | Phase 2 10k fight | Section |
+|---|---|---|---|---|---|---|---|---|---|
+| 0 ApplyCommands | 0.2 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | §4 |
+| 1 AI | 2.0 | 0.03 | 0.05 | 0.07 | 0.00 | 0.00 | 0.00 | 0.15 | §8.5, §9 |
+| 2 Formation | 2.0 | 0.17 | 0.35 | 0.58 | 0.15 | 0.47 | 0.80 | 0.44 | §7 |
+| 3 RegimentMovement | 1.0 | 0.12 | 0.25 | 0.47 | 0.10 | 0.30 | 0.54 | 0.37 | §6 |
+| 4 SoldierSteering | 8.0 | 1.03 | 3.56 | 7.74 | 0.65 | 3.43 | 7.81 | 3.33 | §6 |
+| 5 Integrate | 0.5 | 0.10 | 0.19 | 0.33 | 0.09 | 0.21 | 0.37 | 0.22 | §6 |
+| 6 SpatialGrid | 2.0 | 0.14 | 0.25 | 0.49 | 0.16 | 0.69 | 1.69 | 0.74 | §5 |
+| 7 Collision | 8.0 | 1.94 | 5.61 | 11.16 | 1.51 | 6.01 | 12.13 | 4.42 | §6 |
+| 8 Visibility | 1.0 | 0.07 | 0.10 | 0.11 | 0.01 | 0.01 | 0.03 | 0.03 | §8.4 |
+| 9 Targeting | 4.0 | 0.06 | 0.06 | 0.08 | 0.28 | 1.34 | 3.03 | 1.51 | §8.1 |
+| 10 Combat | 4.0 | 0.04 | 0.05 | 0.06 | 0.14 | 0.26 | 0.45 | 0.40 | §8.1 |
+| 11 Projectiles | 3.0 | 0.04 | 0.04 | 0.06 | 0.00 | 0.00 | 0.01 | 0.01 | §8.2 |
+| 12 Abilities | 0.5 | 0.03 | 0.04 | 0.05 | 0.00 | 0.01 | 0.01 | 0.01 | §8.3 |
+| 13 Fatigue | 0.5 | 0.03 | 0.03 | 0.05 | 0.12 | 0.34 | 0.64 | 0.36 | §8.3 |
+| 14 Morale | 1.0 | 0.03 | 0.03 | 0.04 | 0.13 | 0.61 | 1.31 | 0.58 | §8.3 |
+| 15 Death | 1.0 | 0.03 | 0.03 | 0.04 | 0.03 | 0.11 | 0.23 | 0.11 | §8.1 |
+| 16 BattleFlow | 0.3 | 0.03 | 0.03 | 0.03 | 0.00 | 0.00 | 0.00 | 0.01 | §4 |
+| 17 Events + Hash | 3.0 | 0.12 | 0.49 | 1.07 | 0.15 | 0.64 | 1.41 | 0.65 | §2, §4 |
+| **Total** | **42.0** | **4.03** | **11.17** | **22.43** | **3.52** | **14.45** | **30.50** | **13.33** | Phase 2 p95 tick 5.4 / 20.1 / 43.5 / 18.3 ms |
 
-At 20k the two soldier-level stages already sit at their Phase 3 budgets (Collision 11.2 ms against 8, Steering 7.7 against 8) while every other stage is far under; Phase 2 combat work must not grow them, and SAD §12 carries the item.
+REQ-PERF-002 (P2: 10,000 soldiers at tick ≤ 25 ms) holds with margin: the 10k fight's tick is 13.3 ms mean, 18.3 ms p95, and every stage is inside its 20k budget at 10k. The generated 20k run (no enemy) sits at 30.5 ms, inside the 50 ms P3 bar, with Collision (12.1 ms against 8) and SoldierSteering (7.8 against 8) over their budgets as in Phase 1 and Targeting at 3.0 ms (the per-soldier pass of `melee_target` and the gate's table scan run for every soldier, enemy or not): the Phase 3 items of SAD §12 T-10. The combat stages cost what their budgets allow: at 10k in the fight Targeting 1.5, Morale 0.6, Fatigue 0.4, Combat 0.4, Events + Hash 0.65 ms.
 
 ---
 
@@ -342,7 +342,7 @@ pub mod interface {
     pub enum Weather { Clear, Rain, Fog }   pub struct VictoryRules { pub timeout_winner: Option<u8> }
     pub struct GeneralSetup { pub unit_type: ContentId, pub rank: u8, pub name_key: String, pub bodyguard: Option<u32> }   // T2-043
     pub struct ReinforcementGroup { pub arrival_tick: u32 /* since the Battle phase began */, pub edge: MapEdge /* listed by the map for the side's zone */, pub regiments: Vec<RegimentSetup> }   // T2-070
-    pub struct Scenario { #[serde(flatten)] pub setup: BattleSetup, pub commands: Vec<Command> }   // a scenario file (T1-081); `script() -> ScriptedCommands`
+    pub struct Scenario { #[serde(flatten)] pub setup: BattleSetup, pub commands: Vec<Command>, pub determinism: Option<DeterminismBudget { ticks, snapshot_at }> /* the determinism test's budget for the file, default 10,000 / 5,000; T2-111 */ }   // a scenario file (T1-081); `script() -> ScriptedCommands`
     pub struct ScriptedCommands { .. }   // sorted by (tick, player, seq); `take_for(tick) -> Vec<Command>` hands over everything stamped `tick` or earlier (stale ones too, so the sim rejects them visibly), `remaining`, `is_empty`
     pub struct BattleResult { pub winner: Option<u8>, pub duration_ticks: u32, pub sides: Vec<SideResult>, pub summary: BattleSummary { total_killed, total_fled } }
     pub struct SideResult { pub regiments: Vec<RegimentResult>, pub general_fate: GeneralFate, pub loot: i64 }
@@ -910,14 +910,14 @@ As built (T1-070): `il_app::state::AppState::{MainMenu(MenuState), Battle(Box<Ba
 | Utility-AI curves and selection (T2-080): curve goldens, threshold and tie-break, lazy noise, cadence, identical choices on eight threads | `crates/il_ai/tests/curves.rs`; the two AI kinds' load diagnostics in `il_data::ai` | every push | REQ-AI-001, REQ-AI-005 |
 | Battle AI behaviour (T2-081/082): square against cavalry, phalanx when engaged frontally, deployment geometry, engage, hold fire, abilities, fall back, the bodyguard, zero rejected AI commands over a fight, 1 vs 8 threads with a restore, a replay with the AI off; stance and hysteresis, the stepping line, skirmishers, flank groups, defend ground, counter-charges, reserves, the retreat screen | `crates/il_sim_battle/tests/ai.rs`, `tests/ai_army.rs`; `tests/scenarios/ai_skirmish_300.json5` in the determinism corpus; `il_cli autoresolve` on `phases_all_four.json5` AI versus AI | every push | REQ-AI-003, REQ-AI-005 |
 | Audio router (T2-100): zoom curve, roar gain, rate limits, culling and panning, unit overrides, `Ended` mapping; the engine constructor without a device; `gensound` WAV headers and determinism | `crates/il_audio/src/{router,engine}.rs`, `crates/il_cli/src/gensound.rs`; `dep_rules.rs` keeps audio out of the sim | every push | REQ-AUD-001, REQ-AUD-002 |
-| Determinism: each scenario twice, 1 thread and 8 threads, snapshot/restore at mid-point | `tests/tests/determinism.rs`, in-process on `BattleWorld` (`set_threads(1)` and `set_threads(8)`), plus an in-process `il_cli::run` twice comparison; CI also diffs two `il_cli run --hash-every 1000` logs | every push | REQ-TEST-002 |
+| Determinism: each scenario twice, 1 thread and 8 threads, snapshot/restore at mid-point (the file's `determinism: { ticks, snapshot_at }` budget, default 10,000 / 5,000; `perf_10k.json5` runs 800 / 400 in the debug build, T2-111) | `tests/tests/determinism.rs`, in-process on `BattleWorld` (`set_threads(1)` and `set_threads(8)`), plus an in-process `il_cli::run` twice comparison; CI also diffs two `il_cli run --hash-every 1000` logs | every push | REQ-TEST-002 |
 | Content validation of `game/` | `tests/content.rs` | every push | REQ-TEST-005 |
 | Scenario outcome bands (Simulation Spec §15.3), 50 seeds | `il_cli bands tests/scenarios/bands` (`il_cli::bands`: per file, per seed a single-threaded `BattleWorld` fed the scripted commands, seeds spread over `--jobs` OS threads; assertions evaluated over `BattleView` rows; a file's `bands.mods` load extra rules overrides for that file, and `mean_loss_matches` clauses are settled across files after every file has run, T2-032; `bands.pin_morale` holds listed sides at morale 100 after every tick and the `casualties`, `routed_before_loss` and `mean_loss_matches` clauses count the dead only, the fled being tracked separately, T2-042; `bands.harness` lists interventions applied through `ecs_mut` before a tick, `kill_general: side`, and the `routs_first { side }` clause reads which side's first Routing regiment came first, T2-043), driven in-process by `tests/tests/scenarios.rs` (`#[ignore]`; the non-ignored test parses every band file on each push) | nightly (`.github/workflows/nightly.yml`) and on demand | REQ-TEST-004 |
-| Benchmarks per stage at 2k/10k/20k against the budget table at the top; fail at +20 % over the baseline | `il_cli bench` (per-stage mean/p95/max through `StageObserver`; `--baseline benches/baseline.json --strict`; the `StageTimer` is il_cli's one allowed `Instant` user because it only observes stage boundaries) plus criterion micro-benches in `benches/benches/` (`spatial`, `formation`, `nav`, `layout`, `tick`; T1-080) | every push, warn-only on CI runners; `--strict` on the target machine (`docs/evidence/phase1/machine.md`) | REQ-TEST-003, REQ-PERF-005 |
+| Benchmarks per stage at 2k/10k/20k and on the 10k fight (`--scenario tests/scenarios/perf_10k.json5`, keyed `perf_10k`, T2-111) against the budget table at the top; fail at +20 % over the baseline | `il_cli bench` (per-stage mean/p95/max through `StageObserver`; `--baseline benches/baseline.json --strict`; the `StageTimer` is il_cli's one allowed `Instant` user because it only observes stage boundaries) plus criterion micro-benches in `benches/benches/` (`spatial`, `formation`, `nav`, `layout`, `tick`; T1-080) | every push, warn-only on CI runners; `--strict` on the target machine (`docs/evidence/phase1/machine.md`) | REQ-TEST-003, REQ-PERF-005 |
 | Replay verify (T2-101) | `il_cli autoresolve tests/scenarios/ai_skirmish_300.json5 --record-replay F` then `il_cli replay F --verify --threads 8` (the generated file is the `tests/replays/` of the plan; nothing binary is committed); every push runs the in-process recording, verification, save/load and playback tests (`crates/il_cli/tests/replay.rs`, `crates/il_app/src/session.rs`) | nightly (`.github/workflows/nightly.yml`) | REQ-SAVE-005, REQ-SAVE-006 |
 | Cross-machine hash compare | manual runbook, `il_cli run --hash-log` on two machines and `il_cli desync-report` | before Phase 7 | REQ-TEST-006 |
 
-`il_cli` subcommands: `run <scenario.json5> --ticks N [--hash-every K] [--threads T] [--snapshot-at T] [--restore-from F] [--mod DIR]...` (a scenario is a `BattleSetup` plus an optional `commands: [Command]` list fed by tick, T1-081; a restored run skips the commands up to the snapshot tick), `bench --soldiers N --ticks T [--threads] [--json F] [--baseline F] [--strict] [--record-baseline F --machine M --recorded D]` (T1-080; the setup is generated in code: `N / 200` regiments of alternating infantry on `rome:test_field` with a 600-tick move/reform script), `replay <file> [--verify] [--threads T] [--content-root D] [--mod DIR]... [--force]` (T2-101, §14), `validate <mods...>`, `bands <dir|file> [--seeds N] [--max-ticks T] [--jobs J] [--json F] [--content-root D] [--mod DIR]...` (T2-110; exit 1 when an active assertion fails), `desync-report <log_a> <log_b>`, `autoresolve <scenario.json5> [--ai all|none|1,2] [--max-ticks N] [--threads T] [--json F] [--mod DIR]... [--record-replay F]` (T2-071/T2-082: the engine takes the listed players (default all) at tick 1, the rest run their scripted commands, to Ended or the cap; the `BattleResult` as JSON, exit 2 when it did not end; `--record-replay` writes the battle's replay, T2-101), `genart [--mod-root]` (placeholder sprite sheets, T1-051), `genmap [--mod-root] [--id] [--seed]` (the deterministic Phase 1 test map and its heightmap, T1-030).
+`il_cli` subcommands: `run <scenario.json5> --ticks N [--hash-every K] [--threads T] [--snapshot-at T] [--restore-from F] [--mod DIR]...` (a scenario is a `BattleSetup` plus an optional `commands: [Command]` list fed by tick, T1-081; a restored run skips the commands up to the snapshot tick), `bench (--soldiers N | --scenario F) [--ticks T] [--threads] [--json F] [--baseline F] [--strict] [--record-baseline F --machine M --recorded D]` (T1-080; the setup is generated in code: `N / 200` regiments of alternating infantry on `rome:test_field` with a 600-tick move/reform script; T2-111: `--scenario` times a scenario file instead, 1,200 ticks by default, stopping at `Ended`, keyed in the baseline by the file's stem), `replay <file> [--verify] [--threads T] [--content-root D] [--mod DIR]... [--force]` (T2-101, §14), `validate <mods...>`, `bands <dir|file> [--seeds N] [--max-ticks T] [--jobs J] [--json F] [--content-root D] [--mod DIR]...` (T2-110; exit 1 when an active assertion fails), `desync-report <log_a> <log_b>`, `autoresolve <scenario.json5> [--ai all|none|1,2] [--max-ticks N] [--threads T] [--json F] [--mod DIR]... [--record-replay F]` (T2-071/T2-082: the engine takes the listed players (default all) at tick 1, the rest run their scripted commands, to Ended or the cap; the `BattleResult` as JSON, exit 2 when it did not end; `--record-replay` writes the battle's replay, T2-101), `genart [--mod-root]` (placeholder sprite sheets, T1-051), `genmap [--mod-root] [--id] [--seed]` (the deterministic Phase 1 test map and its heightmap, T1-030).
 
 ## 18. Coding conventions and determinism checklist
 

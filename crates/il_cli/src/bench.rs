@@ -12,6 +12,10 @@
 //! of them, a wheel for the other half, a return march, a reform to line
 //! and a halt, all inside [`SCRIPT_TICKS`] ticks.
 //!
+//! `--scenario <file>` times a scenario file instead (T2-111): the 10k
+//! fight `tests/scenarios/perf_10k.json5` is the Phase 2 profile; the
+//! baseline keys such a run by the file's stem.
+//!
 //! Timing goes through a [`StageObserver`], which sees the stage
 //! boundaries and nothing else: the clock never reaches the sim.
 // Wall-clock durations are reported in milliseconds as f64; nothing here
@@ -66,8 +70,12 @@ const ADVANCE: f32 = 50.0;
 /// Options of `il_cli bench`.
 #[derive(Clone, Debug)]
 pub struct BenchOptions {
-    /// Soldier count; a multiple of [`REGIMENT_SIZE`].
+    /// Soldier count; a multiple of [`REGIMENT_SIZE`]. Ignored with
+    /// `scenario`.
     pub soldiers: u32,
+    /// A scenario file to time instead of the generated setup (T2-111);
+    /// the baseline key is its stem.
+    pub scenario: Option<PathBuf>,
     /// Ticks to step.
     pub ticks: u32,
     /// Worker threads (`1` = single-threaded executor).
@@ -92,6 +100,7 @@ impl BenchOptions {
     pub fn new(soldiers: u32, ticks: u32) -> Self {
         Self {
             soldiers,
+            scenario: None,
             ticks,
             threads: 8,
             content_root: PathBuf::from("game"),
@@ -143,6 +152,9 @@ pub struct StageReport {
 /// One bench run; the unit stored per soldier count in a [`Baseline`].
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BenchReport {
+    /// The scenario file's stem for a `--scenario` run (T2-111).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scenario: Option<String>,
     pub soldiers: u32,
     pub regiments: u32,
     pub ticks: u32,
@@ -155,8 +167,18 @@ pub struct BenchReport {
     pub phase1_stages_mean_ms: f64,
 }
 
-/// `benches/baseline.json`: one report per soldier count, keyed by the
-/// count as a decimal string.
+impl BenchReport {
+    /// The baseline key: the scenario stem, else the soldier count.
+    pub fn key(&self) -> String {
+        self.scenario
+            .clone()
+            .unwrap_or_else(|| self.soldiers.to_string())
+    }
+}
+
+/// `benches/baseline.json`: one report per generated soldier count, keyed
+/// by the count as a decimal string, and one per timed scenario file,
+/// keyed by its stem (T2-111).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Baseline {
     pub machine: String,
@@ -179,6 +201,10 @@ impl Baseline {
 
     pub fn run_for(&self, soldiers: u32) -> Option<&BenchReport> {
         self.runs.get(&soldiers.to_string())
+    }
+
+    pub fn run_for_key(&self, key: &str) -> Option<&BenchReport> {
+        self.runs.get(key)
     }
 }
 
@@ -373,7 +399,11 @@ pub fn generate_scenario(soldiers: u32) -> anyhow::Result<Scenario> {
     );
     push(560, 0, CommandKind::Halt { regiments: all });
     debug_assert!(commands.iter().all(|c| c.tick.0 <= SCRIPT_TICKS));
-    Ok(Scenario { setup, commands })
+    Ok(Scenario {
+        setup,
+        commands,
+        determinism: None,
+    })
 }
 
 /// Collects per-stage and per-tick wall times (milliseconds).
@@ -422,7 +452,17 @@ impl StageObserver for StageTimer {
 }
 
 impl StageTimer {
-    pub fn report(mut self, soldiers: u32, regiments: u32, threads: usize) -> BenchReport {
+    pub fn report(self, soldiers: u32, regiments: u32, threads: usize) -> BenchReport {
+        self.report_named(None, soldiers, regiments, threads)
+    }
+
+    pub fn report_named(
+        mut self,
+        scenario: Option<String>,
+        soldiers: u32,
+        regiments: u32,
+        threads: usize,
+    ) -> BenchReport {
         let stages: Vec<StageReport> = Stage::ALL
             .iter()
             .map(|stage| StageReport {
@@ -436,6 +476,7 @@ impl StageTimer {
             .map(|s| s.summary.mean_ms)
             .sum();
         BenchReport {
+            scenario,
             soldiers,
             regiments,
             ticks: self.ticks.len() as u32,
@@ -453,20 +494,42 @@ impl StageTimer {
     }
 }
 
-/// Steps the generated scenario and returns the timings.
+/// Steps the generated scenario (or `--scenario`'s file) and returns the
+/// timings. A scenario run stops early at `Ended`.
 pub fn measure(opts: &BenchOptions) -> anyhow::Result<BenchReport> {
     let regs = load_registries(&opts.content_root)?;
-    let scenario = generate_scenario(opts.soldiers)?;
-    let regiments = scenario.setup.sides[0].regiments.len() as u32;
+    let (scenario, name) = match &opts.scenario {
+        Some(path) => (
+            crate::load_scenario(path)?,
+            Some(
+                path.file_stem()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "scenario".to_owned()),
+            ),
+        ),
+        None => (generate_scenario(opts.soldiers)?, None),
+    };
+    let soldiers = scenario.setup.soldier_total();
+    let regiments = scenario
+        .setup
+        .sides
+        .iter()
+        .map(|s| s.regiments.len() as u32)
+        .sum();
     let mut script = scenario.script();
     let mut world = BattleWorld::new(&scenario.setup, regs)?;
     world.set_threads(opts.threads);
     let mut timer = StageTimer::new();
-    while world.tick().0 < opts.ticks {
+    while world.tick().0 < opts.ticks && world.phase() != il_sim_battle::BattlePhase::Ended {
         let commands = script.take_for(world.tick().next());
         world.step_observed(&commands, &mut timer);
     }
-    Ok(timer.report(opts.soldiers, regiments, opts.threads))
+    let soldiers = if name.is_some() {
+        soldiers
+    } else {
+        opts.soldiers
+    };
+    Ok(timer.report_named(name, soldiers, regiments, opts.threads))
 }
 
 fn write_table(
@@ -476,8 +539,16 @@ fn write_table(
 ) -> anyhow::Result<()> {
     writeln!(
         out,
-        "bench: {} soldiers in {} regiments, {} ticks, {} thread(s), {} build",
-        report.soldiers, report.regiments, report.ticks, report.threads, report.profile
+        "bench: {}{} soldiers in {} regiments, {} ticks, {} thread(s), {} build",
+        report
+            .scenario
+            .as_deref()
+            .map_or(String::new(), |s| format!("{s}: ")),
+        report.soldiers,
+        report.regiments,
+        report.ticks,
+        report.threads,
+        report.profile
     )?;
     match base {
         Some(_) => writeln!(
@@ -542,7 +613,8 @@ pub fn bench(
         Some(path) => Some(Baseline::load(path)?),
         None => None,
     };
-    let base_run = baseline.as_ref().and_then(|b| b.run_for(opts.soldiers));
+    let key = report.key();
+    let base_run = baseline.as_ref().and_then(|b| b.run_for_key(&key));
     write_table(out, &report, base_run)?;
 
     let mut regressions = Vec::new();
@@ -550,8 +622,7 @@ pub fn bench(
         match base_run {
             None => writeln!(
                 out,
-                "baseline: no run for {} soldiers in {}",
-                opts.soldiers,
+                "baseline: no run keyed {key} in {}",
                 opts.baseline
                     .as_ref()
                     .map_or_else(String::new, |p| p.display().to_string())
@@ -599,14 +670,9 @@ pub fn bench(
         if let Some(d) = &opts.recorded {
             b.recorded.clone_from(d);
         }
-        b.runs.insert(opts.soldiers.to_string(), report.clone());
+        b.runs.insert(key.clone(), report.clone());
         b.save(path)?;
-        writeln!(
-            out,
-            "baseline: recorded {} soldiers in {}",
-            opts.soldiers,
-            path.display()
-        )?;
+        writeln!(out, "baseline: recorded {key} in {}", path.display())?;
     }
     Ok((report, regressions))
 }
@@ -639,6 +705,7 @@ mod tests {
 
     fn report(stages: Vec<StageReport>, tick: f64) -> BenchReport {
         BenchReport {
+            scenario: None,
             soldiers: 2000,
             regiments: 10,
             ticks: 10,
@@ -755,5 +822,29 @@ mod tests {
         assert_eq!(back, b);
         assert!(back.run_for(2000).is_some());
         assert!(back.run_for(10_000).is_none());
+        let mut named = report(vec![stage("Combat", 10, 1.0)], 2.0);
+        named.scenario = Some("perf_10k".to_owned());
+        assert_eq!(named.key(), "perf_10k");
+        b.runs.insert(named.key(), named);
+        let text = serde_json::to_string(&b).unwrap();
+        let back: Baseline = serde_json::from_str(&text).unwrap();
+        assert!(back.run_for_key("perf_10k").is_some());
+        assert!(back.run_for(2000).is_some());
+    }
+
+    /// A scenario file times as itself: the stem is the key, the counts
+    /// come from the file, the run stops at `Ended`.
+    #[test]
+    fn scenario_runs_are_keyed_by_their_stem() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut opts = BenchOptions::new(0, 5);
+        opts.threads = 1;
+        opts.content_root = root.join("game");
+        opts.scenario = Some(root.join("tests/scenarios/idle_1000.json5"));
+        let r = measure(&opts).unwrap();
+        assert_eq!(r.key(), "idle_1000");
+        assert_eq!(r.soldiers, 1_002, "1,000 soldiers plus two generals");
+        assert_eq!(r.regiments, 2);
+        assert_eq!(r.ticks, 5);
     }
 }

@@ -159,12 +159,43 @@ pub struct Scenario {
     pub setup: BattleSetup,
     #[serde(default)]
     pub commands: Vec<Command>,
+    /// How far the determinism test runs this file (T2-111/T2-112, plan
+    /// decision 4); absent means the default budget.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub determinism: Option<DeterminismBudget>,
+}
+
+/// The determinism test's budget for one scenario file: run `ticks` ticks,
+/// snapshot and restore at `snapshot_at` (REQ-TEST-002, TDD §17).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeterminismBudget {
+    pub ticks: u32,
+    pub snapshot_at: u32,
+}
+
+impl DeterminismBudget {
+    /// The budget of a file without a `determinism` block.
+    pub const DEFAULT: Self = Self {
+        ticks: 10_000,
+        snapshot_at: 5_000,
+    };
+}
+
+impl Default for DeterminismBudget {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
 }
 
 impl Scenario {
     /// The command stream as a tick-ordered script.
     pub fn script(&self) -> ScriptedCommands {
         ScriptedCommands::new(self.commands.clone())
+    }
+
+    /// The file's determinism budget, or the default.
+    pub fn determinism_budget(&self) -> DeterminismBudget {
+        self.determinism.unwrap_or_default()
     }
 }
 

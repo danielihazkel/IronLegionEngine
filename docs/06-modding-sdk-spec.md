@@ -627,6 +627,7 @@ A scenario file (`tests/scenarios/*.json5`, `il_cli run`, `il_cli autoresolve`, 
 | `sides[].general` | object | required | `{ unit_type, rank (1), name_key, bodyguard (the first regiment's id) }` |
 | `sides[].regiments[]` | object | required | `{ id, unit_type, count, experience (0), fatigue (0), formation (the unit's first), position, facing_deg }`; a `position` pre-deploys the regiment (a fully placed side starts confirmed, a fully placed battle starts in the Battle phase), otherwise it is auto-placed at the zone centre and awaits `Deploy` |
 | `sides[].reinforcements[]` | object | `[]` | `{ arrival_tick (since the Battle phase began), edge ("north" … as the map lists for the zone), regiments }` (SIM-FLOW-016) |
+| `determinism` | object | none | `{ ticks, snapshot_at }`: how far `tests/tests/determinism.rs` runs the file and where it restores (default 10,000 / 5,000; `perf_10k.json5` uses 800 / 400; T2-111) |
 | `commands[]` | object | `[]` | `{ tick, player, seq, kind }`, `kind` an externally tagged `CommandKind` (`{ Move: {...} }`, `"ConfirmDeployment"`), applied at Stage 0 of `tick`; `il_cli autoresolve` drops the commands of players it hands to the engine (default all, `--ai`) |
 
 ### 4.14 Sound sets — `content/sounds/`

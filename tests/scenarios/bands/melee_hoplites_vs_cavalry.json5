@@ -8,6 +8,8 @@
 {
   map_id: "rome:test_field",
   seed: 0,
+  // T2-112: the determinism test's budget (restore at 1,000 per Simulation Spec 15.3).
+  determinism: { ticks: 1500, snapshot_at: 1000 },
   sides: [
     {
       faction: "greece:greece", player: 0, deployment_zone: 0,

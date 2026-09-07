@@ -152,6 +152,7 @@ fn a_saved_setup_parses_back_as_a_scenario_and_builds_the_same_world() {
     let scenario = Scenario {
         setup: setup.clone(),
         commands: Vec::new(),
+        determinism: None,
     };
     let text = serde_json::to_string_pretty(&scenario).unwrap();
     let back: Scenario = json5::from_str(&text).expect("pretty JSON is JSON5");

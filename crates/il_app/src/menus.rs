@@ -228,6 +228,7 @@ pub fn write_scenario(path: &Path, setup: &BattleSetup) -> anyhow::Result<()> {
     let scenario = Scenario {
         setup: setup.clone(),
         commands: Vec::new(),
+        determinism: None,
     };
     let text = serde_json::to_string_pretty(&scenario)?;
     if let Some(dir) = path.parent()

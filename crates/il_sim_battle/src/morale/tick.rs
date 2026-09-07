@@ -106,12 +106,64 @@ fn nearest_enemy(rows: &[Row], i: usize) -> Option<(usize, S)> {
     best
 }
 
+/// The side of every soldier-grid entry, in entry order, once per tick
+/// (T2-111); `NO_SIDE` for an entry without a regiment.
+const NO_SIDE: u8 = u8::MAX;
+
+fn entry_sides(world: &World, rows: &[Row]) -> Vec<u8> {
+    let grid = &world.resource::<SpatialGridRes>().0;
+    let ids = world.resource::<Ids>();
+    grid.entries()
+        .iter()
+        .map(|e| {
+            world
+                .get::<Soldier>(e.entity)
+                .and_then(|s| ids.regiment_index(s.regiment))
+                .and_then(|j| rows.get(j))
+                .map_or(NO_SIDE, |r| r.side)
+        })
+        .collect()
+}
+
+/// Gathers every row's inputs, in parallel when a pool exists (T2-111):
+/// `inputs` reads the pre-stage state only, so the chunks are independent
+/// and the result is in row order either way.
+fn gather(world: &World, rows: &[Row], tick: Tick, sides: &[u8]) -> Vec<Option<MoraleInputs>> {
+    let n = rows.len();
+    let one = |i: usize, scratch: &mut Vec<usize>| {
+        (rows[i].count > 0).then(|| inputs(world, rows, i, tick, sides, scratch))
+    };
+    match bevy_tasks::ComputeTaskPool::try_get() {
+        Some(pool) if pool.thread_num() > 1 && n > 1 => {
+            let chunk = n.div_ceil(pool.thread_num());
+            let mut parts: Vec<Vec<Option<MoraleInputs>>> =
+                (0..n.div_ceil(chunk)).map(|_| Vec::new()).collect();
+            pool.scope(|scope| {
+                for (k, part) in parts.iter_mut().enumerate() {
+                    scope.spawn(async move {
+                        let mut scratch = Vec::new();
+                        for i in k * chunk..((k + 1) * chunk).min(n) {
+                            part.push(one(i, &mut scratch));
+                        }
+                    });
+                }
+            });
+            parts.into_iter().flatten().collect()
+        }
+        _ => {
+            let mut scratch = Vec::new();
+            (0..n).map(|i| one(i, &mut scratch)).collect()
+        }
+    }
+}
+
 /// Gathers `MoraleInputs` for `rows[i]` (a regiment with soldiers).
 fn inputs(
     world: &World,
     rows: &[Row],
     i: usize,
     tick: Tick,
+    sides: &[u8],
     scratch: &mut Vec<usize>,
 ) -> MoraleInputs {
     let regs = &world.resource::<Regs>().0;
@@ -160,14 +212,10 @@ fn inputs(
     grid.query_circle_indices(row.anchor, rules.outnumber_radius, scratch);
     let (mut own_near, mut enemies_near) = (0u32, 0u32);
     for &k in scratch.iter() {
-        let e = grid.entries()[k];
-        let Some(side) = world
-            .get::<Soldier>(e.entity)
-            .and_then(|s| ids.regiment_index(s.regiment))
-            .map(|j| rows[j].side)
-        else {
+        let side = sides.get(k).copied().unwrap_or(NO_SIDE);
+        if side == NO_SIDE {
             continue;
-        };
+        }
         if side == row.side {
             own_near += 1;
         } else {
@@ -223,10 +271,8 @@ pub fn morale_tick(world: &mut World) {
     let hundred = S::from_i32(100);
 
     // Gather, then apply: every input reads the pre-stage state.
-    let mut scratch = Vec::new();
-    let gathered: Vec<Option<MoraleInputs>> = (0..rows.len())
-        .map(|i| (rows[i].count > 0).then(|| inputs(world, &rows, i, tick, &mut scratch)))
-        .collect();
+    let sides = entry_sides(world, &rows);
+    let gathered = gather(world, &rows, tick, &sides);
 
     for (row, inp) in rows.iter().zip(gathered) {
         let Some(inp) = inp else {

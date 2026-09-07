@@ -97,7 +97,7 @@ fn baseline_records_compares_and_strict_flags_a_regression() {
     assert!(
         String::from_utf8(out)
             .unwrap()
-            .contains("no run for 10000 soldiers")
+            .contains("no run keyed 10000 in")
     );
 
     std::fs::remove_dir_all(&dir).unwrap();

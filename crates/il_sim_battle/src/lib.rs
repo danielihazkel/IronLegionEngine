@@ -40,9 +40,9 @@ pub use formation::{
 };
 pub use il_data::Rules;
 pub use interface::{
-    BattleResult, BattleSetup, GeneralFate, GeneralSetup, RegimentResult, RegimentSetup,
-    ReinforcementGroup, SOLDIER_CAP, Scenario, ScriptedCommands, SideResult, SideSetup,
-    VictoryRules, Weather,
+    BattleResult, BattleSetup, DeterminismBudget, GeneralFate, GeneralSetup, RegimentResult,
+    RegimentSetup, ReinforcementGroup, SOLDIER_CAP, Scenario, ScriptedCommands, SideResult,
+    SideSetup, VictoryRules, Weather,
 };
 pub use map::{FLAT_MAP_ID, LoadedMap, MapError, polygon_contains};
 pub use nav::{AStar, NavGrid, PathResult, Pathfinder, string_pull};

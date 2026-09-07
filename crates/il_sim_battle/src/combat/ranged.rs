@@ -144,6 +144,7 @@ pub fn ranged_target(world: &mut World) {
     };
     let extent_max = extent.iter().fold(S::ZERO, |a, b| a.max(*b));
     let mut found: Vec<Entry<RegimentId>> = Vec::new();
+    let mut scratch: Vec<usize> = Vec::new();
 
     for (i, (rid, entity)) in regiment_entities.iter().enumerate() {
         let Some(fire) = world.get::<Fire>(*entity).copied() else {
@@ -208,10 +209,12 @@ pub fn ranged_target(world: &mut World) {
                 FireMode::Target(t) => (annulus(world, t) >= 1).then_some(t),
                 FireMode::FireAtWill => {
                     let radius = ranged.range * (S::ONE + height_range) + extent_max;
-                    world
-                        .resource::<AnchorGridRes>()
-                        .0
-                        .query_circle(anchor, radius, &mut found);
+                    world.resource::<AnchorGridRes>().0.query_circle_with(
+                        anchor,
+                        radius,
+                        &mut scratch,
+                        &mut found,
+                    );
                     let mut best: Option<(u32, RegimentId)> = None;
                     // The current target is counted first so an equal count
                     // keeps it (SIM-PROJ-001 "preferring the current target").
@@ -265,10 +268,12 @@ pub fn ranged_target(world: &mut World) {
         // SIM-PROJ-009: friendly regiments that could mask a direct shot.
         if may_fire[i] && ranged.arc == ProjectileArc::Direct {
             let radius = block_dist + extent[i] + extent_max;
-            world
-                .resource::<AnchorGridRes>()
-                .0
-                .query_circle(anchor, radius, &mut found);
+            world.resource::<AnchorGridRes>().0.query_circle_with(
+                anchor,
+                radius,
+                &mut scratch,
+                &mut found,
+            );
             for e in &found {
                 if e.id == *rid {
                     continue;

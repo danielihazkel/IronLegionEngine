@@ -58,3 +58,7 @@ jobs:
       # +20 % change here is a hint; `--strict` is for the recording PC.
       - name: Benchmark against the checked-in baseline
         run: cargo run --release -p il_cli -- bench --soldiers 2000 --ticks 100 --baseline benches/baseline.json
+
+      # T2-111: the 10k fight, keyed `perf_10k` in the baseline; warn-only here too.
+      - name: Benchmark the 10k fight against the baseline
+        run: cargo run --release -p il_cli -- bench --scenario tests/scenarios/perf_10k.json5 --ticks 300 --baseline benches/baseline.json

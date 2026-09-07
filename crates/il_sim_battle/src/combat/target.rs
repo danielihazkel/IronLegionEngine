@@ -77,6 +77,9 @@ pub fn melee_target(
         Mut<Fsm>,
         Mut<MeleeState>,
     )| {
+        // `Mut` handles are handed down so a soldier that keeps its state
+        // is not marked changed (T2-111): reads go through `Deref`, only
+        // the writes through `DerefMut`.
         ctx.soldier(soldier, pos, body, rank, &mut fsm, &mut melee, scratch);
     };
     let parallel = bevy_tasks::ComputeTaskPool::try_get().is_some_and(|p| p.thread_num() > 1);
@@ -120,13 +123,15 @@ impl Ctx<'_, '_, '_> {
         pos: &Pos,
         body: &Body,
         rank: &Rank,
-        fsm: &mut Fsm,
-        melee: &mut MeleeState,
+        fsm: &mut Mut<Fsm>,
+        melee: &mut Mut<MeleeState>,
         scratch: &mut Vec<usize>,
     ) {
         let rules = &self.regs.rules.combat;
-        let leave = |fsm: &mut Fsm, melee: &mut MeleeState| {
-            melee.target = None;
+        let leave = |fsm: &mut Mut<Fsm>, melee: &mut Mut<MeleeState>| {
+            if melee.target.is_some() {
+                melee.target = None;
+            }
             if fsm.state == SoldierState::Fighting {
                 fsm.state = SoldierState::MoveToSlot;
                 fsm.since = self.tick;
@@ -137,7 +142,9 @@ impl Ctx<'_, '_, '_> {
             fsm.state,
             SoldierState::Idle | SoldierState::MoveToSlot | SoldierState::Fighting
         ) {
-            melee.target = None;
+            if melee.target.is_some() {
+                melee.target = None;
+            }
             return;
         }
         let Some(ri) = self.ids.regiment_index(soldier.regiment) else {

@@ -145,19 +145,30 @@ pub fn fatigue_tick(
     let regs = &regs.0;
     let map = &map.0;
     let ids = &ids;
-    let regiments = &regiments;
     let rules = &regs.rules.fatigue;
+    // The regiment's motion, speed and status rate once per tick (T2-111)
+    // instead of three component fetches per soldier.
+    let table: Vec<(bool, SpeedMode, S)> = ids
+        .regiment_entities
+        .iter()
+        .map(|(_, e)| {
+            regiments
+                .get(*e)
+                .map_or((false, SpeedMode::Walk, S::ONE), |(o, path, combat, st)| {
+                    (
+                        anchor_moves(o, path, combat),
+                        o.speed,
+                        st.mults.fatigue_rate,
+                    )
+                })
+        })
+        .collect();
+    let table = &table;
     let run = |(soldier, pos, fsm, mut fatigue): FatigueItem<'_>| {
         let (moving, order_speed, status_rate) = ids
-            .regiment_entity(soldier.regiment)
-            .and_then(|e| regiments.get(e).ok())
-            .map_or((false, SpeedMode::Walk, S::ONE), |(o, path, combat, st)| {
-                (
-                    anchor_moves(o, path, combat),
-                    o.speed,
-                    st.mults.fatigue_rate,
-                )
-            });
+            .regiment_index(soldier.regiment)
+            .and_then(|i| table.get(i).copied())
+            .unwrap_or((false, SpeedMode::Walk, S::ONE));
         let Some(act) = activity(fsm.state, moving, order_speed) else {
             return;
         };

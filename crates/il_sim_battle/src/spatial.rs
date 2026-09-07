@@ -216,9 +216,21 @@ impl<Id: Copy + Ord> SpatialGrid<Id> {
     /// Every entry within `r` of `c`, ascending id (TDD §5 `query_circle`).
     pub fn query_circle(&self, c: V2, r: S, out: &mut Vec<Entry<Id>>) {
         let mut indices = Vec::new();
-        self.query_circle_indices(c, r, &mut indices);
+        self.query_circle_with(c, r, &mut indices, out);
+    }
+
+    /// [`Self::query_circle`] with the caller's index scratch, so a loop of
+    /// queries allocates nothing (T2-111).
+    pub fn query_circle_with(
+        &self,
+        c: V2,
+        r: S,
+        scratch: &mut Vec<usize>,
+        out: &mut Vec<Entry<Id>>,
+    ) {
+        self.query_circle_indices(c, r, scratch);
         out.clear();
-        out.extend(indices.into_iter().map(|i| self.entries[i]));
+        out.extend(scratch.iter().map(|&i| self.entries[i]));
     }
 
     /// Calls `f(i, j)` with `i < j` for every pair of entries in the same or

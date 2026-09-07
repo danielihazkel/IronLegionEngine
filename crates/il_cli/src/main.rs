@@ -88,11 +88,16 @@ struct AutoresolveArgs {
 #[derive(Args)]
 struct BenchArgs {
     /// Soldier count: a multiple of 200 (2000, 10000, 20000).
-    #[arg(long, default_value_t = 2000)]
+    #[arg(long, default_value_t = 2000, conflicts_with = "scenario")]
     soldiers: u32,
-    /// Ticks to step; the scripted command stream spans 600.
-    #[arg(long, default_value_t = 600)]
-    ticks: u32,
+    /// Time this scenario file instead of the generated setup (T2-111);
+    /// the baseline keys it by the file's stem (`perf_10k`).
+    #[arg(long)]
+    scenario: Option<PathBuf>,
+    /// Ticks to step; the generated command stream spans 600 (the
+    /// default), a scenario file gets 1,200.
+    #[arg(long)]
+    ticks: Option<u32>,
     /// Worker threads; 1 runs the single-threaded executor.
     #[arg(long, default_value_t = 8)]
     threads: usize,
@@ -236,9 +241,13 @@ fn main() -> anyhow::Result<()> {
             Ok(())
         }
         Command::Bench(a) => {
+            let ticks = a
+                .ticks
+                .unwrap_or(if a.scenario.is_some() { 1200 } else { 600 });
             let opts = il_cli::bench::BenchOptions {
                 soldiers: a.soldiers,
-                ticks: a.ticks,
+                scenario: a.scenario,
+                ticks,
                 threads: a.threads,
                 content_root: a.content_root,
                 json: a.json,
