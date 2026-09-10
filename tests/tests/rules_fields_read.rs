@@ -19,11 +19,6 @@ const ALLOWED_UNREAD: &[(&str, &str)] = &[
         "corpse_ticks",
         "render-only: il_app keeps corpses for this long (SIM-CORE-008)",
     ),
-    ("hpa_cluster", "Phase 3: HPA* clusters (SIM-MOVE-003)"),
-    (
-        "hpa_gate_split",
-        "Phase 3: HPA* gate splitting (SIM-MOVE-003)",
-    ),
     (
         "fled_return_fraction",
         "Phase 4: the campaign returns this fraction of the fled (SIM-FLOW-018)",

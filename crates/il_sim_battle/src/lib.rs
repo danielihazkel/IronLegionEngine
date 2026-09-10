@@ -13,6 +13,7 @@ pub mod flow;
 pub mod flow_battle;
 pub mod formation;
 pub mod hash;
+pub mod hpa;
 pub mod interface;
 pub mod map;
 pub mod morale;
@@ -38,6 +39,7 @@ pub use formation::{
     AssignScratch, AssignSoldier, Slot, assign_slots, effective_ranks, layout_for, layout_slots,
     ranks_for_width, slot_world,
 };
+pub use hpa::{DirtyRect, GateNode, Hpa, HpaGraph};
 pub use il_data::Rules;
 pub use interface::{
     BattleResult, BattleSetup, DeterminismBudget, GeneralFate, GeneralSetup, RegimentResult,

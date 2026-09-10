@@ -59,6 +59,9 @@ pub fn serve_path_requests(world: &mut World) {
         }
         let result = world.resource_scope(|world, mut pf: Mut<PathfinderRes>| {
             let nav = &world.resource::<NavGridRes>().0;
+            // T3-020: a swapped nav grid or a world built by `empty` gets
+            // its HPA* graph here; a world built by `new` already has it.
+            pf.0.ensure(nav, &world.resource::<Regs>().0.rules.movement);
             pf.0.find(nav, from, to, &mut out)
         });
         let nav = &world.resource::<NavGridRes>().0;
@@ -696,13 +699,16 @@ pub fn dijkstra_cost(nav: &NavGrid, start: (u32, u32), goal: (u32, u32)) -> Opti
     None
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Deterministic test grids, shared by the nav, flow-field and HPA\* tests
+/// and the nav benchmark (no `rand` in sim crates).
+#[doc(hidden)]
+pub mod test_grids {
+    use super::{IMPASSABLE, NavGrid};
+    use il_core::{S, Scalar};
 
-    struct Lcg(u64);
+    pub struct Lcg(pub u64);
     impl Lcg {
-        fn next(&mut self) -> u32 {
+        pub fn next_u32(&mut self) -> u32 {
             self.0 = self
                 .0
                 .wrapping_mul(6_364_136_223_846_793_005)
@@ -711,12 +717,11 @@ mod tests {
         }
     }
 
-    /// A random grid: ~25 % rock, the rest costs 100, 150 or 250 (shared
-    /// with the flow-field tests).
-    pub(crate) fn random_grid(cols: u32, rows: u32, seed: u64) -> NavGrid {
+    /// A random 4 m grid: ~25 % rock, the rest costs 100, 150 or 250.
+    pub fn random_grid(cols: u32, rows: u32, seed: u64) -> NavGrid {
         let mut g = Lcg(seed);
         let cost = (0..cols * rows)
-            .map(|_| match g.next() % 8 {
+            .map(|_| match g.next_u32() % 8 {
                 0 | 1 => IMPASSABLE,
                 2 => 250,
                 3 => 150,
@@ -725,6 +730,12 @@ mod tests {
             .collect();
         NavGrid::from_costs(S::from_i32(4), cols, rows, cost)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_grids::{Lcg, random_grid};
+    use super::*;
 
     fn v(x: f32, y: f32) -> V2 {
         V2::from_f32_data(x, y)
@@ -739,8 +750,8 @@ mod tests {
             let nav = random_grid(24, 18, seed);
             let mut g = Lcg(seed * 7 + 1);
             for _ in 0..6 {
-                let start = (g.next() % 24, g.next() % 18);
-                let goal = (g.next() % 24, g.next() % 18);
+                let start = (g.next_u32() % 24, g.next_u32() % 18);
+                let goal = (g.next_u32() % 24, g.next_u32() % 18);
                 let a = astar.search_cells(&nav, start, goal, &mut cells);
                 let d = dijkstra_cost(&nav, start, goal);
                 assert_eq!(a, d, "seed {seed} {start:?} -> {goal:?}");
@@ -773,8 +784,14 @@ mod tests {
             let nav = random_grid(20, 20, seed);
             let mut g = Lcg(seed);
             for _ in 0..5 {
-                let from = v((g.next() % 80) as f32 + 0.5, (g.next() % 80) as f32 + 0.5);
-                let to = v((g.next() % 80) as f32 + 0.5, (g.next() % 80) as f32 + 0.5);
+                let from = v(
+                    (g.next_u32() % 80) as f32 + 0.5,
+                    (g.next_u32() % 80) as f32 + 0.5,
+                );
+                let to = v(
+                    (g.next_u32() % 80) as f32 + 0.5,
+                    (g.next_u32() % 80) as f32 + 0.5,
+                );
                 if !nav.is_passable_at(from) || !nav.is_passable_at(to) {
                     continue;
                 }

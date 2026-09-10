@@ -17,7 +17,7 @@ use crate::command::{Command, RejectReason};
 use crate::events::BattleEvent;
 use crate::interface::BattleSetup;
 use crate::map::LoadedMap;
-use crate::nav::{AStar, NavGrid};
+use crate::nav::NavGrid;
 use crate::spatial::SpatialGrid;
 
 /// The tick being simulated is `tick + 1`; `tick` counts completed ticks.
@@ -268,9 +268,13 @@ pub struct AnchorGridRes(pub SpatialGrid<RegimentId>);
 #[derive(Resource, Clone)]
 pub struct NavGridRes(pub NavGrid);
 
-/// The path search (`AStar` in Phase 1, HPA* from Phase 3).
+/// The path search: `Hpa` since T3-020 (`AStar` in Phases 1 and 2). Its
+/// abstract graph is derived from the nav grid and the movement rules,
+/// rebuilt by `rebuild_derived` (never hashed or snapshotted); a world
+/// built by `empty` leaves it unbuilt and `serve_path_requests` builds it
+/// on the first request (`Hpa::ensure`).
 #[derive(Resource, Default)]
-pub struct PathfinderRes(pub AStar);
+pub struct PathfinderRes(pub crate::hpa::Hpa);
 
 /// SIM-FLOW-001: one escape field per side (index = side number), derived
 /// from the nav grid by `flow::rebuild_flow_fields` (T2-042); never hashed

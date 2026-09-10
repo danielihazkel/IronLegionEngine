@@ -688,6 +688,14 @@ impl BattleWorld {
             crate::nav::NavGrid::from_map(map, regs, &regs.rules.movement)
         };
         self.world.resource_mut::<crate::resources::NavGridRes>().0 = nav;
+        // T3-020: the HPA* graph follows the nav grid (SIM-MOVE-003).
+        self.world.resource_scope(
+            |world, mut pf: bevy_ecs::world::Mut<crate::resources::PathfinderRes>| {
+                let regs = &world.resource::<crate::resources::Regs>().0;
+                let nav = &world.resource::<crate::resources::NavGridRes>().0;
+                pf.0.rebuild(nav, &regs.rules.movement);
+            },
+        );
         crate::flow::rebuild_flow_fields(&mut self.world);
         let requested: Vec<RegimentId> = {
             let ids = self.world.resource::<Ids>();
