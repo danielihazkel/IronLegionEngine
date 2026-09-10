@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ironlegion.dev/schemas/scenario.schema.json",
+  "title": "Iron Legion scenario file",
+  "description": "A scenario file (tests/scenarios/*.json5; Modding SDK 4.13; SIM-FLOW-019): a BattleSetup with an optional scripted `commands` list, an optional `determinism` budget for the determinism test and, in band files, a `bands` block (Simulation Spec 15.3). Regiment ids in commands are the 0-based spawn order across sides, not the file's `id` fields. T3-002 (SIM-FORM-012): a regiment is either the `unit_type` + `count` shorthand or a `units` composition, never both.",
+  "x-schema-version": 1,
+  "$defs": {
+    "contentId": { "type": "string", "pattern": "^[a-z0-9_]+:[a-z0-9_]+$" },
+    "locKey": { "type": "string", "pattern": "^[a-z0-9_]+(\\.[a-z0-9_]+)+$" },
+    "point": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number" } },
+    "edge": { "enum": ["north", "south", "east", "west"] },
+    "unitGroup": {
+      "type": "object",
+      "description": "One unit group of a mixed regiment (SIM-FORM-012). Groups keep list order; a unit type may repeat.",
+      "properties": {
+        "unit_type": { "$ref": "#/$defs/contentId" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 32768 },
+        "experience": { "type": "integer", "minimum": 0, "maximum": 9, "default": 0 }
+      },
+      "required": ["unit_type", "count"],
+      "additionalProperties": false
+    },
+    "regimentCommon": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer", "minimum": 0, "description": "Campaign regiment id, echoed in RegimentResult." },
+        "fatigue": { "type": "number", "minimum": 0, "maximum": 1, "default": 0 },
+        "formation": { "$ref": "#/$defs/contentId", "description": "Default: the unit's first formation (the first group's for a composition)." },
+        "position": { "$ref": "#/$defs/point", "description": "Pre-deploy override (PRD OQ-9): a placed regiment starts deployed." },
+        "facing_deg": { "type": "number" }
+      },
+      "required": ["id"]
+    },
+    "regimentSetup": {
+      "description": "Either the single-unit shorthand (`unit_type`, `count`, `experience`) or a `units` composition (SIM-FORM-012); a file giving both is rejected.",
+      "allOf": [
+        { "$ref": "#/$defs/regimentCommon" },
+        {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "unit_type": { "$ref": "#/$defs/contentId" },
+                "count": { "type": "integer", "minimum": 1, "maximum": 32768 },
+                "experience": { "type": "integer", "minimum": 0, "maximum": 9, "default": 0 }
+              },
+              "required": ["unit_type", "count"],
+              "not": { "required": ["units"] }
+            },
+            {
+              "type": "object",
+              "properties": {
+                "units": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/unitGroup" } }
+              },
+              "required": ["units"],
+              "not": { "anyOf": [ { "required": ["unit_type"] }, { "required": ["count"] }, { "required": ["experience"] } ] }
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "propertyNames": { "enum": ["id", "unit_type", "count", "experience", "fatigue", "formation", "position", "facing_deg", "units"] }
+        }
+      ]
+    },
+    "general": {
+      "type": "object",
+      "properties": {
+        "unit_type": { "$ref": "#/$defs/contentId" },
+        "rank": { "type": "integer", "minimum": 1, "maximum": 255, "default": 1 },
+        "name_key": { "type": "string" },
+        "bodyguard": { "type": "integer", "minimum": 0, "description": "The `id` of the regiment the general rides with (T2-043)." }
+      },
+      "required": ["unit_type"],
+      "additionalProperties": false
+    },
+    "reinforcementGroup": {
+      "type": "object",
+      "properties": {
+        "arrival_tick": { "type": "integer", "minimum": 0, "description": "Ticks since the Battle phase began (SIM-FLOW-016)." },
+        "edge": { "$ref": "#/$defs/edge" },
+        "regiments": { "type": "array", "items": { "$ref": "#/$defs/regimentSetup" } }
+      },
+      "required": ["arrival_tick", "edge", "regiments"],
+      "additionalProperties": false
+    },
+    "side": {
+      "type": "object",
+      "properties": {
+        "faction": { "$ref": "#/$defs/contentId" },
+        "player": { "type": "integer", "minimum": 0, "maximum": 255, "description": "Owner player id; 255 is the engine AI." },
+        "deployment_zone": { "type": "integer", "minimum": 0, "maximum": 255, "default": 0 },
+        "ai_profile": { "$ref": "#/$defs/contentId" },
+        "general": { "$ref": "#/$defs/general" },
+        "regiments": { "type": "array", "items": { "$ref": "#/$defs/regimentSetup" } },
+        "reinforcements": { "type": "array", "items": { "$ref": "#/$defs/reinforcementGroup" }, "default": [] }
+      },
+      "required": ["faction", "player", "general", "regiments"],
+      "additionalProperties": false
+    },
+    "command": {
+      "type": "object",
+      "description": "A scripted Command applied at Stage 0 of `tick`; `kind` is an externally tagged CommandKind: a bare variant name (\"ConfirmDeployment\") or a single-key object ({ Move: {...} }).",
+      "properties": {
+        "tick": { "type": "integer", "minimum": 0 },
+        "player": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "seq": { "type": "integer", "minimum": 0, "maximum": 65535 },
+        "kind": {
+          "oneOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "object", "minProperties": 1, "maxProperties": 1 }
+          ]
+        }
+      },
+      "required": ["tick", "player", "seq", "kind"],
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "properties": {
+    "map_id": { "$ref": "#/$defs/contentId" },
+    "seed": { "type": "integer", "minimum": 0 },
+    "weather": { "enum": ["clear", "rain", "fog"], "default": "clear" },
+    "time_of_day": { "type": "integer", "minimum": 0, "maximum": 23, "default": 12 },
+    "time_limit_ticks": { "type": "integer", "minimum": 1, "default": 48000 },
+    "reveal_deployment": { "type": "boolean", "default": false },
+    "victory": {
+      "type": "object",
+      "properties": { "timeout_winner": { "type": ["integer", "null"], "minimum": 0, "maximum": 255 } },
+      "additionalProperties": false
+    },
+    "sides": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/side" } },
+    "commands": { "type": "array", "items": { "$ref": "#/$defs/command" }, "default": [] },
+    "determinism": {
+      "type": "object",
+      "description": "The determinism test's budget for this file (default 10,000 / 5,000).",
+      "properties": {
+        "ticks": { "type": "integer", "minimum": 1 },
+        "snapshot_at": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["ticks", "snapshot_at"],
+      "additionalProperties": false
+    },
+    "bands": {
+      "type": "object",
+      "description": "Band files only (il_cli bands, Simulation Spec 15.3): seeds, seed_base, tick_limit, assertions, plus optional mods, pin_morale and harness lists. The clause kinds are documented in il_cli::bands.",
+      "properties": {
+        "seeds": { "type": "integer", "minimum": 1 },
+        "seed_base": { "type": "integer", "minimum": 0 },
+        "tick_limit": { "type": "integer", "minimum": 1 },
+        "mods": { "type": "array", "items": { "type": "string" } },
+        "pin_morale": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 255 } },
+        "harness": { "type": "array", "items": { "type": "object" } },
+        "assertions": { "type": "array", "items": { "type": "object", "required": ["name", "kind"] } }
+      },
+      "required": ["seeds", "seed_base", "tick_limit", "assertions"],
+      "additionalProperties": false
+    }
+  },
+  "required": ["map_id", "seed", "sides"],
+  "additionalProperties": false
+}

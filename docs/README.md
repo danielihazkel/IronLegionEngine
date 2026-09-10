@@ -47,7 +47,7 @@ The original LaTeX PRD (`../iron_legion_engine_prd.tex`) is v0.1 and is kept for
 | Determinism, sim core | SIM 001–009 | §3, §8, §9 | §2 | §2, §4 | §5, §9 | — |
 | World, battle flow, terrain, visibility | SIM 020–053 | §6 | §1, §5, §11, §12 | §4, §6 | — | §4 (maps) |
 | Campaign ↔ battle | SIM 060–064 | §6.4 | §12, §14 | §4, §9 | §6 | — |
-| Formations | FORM | §5 | §4 | §7 | — | §4 |
+| Formations | FORM | §5 | §4 (mixed regiments: §4.1 SIM-FORM-011..015) | §4.2, §4.3, §7 | — | §4.2, §4.13 (`scenario.schema.json`) |
 | Pathfinding, spatial | PATH | §5 | §5 | §5, §6 | — | — |
 | Combat, commanders | CMBT | §5 | §6, §9 | §8 | — | §4 |
 | Abilities | ABIL | §5 | §10 | §8 | — | §4 |

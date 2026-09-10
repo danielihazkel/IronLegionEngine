@@ -441,6 +441,26 @@ fn json_type_name(v: &serde_json::Value) -> &'static str {
     }
 }
 
+/// Validates `value` against any draft 2020-12 schema given as source text
+/// and returns one `instance path: message` line per error, in schema
+/// order (T3-002). The scenario schema (`docs/schemas/scenario.schema.json`)
+/// is not a content kind, so the integration test validates the scenario
+/// files through this instead of a `KindTag`; a schema that does not compile
+/// is a single error line.
+pub fn validate_free(schema_source: &str, value: &serde_json::Value) -> Vec<String> {
+    let raw: serde_json::Value = match serde_json::from_str(schema_source) {
+        Ok(v) => v,
+        Err(e) => return vec![format!("schema is not JSON: {e}")],
+    };
+    let validator = match build(&raw) {
+        Ok(v) => v,
+        Err(e) => return vec![format!("schema is invalid: {e}")],
+    };
+    validator
+        .iter_errors(value)
+        .map(|e| format!("{}: {e}", e.instance_path()))
+        .collect()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
