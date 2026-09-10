@@ -12,7 +12,7 @@ use il_data::{
     UnitCategory,
 };
 
-use crate::ai::inputs::{RegRow, SideSnapshot};
+use crate::ai::inputs::{RegRow, SideSnapshot, far};
 use crate::ai::{ArmyPlan, Assignment, Decisions, Role, Stance};
 use crate::command::CommandKind;
 use crate::components::OrderKind;
@@ -184,18 +184,77 @@ pub fn choose_stance(
     }
 }
 
-/// The battle line the plan lays its line regiments on (plan I14).
-fn line_template(gap: S) -> GroupFormationTemplate {
+/// The battle line the plan lays its line regiments on (plan I14), or the
+/// double line of SIM-FORM-042 when `lines` is 2 (T3-010).
+fn line_template(gap: S, lines: u8) -> GroupFormationTemplate {
     GroupFormationTemplate {
         id: ContentId::new("il:ai_line").expect("valid id"),
         name_key: String::new(),
-        kind: GroupKind::BattleLine,
+        kind: if lines > 1 {
+            GroupKind::DoubleLine
+        } else {
+            GroupKind::BattleLine
+        },
         gap,
         skirmishers_forward: false,
         cavalry_flanks: false,
-        lines: 1,
+        lines,
         deprecated: None,
     }
+}
+
+/// A missile unit: ranged or skirmisher (the enemy's screen, not its line).
+fn is_missile(r: &RegRow) -> bool {
+    matches!(r.category, UnitCategory::Ranged | UnitCategory::Skirmisher)
+}
+
+/// The room a line has across the map (T3-010): the map rectangle's
+/// extent along the line's lateral axis `right`, less a gap at each end.
+pub fn lateral_room(map: &LoadedMap, right: V2, gap: S) -> S {
+    (right.x.abs() * map.width + right.y.abs() * map.height - gap - gap).max(S::ZERO)
+}
+
+/// SIM-AI-011 (T3-010): the line's placements on a battle line of at most
+/// `width`, folded onto a double line (SIM-FORM-042 geometry, the gaps
+/// covered by the second line) when even its deepest ranks leave the
+/// single line wider than `room`, so a frontage the map cannot hold folds
+/// instead of spilling past the edges. Returns whether it doubled.
+pub fn lay_line(
+    regs: &Registries,
+    infos: &[RegimentInfo],
+    anchor: V2,
+    facing: Angle<S>,
+    width: S,
+    room: S,
+) -> (Vec<crate::formation::Placement>, bool) {
+    let rules = &regs.rules.formation;
+    let forward = facing.direction();
+    let right = V2::new(forward.y, -forward.x);
+    // The rank selection may overshoot its width by `width_tolerance`
+    // (SIM-FORM-042), so the room is asked for net of it.
+    let width = width.min(room / (S::ONE + rules.width_tolerance));
+    let single = arrange_group(
+        &line_template(rules.group_gap, 1),
+        infos,
+        anchor,
+        facing,
+        width,
+        rules,
+        regs,
+    );
+    if infos.len() < 2 || arranged_width(&single, infos, regs, right) <= room {
+        return (single, false);
+    }
+    let double = arrange_group(
+        &line_template(rules.group_gap, 2),
+        infos,
+        anchor,
+        facing,
+        width,
+        rules,
+        regs,
+    );
+    (double, true)
 }
 
 fn info(r: &RegRow, regs: &Registries) -> RegimentInfo {
@@ -275,10 +334,22 @@ fn line_lag(line: &[&RegRow], prev: &ArmyPlan, forward: V2) -> S {
     if n > 0 { sum / S::from_i32(n) } else { S::ZERO }
 }
 
-/// Whether the enemy `e` sits beyond a line end and within reach of it.
-fn threatens_flank(e: &RegRow, anchor: V2, right: V2, half_width: S, reach: S) -> bool {
+/// Whether the enemy `e` sits beyond a line end, within reach of it, and
+/// no farther ahead of the line than that reach (T3-010: the attacking
+/// line is narrower than the enemy's, so the enemy regiments it does not
+/// strike stand beyond its ends; they threaten the flank once level with
+/// it, not while still far ahead).
+fn threatens_flank(
+    e: &RegRow,
+    anchor: V2,
+    right: V2,
+    forward: V2,
+    half_width: S,
+    reach: S,
+) -> bool {
     let lateral = (e.anchor - anchor).dot(right);
-    lateral.abs() > half_width && lateral.abs() - half_width <= reach
+    let ahead = (e.anchor - anchor).dot(forward);
+    lateral.abs() > half_width && lateral.abs() - half_width <= reach && ahead <= reach
 }
 
 /// Builds this period's plan and queues the army-level commands (the
@@ -309,21 +380,12 @@ pub fn build_plan(
     let ranged: Vec<&RegRow> = standing
         .iter()
         .copied()
-        .filter(|r| {
-            !is_bodyguard(r)
-                && matches!(r.category, UnitCategory::Ranged | UnitCategory::Skirmisher)
-        })
+        .filter(|r| !is_bodyguard(r) && is_missile(r))
         .collect();
     let infantry: Vec<&RegRow> = standing
         .iter()
         .copied()
-        .filter(|r| {
-            !is_bodyguard(r)
-                && !matches!(
-                    r.category,
-                    UnitCategory::Cavalry | UnitCategory::Ranged | UnitCategory::Skirmisher
-                )
-        })
+        .filter(|r| !is_bodyguard(r) && r.category != UnitCategory::Cavalry && !is_missile(r))
         .collect();
     // Reserves: the smallest infantry by cost up to `reserve_fraction` of
     // the infantry cost (ascending weight, ties by id); a committed reserve
@@ -354,18 +416,16 @@ pub fn build_plan(
         }
     };
     // The line: the infantry that is not held back, plus the missile units
-    // on defend or once their ammo is spent; with no infantry left every
-    // standing foot regiment (the bodyguard included) is the line.
+    // on defend (T3-010: spent missile units used to join an attacking
+    // line and ran into the melee, where they were destroyed for nothing;
+    // they now keep their skirmish role and hold behind the line); with no
+    // infantry left every standing foot regiment (the bodyguard included)
+    // is the line.
     let mut line: Vec<&RegRow> = infantry
         .iter()
         .copied()
         .filter(|r| !reserves.contains(&r.id))
-        .chain(
-            ranged
-                .iter()
-                .copied()
-                .filter(|r| stance == Stance::Defend || r.ammo <= S::ZERO),
-        )
+        .chain(ranged.iter().copied().filter(|_| stance == Stance::Defend))
         .collect();
     let bodyguard_in_line = line.is_empty();
     if bodyguard_in_line {
@@ -412,40 +472,136 @@ pub fn build_plan(
     };
     let forward = line_facing.direction();
     let right = V2::new(forward.y, -forward.x);
-    // The visible enemy's lateral half extent about its centroid, and the
-    // point the attack aims at: the enemy's nearer wing rather than its
-    // centre, so the whole line meets a part of theirs (T2-082 tuning; a
-    // line that hits a prepared line head-on breaks on SIM-MOR-020).
-    let enemy_half = snap.enemies.iter().fold(S::ZERO, |acc, e| {
+    // The visible enemy line's lateral half extent about the enemy
+    // centroid, and the point the attack aims at: that line's nearer wing
+    // rather than its centre, so the whole line meets a part of theirs
+    // (T2-082 tuning; a line that hits a prepared line head-on breaks on
+    // SIM-MOR-020). The extent is measured over the enemy's infantry when
+    // any is in sight (T3-010: measured over its cavalry and skirmish
+    // screen too, the frontage spanned the whole enemy army and the
+    // strike landed on the screen); over everything visible otherwise.
+    // Routing and shattered enemies are neither the line nor the wing:
+    // the plan aims at what still stands (T3-010).
+    let standing_enemy = |e: &&RegRow| {
+        !matches!(
+            e.morale_state,
+            crate::components::MoraleState::Routing | crate::components::MoraleState::Shattered
+        )
+    };
+    let enemy_line: Vec<&RegRow> = {
+        let foot: Vec<&RegRow> = snap
+            .enemies
+            .iter()
+            .filter(standing_enemy)
+            .filter(|e| !is_missile(e) && e.category != UnitCategory::Cavalry)
+            .collect();
+        if foot.is_empty() {
+            snap.enemies.iter().filter(standing_enemy).collect()
+        } else {
+            foot
+        }
+    };
+    let enemy_half = enemy_line.iter().fold(S::ZERO, |acc, e| {
         acc.max((e.anchor - target).dot(right).abs() + e.half_width)
     });
+    // The strike side is chosen once per stance: the side of the enemy
+    // centroid the line's anchor already sits on, else the side of the own
+    // centroid (T3-010: re-read from the own centroid every period, the
+    // side flipped with its jitter and sent the flank group back and forth
+    // across the enemy front).
+    let strike_sign = {
+        let prev_lateral = prev
+            .filter(|_| same_stance)
+            .map(|p| (p.line_anchor - target).dot(right))
+            .filter(|l| l.abs() > S::from_i32(5));
+        // A fresh choice takes the wing away from the enemy's cavalry when
+        // it has any in sight (the flank group would otherwise wait beside
+        // it and charge through it), else the side the own centroid is on.
+        let cavalry_lateral = {
+            let mut sum = S::ZERO;
+            let mut n = 0;
+            for e in snap
+                .enemies
+                .iter()
+                .filter(|e| e.category == UnitCategory::Cavalry)
+            {
+                sum = sum + (e.anchor - target).dot(right);
+                n += 1;
+            }
+            (n > 0)
+                .then(|| -sum / S::from_i32(n))
+                .filter(|l| l.abs() > S::from_i32(5))
+        };
+        let lateral = prev_lateral
+            .or(cavalry_lateral)
+            .unwrap_or_else(|| (ctx_centroid - target).dot(right));
+        if lateral < S::ZERO { -S::ONE } else { S::ONE }
+    };
+    // The strike point is the enemy line's edge on that side: centred on
+    // it, the line overlaps the wing regiment and reaches past it, so its
+    // outer regiment meets that wing's flank (T3-010; T2-082 aimed at
+    // `0.6 ×` the half extent, inside the line).
     let strike = if snap.enemies.is_empty() {
         target
     } else {
-        let own_lateral = (ctx_centroid - target).dot(right);
-        let sign = if own_lateral < S::ZERO {
-            -S::ONE
-        } else {
-            S::ONE
-        };
-        target + right * (sign * enemy_half * S::from_f32_data(0.6))
+        target + right * (strike_sign * enemy_half)
     };
+    // The charge begins when a line regiment is within `charge_trigger_dist`
+    // of a visible enemy and the line is formed enough to arrive together
+    // (its regiments lag their slots by less than twice `line_tolerance`),
+    // or at once when the enemy has already engaged a line regiment
+    // (T3-010: a line that trickled in one regiment at a time lost each
+    // fight one at a time).
     let mut charging = prev.is_some_and(|p| p.charging && same_stance);
+    let line_engaged = line.iter().any(|r| r.engaged);
+    let dressed = prev
+        .filter(|_| same_stance)
+        .is_none_or(|p| line_lag(&line, p, forward) <= profile.line_tolerance * S::from_i32(2));
+    let nearest_line_contact = line.iter().fold(far(), |acc, r| {
+        snap.enemies
+            .iter()
+            .filter(|e| standing_enemy(e))
+            .fold(acc, |acc, e| acc.min(e.anchor.distance(r.anchor)))
+    });
+    // Contact within half the trigger distance starts the charge whatever
+    // the dressing: two advancing lines meet before either can dress, and
+    // a regiment under a plain move never fights (`may_fight`).
     if stance == Stance::Attack
         && !charging
-        && line.iter().any(|r| {
-            snap.enemies
-                .iter()
-                .any(|e| e.anchor.distance(r.anchor) <= profile.charge_trigger_dist)
-        })
+        && (line_engaged
+            || (dressed && nearest_line_contact <= profile.charge_trigger_dist)
+            || nearest_line_contact <= profile.charge_trigger_dist * S::HALF)
     {
         charging = true;
     }
+    // The line's mean fatigue: it rests until fresh before closing and runs
+    // its charge only under `charge_max_fatigue` (SIM-FAT-004: a tired line
+    // fights and holds worse; T3-010).
+    let line_fatigue = {
+        let mut sum = S::ZERO;
+        let mut n = 0;
+        for r in &line {
+            sum = sum + r.fatigue;
+            n += 1;
+        }
+        if n > 0 { sum / S::from_i32(n) } else { S::ZERO }
+    };
+    // Once the line runs it keeps running; a line that reaches the charge
+    // trigger tired walks in and lets the sim's own charge distance
+    // (SIM-CMBT-004) run the last stretch (T3-010).
+    let run_in = charging
+        && (prev.is_some_and(|p| p.run_in && same_stance)
+            || line_fatigue < profile.charge_max_fatigue);
+    // The stand-off's start is carried while the stance lasts (T3-010).
+    let mut standoff_since = prev.filter(|_| same_stance).and_then(|p| p.standoff_since);
     // ---- the line -------------------------------------------------------
     let line_anchor = match stance {
         Stance::Attack => match prev.filter(|_| same_stance) {
-            // Form up where the line stands (decision 22), then step.
-            None => ctx_centroid,
+            // Form up where the line stands (decision 22), moved across to
+            // the strike point's lateral position so the steps run
+            // straight at it (T3-010: stepping from the army's own centre,
+            // the line still stood on the enemy's centre when it charged).
+            None => ctx_centroid + right * (strike - ctx_centroid).dot(right),
             // Decision 22 as tuned in T2-082: the line keeps stepping while
             // its regiments lag it by less than twice `line_tolerance`
             // (`formed` is the stricter reading kept for the overlay). It
@@ -460,20 +616,21 @@ pub fn build_plan(
                             && matches!(p.role_of(r.id), Some(Role::Skirmish { slot })
                                 if (slot - p.line_anchor).dot(p.line_facing.direction()) > S::ZERO)
                     });
-                // Rest at the approach distance until the line is fresh
-                // (SIM-FAT-004: a tired line fights and holds worse) before
-                // closing; the missile units' stand-off covers the wait.
-                let fresh = regs.rules.fatigue.thresholds[0];
-                let tired = {
-                    let mut sum = S::ZERO;
-                    let mut n = 0;
-                    for r in &line {
-                        sum = sum + r.fatigue;
-                        n += 1;
-                    }
-                    n > 0 && sum / S::from_i32(n) > fresh
-                };
-                let goal = if !charging && (skirmishing || tired) {
+                // Rested means under `charge_max_fatigue`, not merely
+                // under the fresh threshold: the march to contact costs
+                // the line another quarter and the sim's own charge run
+                // as much again (T3-010).
+                let tired = !line.is_empty() && line_fatigue > profile.charge_max_fatigue;
+                let resting = !charging && (skirmishing || tired);
+                // The stand-off begins when the line reaches the approach
+                // distance and ends `standoff_max_ticks` later whatever the
+                // ammo or the fatigue (T3-010).
+                if resting && standoff_since.is_none() && d <= profile.approach_distance + S::HALF {
+                    standoff_since = Some(tick);
+                }
+                let expired = standoff_since
+                    .is_some_and(|s| tick.0.saturating_sub(s.0) >= profile.standoff_max_ticks);
+                let goal = if resting && !expired {
                     profile.approach_distance
                 } else {
                     S::from_i32(10)
@@ -497,27 +654,34 @@ pub fn build_plan(
         Stance::Retreat => ctx_centroid,
     };
     let infos: Vec<RegimentInfo> = line.iter().map(|r| info(r, regs)).collect();
+    let gap = regs.rules.formation.group_gap;
     // The line deepens to the visible enemy's frontage (SIM-FORM-042 rank
     // selection): three regiments at their default ranks would stand far
     // wider than an enemy block and only the centre would meet it. With
-    // nothing visible the templates' own ranks stand.
+    // nothing visible the templates' own ranks stand. The frontage is
+    // capped by the room the map offers, and a line its deepest ranks
+    // cannot fit in that room folds onto a double line (T3-010: on a map
+    // narrower than the army the slots spilled past the edges and the
+    // advance never settled).
+    // On attack the line matches six tenths of the enemy frontage, centred
+    // on the strike point, so it overlaps the wing it strikes and its
+    // neighbour rather than spreading one regiment onto each of theirs
+    // (T3-010); on defend and hold it matches the whole frontage.
+    let room = lateral_room(map, right, gap);
     let width = if enemy_half > S::ZERO {
-        enemy_half * S::from_i32(2)
+        let share = if stance == Stance::Attack {
+            S::from_f32_data(1.2)
+        } else {
+            S::from_i32(2)
+        };
+        (enemy_half * share).min(room)
     } else {
         S::from_i32(100_000)
     };
     let placements = if stance == Stance::Retreat || infos.is_empty() {
         Vec::new()
     } else {
-        arrange_group(
-            &line_template(regs.rules.formation.group_gap),
-            &infos,
-            line_anchor,
-            line_facing,
-            width,
-            &regs.rules.formation,
-            regs,
-        )
+        lay_line(regs, &infos, line_anchor, line_facing, width, room).0
     };
     let line_width = arranged_width(&placements, &infos, regs, right);
     let half_width = line_width * S::HALF;
@@ -545,16 +709,22 @@ pub fn build_plan(
         });
     }
     let formed = n_err > 0 && err / S::from_i32(n_err) < profile.line_tolerance;
-    let gap = regs.rules.formation.group_gap;
     let behind = line_anchor - forward * profile.reserve_offset;
 
     // ---- skirmishers (I16) -------------------------------------------------
     if stance != Stance::Defend {
         for r in &ranged {
             let lateral = (r.anchor - line_anchor).dot(right);
-            let nearest = snap.nearest_enemy(r.anchor);
+            // The stand-off is measured from the nearest standing enemy
+            // line regiment (infantry or cavalry), not from the loose
+            // skirmishers screening it, so the volleys reach the line
+            // (T3-010: measured from the screen, twenty volleys killed two
+            // men); with no line in sight, from the nearest enemy.
+            let nearest = snap
+                .nearest_enemy_where(r.anchor, |e| !is_missile(e))
+                .or_else(|| snap.nearest_enemy(r.anchor));
             // A missile unit with ammo stands off at `skirmish_range_frac`
-            // of its reach from the nearest enemy and shoots, unless an
+            // of its reach from that regiment and shoots, unless an
             // enemy missile unit reaches it there (standing in the arrow
             // storm loses the regiment and shakes its friends) and the
             // charge is not on; spent or under fire it falls behind the
@@ -572,9 +742,17 @@ pub fn build_plan(
                         .is_some_and(|er| e.anchor.distance(p) <= er + S::from_i32(10))
                 })
             };
+            // Bows fall back to half a `reserve_offset` behind the line and
+            // shoot over it; javelins with ammo wait `skirmish_offset`
+            // ahead of it so they lead the charge and take the enemy's
+            // pila and javelins in loose order instead of the line (T3-010:
+            // held a `reserve_offset` behind, they arrived after the
+            // contact was decided); spent, both stand behind.
             let bows = r.category == UnitCategory::Ranged;
             let behind_offset = if bows {
                 profile.reserve_offset * S::HALF
+            } else if r.ammo > S::ZERO {
+                -regs.rules.formation.skirmish_offset
             } else {
                 profile.reserve_offset
             };
@@ -612,8 +790,14 @@ pub fn build_plan(
         commit_targets.push(e.id);
     }
     for e in &snap.enemies {
-        if threatens_flank(e, line_anchor, right, half_width, profile.flank_offset)
-            && !commit_targets.contains(&e.id)
+        if threatens_flank(
+            e,
+            line_anchor,
+            right,
+            forward,
+            half_width,
+            profile.flank_offset,
+        ) && !commit_targets.contains(&e.id)
         {
             commit_targets.push(e.id);
         }
@@ -644,6 +828,11 @@ pub fn build_plan(
     }
 
     // ---- cavalry (I17, I18, I19) -------------------------------------------
+    // The flank groups charge the enemy line regiment nearest the strike
+    // point, the one the line hits, from behind (T3-010: the rear-most
+    // regiment was the missile screen or the enemy cavalry, and the charge
+    // died there every time); with no line regiment in sight, the
+    // rear-most visible one.
     let rearmost = snap
         .enemies
         .iter()
@@ -655,6 +844,20 @@ pub fn build_plan(
                 .then(b.id.cmp(&a.id))
         })
         .map(|e| e.id);
+    let wing = snap
+        .enemies
+        .iter()
+        .filter(standing_enemy)
+        .filter(|e| !is_missile(e))
+        .min_by(|a, b| {
+            a.anchor
+                .distance_sq(strike)
+                .partial_cmp(&b.anchor.distance_sq(strike))
+                .expect("finite")
+                .then(a.id.cmp(&b.id))
+        })
+        .map(|e| e.id)
+        .or(rearmost);
     let infantry_centroid = {
         let mut sum = V2::ZERO;
         let mut n = 0;
@@ -678,13 +881,19 @@ pub fn build_plan(
         let lateral = (r.anchor - line_anchor).dot(right);
         let sign = if lateral < S::ZERO { -S::ONE } else { S::ONE };
         let role = match stance {
+            // The flank groups wait beside the line's outer end on the
+            // strike side, `flank_offset` beyond it, and charge the wing
+            // regiment the line strikes so the charge lands on its flank
+            // while the line holds its front (T3-010: sent ahead to a hook
+            // point beyond the enemy at a run, they arrived exhausted under
+            // the enemy's missiles and broke before the charge).
             Stance::Attack => Role::Flank {
                 slot: passable_toward(
                     nav,
                     r.anchor,
-                    target + right * (sign * (enemy_half + profile.flank_offset)),
+                    line_anchor + right * (strike_sign * (half_width + profile.flank_offset)),
                 ),
-                charge: if charging { rearmost } else { None },
+                charge: if charging { wing } else { None },
             },
             Stance::Defend | Stance::Hold => {
                 let end = line_anchor + right * (sign * (half_width + gap + r.half_width));
@@ -769,6 +978,8 @@ pub fn build_plan(
         formed,
         assignments,
         charging,
+        standoff_since,
+        run_in,
     }
 }
 

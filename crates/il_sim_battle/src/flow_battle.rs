@@ -367,6 +367,10 @@ fn set_phase(world: &mut World, to: BattlePhase, tick: Tick) {
         .push(tick, BattleEvent::PhaseChanged { from, to });
     if to == BattlePhase::Ended {
         world.resource_mut::<BattleFlow>().ended_at = tick;
+        // The AI decided this tick for a battle that has now ended: its
+        // commands for the next tick would only be rejected as
+        // `WrongPhase` (T3-010; SIM-AI-002).
+        world.resource_mut::<crate::ai::AiState>().outbox.clear();
         let result = crate::result::compute(world);
         world.resource_mut::<Events>().0.push(
             tick,

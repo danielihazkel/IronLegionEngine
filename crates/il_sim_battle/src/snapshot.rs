@@ -49,7 +49,8 @@ use crate::world::{BattleWorld, InstallMapError};
 /// 8: `BattleFlow.ended_at` (T2-071).
 /// 9: the battle AI's state (T2-080): the command outbox for the next tick
 ///    and one optional army plan per side.
-pub const SNAPSHOT_VERSION: u32 = 9;
+/// 10: the army plan carries `standoff_since` and `run_in` (T3-010).
+pub const SNAPSHOT_VERSION: u32 = 10;
 
 /// A ranged regiment's `Fire` component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

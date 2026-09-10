@@ -25,7 +25,8 @@
     "id", "aggression", "general_aggression", "reserve_fraction", "stance_margin",
     "army_period_ticks", "regiment_period_ticks",
     "approach_distance", "advance_step", "line_tolerance", "skirmish_range_frac", "flank_offset",
-    "charge_trigger_dist", "defend_search_radius", "counter_charge_dist", "screen_offset", "screen_gap",
+    "charge_trigger_dist", "standoff_max_ticks", "charge_max_fatigue",
+    "defend_search_radius", "counter_charge_dist", "screen_offset", "screen_gap",
     "reserve_offset", "commit_morale", "action_sets"
   ],
   "properties": {
@@ -47,6 +48,8 @@
     "skirmish_range_frac": { "$ref": "#/$defs/unitInterval", "description": "Skirmishers stand ahead of the line until the enemy is within this fraction of their range (SIM-AI-011)." },
     "flank_offset": { "$ref": "#/$defs/metres", "description": "How far beyond the enemy's flank the cavalry groups aim (SIM-AI-011)." },
     "charge_trigger_dist": { "$ref": "#/$defs/metres", "description": "Main-line distance to the enemy at which the flank groups charge (SIM-AI-011)." },
+    "standoff_max_ticks": { "type": "integer", "minimum": 0, "maximum": 4294967295, "description": "The attacking line rests at approach_distance for at most this many ticks, whatever its missile units' ammo (SIM-AI-011, T3-010)." },
+    "charge_max_fatigue": { "$ref": "#/$defs/unitInterval", "description": "The line runs its charge only while its mean fatigue is under this; a more tired line walks in (SIM-AI-011, T3-010)." },
     "defend_search_radius": { "$ref": "#/$defs/metres", "description": "Radius around the centroid searched for the highest ground on defend (SIM-AI-012)." },
     "counter_charge_dist": { "$ref": "#/$defs/metres", "description": "An enemy this close to a line end draws the cavalry counter-charge (SIM-AI-012)." },
     "screen_offset": { "$ref": "#/$defs/metres", "description": "Where the cavalry screen holds on retreat, toward the enemy from the infantry (SIM-AI-013)." },

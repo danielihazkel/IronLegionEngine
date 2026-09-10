@@ -14,12 +14,14 @@
   army_period_ticks: 40,       // SIM-AI-002
   regiment_period_ticks: 20,
 
-  approach_distance: 150,      // m (SIM-AI-011)
+  approach_distance: 100,      // m (SIM-AI-011; T3-010: from 150, so the rest before the charge sits just outside the missile screen's reach)
   advance_step: 8,             // m per army period while the line's laggards are within twice line_tolerance
   line_tolerance: 12,          // m
   skirmish_range_frac: 0.9,    // SIM-AI-011
   flank_offset: 40,            // m (tuned in T2-082 from 80: the wider hook fell into the test map's river)
-  charge_trigger_dist: 60,     // m: the line and the flank groups charge from here (tuned in T2-082 from 40)
+  charge_trigger_dist: 40,     // m: the line and the flank groups charge from here (T2-082: 40 to 60; T3-010: back to 40, a shorter run)
+  standoff_max_ticks: 2400,    // the line rests at approach_distance for at most 2 min, whatever the ammo (T3-010)
+  charge_max_fatigue: 0.15,    // the line rests until under this mean fatigue and runs its charge only under it (T3-010)
   defend_search_radius: 200,   // m (SIM-AI-012)
   counter_charge_dist: 30,     // m
   screen_offset: 40,           // m (SIM-AI-013)

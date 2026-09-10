@@ -62,7 +62,13 @@
     },
     {
       name: "hold_fire", kind: "hold_fire", base: 1.0,
-      considerations: [ { input: "friendly_in_line_of_fire", curve: { type: "step", threshold: 0.5 } } ],
+      considerations: [
+        { input: "friendly_in_line_of_fire", curve: { type: "step", threshold: 0.5 } },
+        // Never in melee: the regiments of a charge converge on one enemy and
+        // shadow each other's line of fire while their pila are the exchange
+        // that decides the contact (T3-010).
+        { input: "engaged", curve: { type: "linear", m: -1, b: 1 } },
+      ],
     },
     // ---- abilities (one channel per slot; several actions may name one
     // ability, an OR of their conditions) ----------------------------------

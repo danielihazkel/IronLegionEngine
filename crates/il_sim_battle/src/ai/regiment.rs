@@ -141,12 +141,20 @@ pub fn decide(
     let tolerance = (regs.rules.movement.waypoint_radius * S::from_i32(2)).max(S::ONE);
     let reform_angle = regs.rules.formation.reform_angle;
     let line_facing = plan.map(|p| p.line_facing);
-    let is_bodyguard = snap.is_bodyguard(me.id);
-    // Flank groups always run; the line runs the last stretch once the plan
-    // is charging (SIM-AI-011, T2-082 tuning).
+    // A bodyguard the plan has put in the line (the side's only foot
+    // regiments, SIM-AI-010) acts as a line regiment: following the
+    // centroid instead, it lagged its slot and the line never stepped
+    // (T3-010).
+    let is_bodyguard = snap.is_bodyguard(me.id) && !matches!(role, Some(Role::Line { .. }));
+    // Flank groups always run; the line and the reserves run the last
+    // stretch once the plan is charging and the line was fresh enough to
+    // run (`run_in`, SIM-AI-011; T2-082 tuning, T3-010).
     let charging = plan.is_some_and(|p| p.charging);
-    let run = matches!(role, Some(Role::Flank { .. }))
-        || (charging && matches!(role, Some(Role::Line { .. }) | Some(Role::Reserve { .. })));
+    let run_in = plan.is_some_and(|p| p.run_in);
+    // Flank groups march to their waiting slot and run only for the charge
+    // (T3-010: running to the hook point spent them before it).
+    let run = (charging && matches!(role, Some(Role::Flank { .. })))
+        || (run_in && matches!(role, Some(Role::Line { .. }) | Some(Role::Reserve { .. })));
 
     // ---- movement (plan I13: some roles decide it themselves) ----------
     let overridden = match role {
@@ -163,6 +171,10 @@ pub fn decide(
         _ => false,
     };
     if !overridden {
+        // Fugitives are chased like anyone else (T3-010 measured both
+        // ways on the §15.3 AI rows: a regiment that chases at full
+        // fatigue sometimes routs itself, but a line that never chases
+        // lets broken regiments rally and come back, and lost more).
         let nearest = ctx.nearest;
         let enemy_share = S::ONE - ctx.strength_ratio();
         let winner = select(
@@ -172,10 +184,17 @@ pub fn decide(
                 // Only the line (and a regiment without a plan) picks its own
                 // fights; skirmishers, reserves, flank groups, counters and
                 // screens hold their slots until the plan commits them.
+                // A line regiment holds its slot until the plan charges, so
+                // the line arrives together (T3-010); one the enemy has
+                // already engaged fights on.
                 ActionKind::EngageNearest => {
                     nearest.is_some()
                         && (!is_bodyguard || profile.general_aggression > enemy_share)
-                        && matches!(role, None | Some(Role::Line { .. }) | Some(Role::Bodyguard))
+                        && match role {
+                            None | Some(Role::Bodyguard) => true,
+                            Some(Role::Line { .. }) => charging || me.engaged,
+                            _ => false,
+                        }
                 }
                 ActionKind::FollowCentroid => is_bodyguard,
                 ActionKind::FallBack => plan.is_some(),
@@ -187,7 +206,23 @@ pub fn decide(
         );
         match winner.map(|c| &c.action.kind) {
             Some(ActionKind::EngageNearest) => {
-                if let Some(e) = nearest {
+                // A line regiment engages the nearest enemy line regiment
+                // (infantry or cavalry), not the loose screen in front of
+                // it (T3-010: heavy infantry that chased the skirmishers
+                // took every javelin and pilum of the enemy line and broke
+                // before reaching it); anyone else takes the nearest enemy.
+                let prey = match role {
+                    Some(Role::Line { .. }) => snap
+                        .nearest_enemy_where(me.anchor, |e| {
+                            !matches!(
+                                e.category,
+                                il_data::UnitCategory::Ranged | il_data::UnitCategory::Skirmisher
+                            )
+                        })
+                        .or(nearest),
+                    _ => nearest,
+                };
+                if let Some(e) = prey {
                     attack(me, e.id, run, out);
                 }
             }
@@ -207,8 +242,16 @@ pub fn decide(
                 }
             }
             Some(ActionKind::FollowCentroid) => {
+                // Once the line charges the bodyguard closes to half the
+                // reserve offset so the general's aura (SIM-GEN-002)
+                // reaches the fight (T3-010).
+                let offset = if charging {
+                    profile.reserve_offset * S::HALF
+                } else {
+                    profile.reserve_offset
+                };
                 if !me.engaged
-                    && let Some(target) = general_position(snap, me, plan, profile.reserve_offset)
+                    && let Some(target) = general_position(snap, me, plan, offset)
                 {
                     move_to(me, target, line_facing, tolerance, reform_angle, false, out);
                 }
@@ -258,14 +301,39 @@ pub fn decide(
             &ctx,
             Some(rng),
         );
+        // T3-010: shooting at will, a missile unit aims at the nearest
+        // enemy line regiment (infantry or cavalry) within its range rather
+        // than at the loose screen in front of it, and falls back to fire
+        // at will when none is in reach; a `Target` that is still visible
+        // and in range is left alone (a player's, SIM-AI-021, or its own).
+        let line_target = |me: &RegRow| {
+            me.range.and_then(|range| {
+                snap.nearest_enemy_where(me.anchor, |e| {
+                    !matches!(
+                        e.category,
+                        il_data::UnitCategory::Ranged | il_data::UnitCategory::Skirmisher
+                    ) && e.anchor.distance(me.anchor) <= range
+                })
+                .map(|e| e.id)
+            })
+        };
+        let target_stands = |t: il_core::RegimentId| {
+            me.range.is_some_and(|range| {
+                snap.enemies
+                    .iter()
+                    .any(|e| e.id == t && e.anchor.distance(me.anchor) <= range)
+            })
+        };
         let wanted = match winner.map(|c| &c.action.kind) {
-            Some(ActionKind::FireAtWill) => Some(FireMode::FireAtWill),
+            Some(ActionKind::FireAtWill) => {
+                Some(line_target(me).map_or(FireMode::FireAtWill, FireMode::Target))
+            }
             Some(ActionKind::HoldFire) => Some(FireMode::Hold),
             _ => None,
         };
         if let Some(w) = wanted
             && w != mode
-            && !(w == FireMode::FireAtWill && matches!(mode, FireMode::Target(_)))
+            && !(w != FireMode::Hold && matches!(mode, FireMode::Target(t) if target_stands(t)))
         {
             out.push(CommandKind::FireMode {
                 regiments: vec![me.id],

@@ -13,6 +13,14 @@ pub fn regs() -> Arc<Registries> {
     Arc::new(Registries::load_root(&root).unwrap_or_else(|d| panic!("{d}")))
 }
 
+/// The game plus a mod folder under `tests/mods/` (T3-010).
+#[allow(dead_code)]
+pub fn regs_with_mod(name: &str) -> Arc<Registries> {
+    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let roots = [base.join("game"), base.join("tests/mods").join(name)];
+    Arc::new(il_data::load_roots(&roots).unwrap_or_else(|d| panic!("{d}")))
+}
+
 pub fn cid(s: &str) -> ContentId {
     ContentId::new(s).unwrap()
 }

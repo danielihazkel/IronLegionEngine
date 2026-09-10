@@ -382,9 +382,10 @@ fn cavalry_takes_the_flank_and_charges_when_the_lines_close() {
         other => panic!("{other:?}"),
     }
     assert_eq!(w.view().regiment(horse).unwrap().order, OrderKind::Move);
+    // It marches to its waiting slot and runs only for the charge (T3-010).
     assert!(r.ai.iter().any(|c| matches!(
         &c.kind,
-        CommandKind::Move { regiments, speed: SpeedMode::Run, .. } if regiments == &vec![horse]
+        CommandKind::Move { regiments, speed: SpeedMode::March, .. } if regiments == &vec![horse]
     )));
     // Lines 30 m apart: the charge is on.
     let s = setup(vec![
@@ -560,4 +561,217 @@ fn reserves_wait_behind_and_commit_to_the_weakest_segment() {
         .id;
     assert_eq!(target, nearest);
     let _ = PlayerId::ENGINE_AI;
+}
+
+// ---- T3-010: stand-off from the line, its cap, the fatigue-aware close,
+// the second line -------------------------------------------------------
+
+use il_core::Angle;
+use il_data::ContentId;
+use il_data::UnitCategory;
+use il_sim_battle::FireMode;
+use il_sim_battle::ai::army::{lateral_room, lay_line};
+use il_sim_battle::components::RegimentFatigue;
+use il_sim_battle::formation::RegimentInfo;
+use il_sim_battle::map::LoadedMap;
+
+/// Two enemy hastati at `x_enemy` with velites screening 30 m ahead of
+/// them, against two hastati at 500 with archers behind.
+fn screened_enemy(x_enemy: i32) -> BattleSetup {
+    let mut enemy = line_of(2, "rome:hastati", 120, x_enemy as f32, 0.0, 0);
+    enemy.push(at(2, "rome:velites", 60, (x_enemy + 30) as f32, 150.0, 0.0));
+    let mut army = line_of(2, "rome:hastati", 120, 500.0, 180.0, 3);
+    army.push(regiment(5, "persia:archer", 60, 490.0, 180.0));
+    setup(vec![side(0, 0, enemy), side(255, 1, army)])
+}
+
+/// (T3-010) A missile unit measures its stand-off from the nearest enemy
+/// line regiment, not from the loose screen ahead of it, and aims its
+/// volleys at that line once it is in range.
+#[test]
+fn skirmishers_stand_off_from_the_enemy_line_and_aim_at_it() {
+    let mut w = BattleWorld::new(&screened_enemy(350), common::regs()).unwrap();
+    let r = run(&mut w, 700);
+    assert_eq!(r.rejected, 0);
+    let p = plan(&w, 1);
+    let archers = RegimentId(5);
+    match p.role_of(archers) {
+        Some(Role::Skirmish { slot }) => {
+            // 108 m (0.9 x 120) from the nearest hastati, not from the
+            // velites standing 30 m nearer.
+            let nearest_line = anchor(&w, RegimentId(0))
+                .distance(slot)
+                .min(anchor(&w, RegimentId(1)).distance(slot));
+            assert!(
+                (nearest_line - S::from_i32(108)).abs() < S::from_i32(3),
+                "{nearest_line:?}"
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    let targets: Vec<&Command> = r
+        .ai
+        .iter()
+        .filter(|c| matches!(&c.kind, CommandKind::FireMode { regiments, .. } if regiments == &vec![archers]))
+        .collect();
+    assert!(
+        targets.iter().any(|c| matches!(
+            &c.kind,
+            CommandKind::FireMode { mode: FireMode::Target(t), .. } if t.0 <= 1
+        )),
+        "{targets:?}"
+    );
+    assert!(
+        !targets.iter().any(|c| matches!(
+            &c.kind,
+            CommandKind::FireMode { mode: FireMode::Target(t), .. } if t.0 == 2
+        )),
+        "aimed at the screen: {targets:?}"
+    );
+}
+
+/// (T3-010) The stand-off ends after `standoff_max_ticks` whatever the
+/// ammo: the line holds at `approach_distance` until the cap, then closes
+/// (`tests/mods/quick_standoff` caps it at 300 ticks).
+#[test]
+fn standoff_ends_after_its_cap() {
+    let regs = common::regs_with_mod("quick_standoff");
+    let cap = regs.ai_profiles.iter().next().unwrap().1.standoff_max_ticks;
+    assert_eq!(cap, 300);
+    let mut w = BattleWorld::new(&screened_enemy(350), regs).unwrap();
+    let mut since: Option<(Tick, S)> = None;
+    let mut closed_at: Option<Tick> = None;
+    for _ in 0..3000 {
+        let out = w.step(&[]);
+        assert!(out.rejected.is_empty(), "{:?}", out.rejected);
+        let p = plan(&w, 1);
+        match (since, p.standoff_since) {
+            (None, Some(t)) => since = Some((t, p.line_anchor.x)),
+            (Some((t, x)), Some(t2)) => {
+                assert_eq!(t, t2, "the stand-off restarted");
+                let held = w.tick().0 < t.0 + cap;
+                if held {
+                    assert!(
+                        (p.line_anchor.x - x).abs() < S::from_i32(6),
+                        "moved during the stand-off at {:?}: {:?} from {x:?}",
+                        w.tick(),
+                        p.line_anchor
+                    );
+                } else if closed_at.is_none() && p.line_anchor.x < x - S::from_i32(16) {
+                    closed_at = Some(w.tick());
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let (t, _) = since.expect("the stand-off began");
+    let closed = closed_at.expect("the line closed after the cap");
+    assert!(
+        closed.0 >= t.0 + cap,
+        "closed at {closed:?}, cap from {t:?}"
+    );
+    assert!(closed.0 < t.0 + cap + 400, "closed late at {closed:?}");
+}
+
+/// (T3-010) A line that reaches the charge trigger tired walks in; a
+/// fresh one runs.
+#[test]
+fn tired_line_walks_in_and_a_fresh_line_runs() {
+    // Lines 35 m apart, inside `charge_trigger_dist` (40 m); regiment 2 is
+    // the bodyguard, regiment 3 the line.
+    let fixture = || {
+        setup(vec![
+            side(0, 0, line_of(2, "rome:hastati", 120, 465.0, 0.0, 0)),
+            side(255, 1, line_of(2, "rome:hastati", 120, 500.0, 180.0, 2)),
+        ])
+    };
+    let line = RegimentId(3);
+    let runs = |r: &Run| {
+        r.ai.iter().any(|c| match &c.kind {
+            CommandKind::SetSpeedMode { regiments, mode } => {
+                regiments == &vec![line] && *mode == SpeedMode::Run
+            }
+            CommandKind::Move {
+                regiments, speed, ..
+            } => regiments == &vec![line] && *speed == SpeedMode::Run,
+            _ => false,
+        })
+    };
+    let mut w = BattleWorld::new(&fixture(), common::regs()).unwrap();
+    let e = entity(&w, line);
+    w.ecs_mut().get_mut::<RegimentFatigue>(e).unwrap().mean = S::from_f32_data(0.6);
+    w.recompute_hash();
+    let r = run(&mut w, 30);
+    let p = plan(&w, 1);
+    assert!(p.charging, "{p:?}");
+    assert!(!p.run_in, "{p:?}");
+    assert!(!runs(&r), "a tired line ran");
+
+    let mut w = BattleWorld::new(&fixture(), common::regs()).unwrap();
+    let r = run(&mut w, 30);
+    let p = plan(&w, 1);
+    assert!(p.charging && p.run_in, "{p:?}");
+    assert!(runs(&r), "a fresh line walked");
+}
+
+/// (T3-010) A line the map cannot hold at its deepest ranks folds onto a
+/// double line whose rows fit the room.
+#[test]
+fn line_wider_than_the_map_folds_onto_a_double_line() {
+    let regs = common::regs();
+    let map = LoadedMap::flat(S::from_i32(200), S::from_i32(200));
+    let template = regs
+        .formations
+        .lookup(&ContentId::new("rome:line").unwrap())
+        .unwrap();
+    let infos: Vec<RegimentInfo> = (0..20)
+        .map(|k| RegimentInfo {
+            id: RegimentId(k),
+            pos: V2::from_f32_data(100.0, 10.0 * k as f32),
+            category: UnitCategory::Infantry,
+            count: 120,
+            template,
+            radius: S::from_f32_data(0.4),
+        })
+        .collect();
+    // Facing west: the lateral axis is y, the room the map's height less a gap at each end.
+    let facing = Angle::from_degrees_data(180.0);
+    let forward = facing.direction();
+    let right = V2::new(forward.y, -forward.x);
+    let gap = regs.rules.formation.group_gap;
+    let room = lateral_room(&map, right, gap);
+    assert!(
+        (room - (S::from_i32(200) - gap - gap)).abs() < S::ONE,
+        "{room:?}"
+    );
+    let anchor = V2::from_f32_data(100.0, 100.0);
+    // Eight regiments at their deepest ranks fit; twenty do not.
+    let (single, doubled) = lay_line(&regs, &infos[..8], anchor, facing, room, room);
+    assert!(!doubled);
+    assert_eq!(single.len(), 8);
+    let (double, doubled) = lay_line(&regs, &infos, anchor, facing, room, room);
+    assert!(doubled);
+    assert_eq!(double.len(), 20);
+    let mut rows: Vec<S> = double
+        .iter()
+        .map(|p| (p.anchor - anchor).dot(forward))
+        .collect();
+    rows.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    rows.dedup_by(|a, b| (*a - *b).abs() < S::from_f32_data(0.01));
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    assert!(
+        (rows[1] - rows[0] - gap - gap).abs() < S::from_f32_data(0.01),
+        "{rows:?}"
+    );
+    for row in &rows {
+        let lateral: Vec<S> = double
+            .iter()
+            .filter(|p| ((p.anchor - anchor).dot(forward) - *row).abs() < S::from_f32_data(0.01))
+            .map(|p| (p.anchor - anchor).dot(right))
+            .collect();
+        let lo = lateral.iter().fold(S::from_i32(1000), |a, b| a.min(*b));
+        let hi = lateral.iter().fold(-S::from_i32(1000), |a, b| a.max(*b));
+        assert!(hi - lo < room, "row {row:?} spans {lo:?}..{hi:?}");
+    }
 }

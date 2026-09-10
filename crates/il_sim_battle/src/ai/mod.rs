@@ -137,6 +137,13 @@ pub struct ArmyPlan {
     pub assignments: Vec<Assignment>,
     /// The flank groups have been sent in (SIM-AI-011).
     pub charging: bool,
+    /// The tick the attacking line reached `approach_distance` and began
+    /// its stand-off; the stand-off ends `standoff_max_ticks` later
+    /// whatever the missile units' ammo (SIM-AI-011, T3-010).
+    pub standoff_since: Option<Tick>,
+    /// The line runs its charge: it was under `charge_max_fatigue` when the
+    /// charge began, and keeps running once it started (T3-010).
+    pub run_in: bool,
 }
 
 il_core::impl_hashable_struct!(ArmyPlan {
@@ -149,7 +156,9 @@ il_core::impl_hashable_struct!(ArmyPlan {
     line_width,
     formed,
     assignments,
-    charging
+    charging,
+    standoff_since,
+    run_in
 });
 
 impl ArmyPlan {

@@ -1,0 +1,6 @@
+// A 300-tick stand-off cap on the flagship profile (T3-010).
+{
+  id: "rome:default_ai",
+  $override: "merge",
+  standoff_max_ticks: 300,
+}

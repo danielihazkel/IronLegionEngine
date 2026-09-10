@@ -450,6 +450,13 @@ pub struct AiProfile {
     pub flank_offset: S,
     #[serde(deserialize_with = "de_s")]
     pub charge_trigger_dist: S,
+    /// SIM-AI-011 (T3-010): the attacking line rests at `approach_distance`
+    /// for at most this many ticks, whatever its missile units' ammo.
+    pub standoff_max_ticks: u32,
+    /// SIM-AI-011 (T3-010): the line runs its charge only while its mean
+    /// fatigue is under this; a more tired line walks in.
+    #[serde(deserialize_with = "de_s")]
+    pub charge_max_fatigue: S,
     #[serde(deserialize_with = "de_s")]
     pub defend_search_radius: S,
     #[serde(deserialize_with = "de_s")]
@@ -534,6 +541,7 @@ impl ContentKind for AiProfile {
         }
         h.write_u16(self.army_period_ticks);
         h.write_u16(self.regiment_period_ticks);
+        h.write_u32(self.standoff_max_ticks);
         for v in [
             self.approach_distance,
             self.advance_step,
@@ -541,6 +549,7 @@ impl ContentKind for AiProfile {
             self.skirmish_range_frac,
             self.flank_offset,
             self.charge_trigger_dist,
+            self.charge_max_fatigue,
             self.defend_search_radius,
             self.counter_charge_dist,
             self.screen_offset,
@@ -696,7 +705,8 @@ mod tests {
         let src = r#"{ id: "rome:p", aggression: 0.6, general_aggression: 0.3, reserve_fraction: 0.2,
             stance_margin: 0.1, army_period_ticks: 40, regiment_period_ticks: 20, approach_distance: 150,
             advance_step: 8, line_tolerance: 12, skirmish_range_frac: 0.9, flank_offset: 80,
-            charge_trigger_dist: 40, defend_search_radius: 200, counter_charge_dist: 30, screen_offset: 40,
+            charge_trigger_dist: 40, standoff_max_ticks: 1200, charge_max_fatigue: 0.35,
+            defend_search_radius: 200, counter_charge_dist: 30, screen_offset: 40,
             screen_gap: 80, reserve_offset: 60, commit_morale: 45, action_sets: ["rome:a", "rome:r"],
             campaign: { army_strength_target: 1.2, composition: [ { category: "infantry", fraction: 0.6 } ], min_garrison: 1 } }"#;
         let mut p: AiProfile =

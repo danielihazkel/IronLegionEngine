@@ -49,6 +49,8 @@ fn ai_outbox_and_plans_survive_a_round_trip() {
                 },
             }],
             charging: false,
+            standoff_since: Some(Tick(3)),
+            run_in: true,
         };
         ai.plans = vec![Some(plan), None];
     }
