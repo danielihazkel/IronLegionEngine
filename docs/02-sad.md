@@ -77,7 +77,7 @@ IronLegionEngine/
     il_script/               mlua sandbox, Lua API surface, event hooks (Phase 6)
     il_save/                 snapshot container format, JSON header, schema versions, migrations, replay files
     il_net/                  lockstep session, transport trait, hash exchange, resync (Phase 7)
-    il_editor/               map editor, unit editor, formation editor (Phase 3 / 6)
+    il_editor/               map editor (Phase 3, T3-060); unit and formation editors (Phase 6); a presentation crate that may write files
     il_app/                  binary: winit event loop, state machine, accumulator, wiring of all crates
     il_cli/                  binary: headless scenario runner, hash printer, benchmark driver, desync report tool
   game/
@@ -130,13 +130,16 @@ flowchart TD
     audio[il_audio] -.-> core
     script[il_script] -.-> simc
     net[il_net] -.-> simb
-    editor[il_editor] -.-> ui
-    editor -.-> render
+    editor[il_editor] --> ui
+    editor --> render
+    editor --> core
+    editor --> data
+    editor -->|NavGrid, LoadedMap| simb
     app -.-> save
     app -.-> audio
     app -.-> script
     app -.-> net
-    app -.-> editor
+    app --> editor
     app -.-> simc
     cli -.-> simc
     cli -.-> save
@@ -148,6 +151,7 @@ Hard rules, enforced by `tests/tests/dep_rules.rs` (four tests over every `Cargo
 
 - Sim crates (`il_core`, `il_data`, `il_ai`, `il_sim_battle`, `il_sim_campaign`) must not depend on `wgpu`, `winit`, `egui`, `egui-wgpu`, `egui-winit`, any audio crate (`kira`, `rodio`, `cpal`), `rand`, `glam`, `game_rules`, or any non-sim workspace crate (`il_render`, `il_ui`, `il_audio`, `il_app`, `il_cli`, `il_save`, `il_net`, `il_editor`, `il_script`). Clock and filesystem use are not manifest facts, so clippy carries them: `disallowed_methods` bans `Instant::now` and `SystemTime::now` in the sim crates and in `il_cli` (its bench `StageTimer` is the one marked exception, §9.3), and `il_sim_battle`'s clippy bans `std::fs` (the loader in `il_data` runs only at load).
 - Presentation crates `il_render`, `il_ui` and `il_audio` (T2-100) may depend on `il_core`, `il_data` and `il_sim_battle` and on nothing else in the workspace; `il_render` never depends on `winit`, `il_ui` never on `wgpu`, `il_audio` on neither nor on `egui`. They read the sim only through `BattleWorld::view() -> BattleView` and never hold `&mut`.
+- `il_editor` (T3-003 rule, the crate arrives in T3-060) is a presentation crate that may depend on `il_core`, `il_data`, `il_sim_battle` (for `NavGrid` and `LoadedMap` only), `il_render` and `il_ui`, and never on `il_app` or on any other workspace crate; unlike the other presentation crates it may write files (it saves maps into a mod folder), so its own `clippy.toml` re-allows `std::fs` the way il_data's does. `dep_rules.rs` lists it with that allowed set and tolerates the missing manifest until T3-060 (`ARRIVES_LATER`).
 - No `il_*` crate depends on `game/` or on `game_rules`.
 - `il_sim_campaign` will depend on `il_sim_battle` only for the shared `BattleSetup` and `BattleResult` types (they live in `il_sim_battle::interface`).
 - Every sim crate manifest must exist, so a renamed crate fails the test instead of escaping it.
@@ -295,7 +299,7 @@ Two threads by default, more inside the sim step:
 | Thread | Owns | Notes |
 |---|---|---|
 | Main | winit loop, `il_app` state machine, accumulator, sim stepping, egui | Sim stepping stays on main until Phase 3; the render thread reads a double-buffered copy. |
-| Render (Phase 3, REQ-RNDR-007) | wgpu queue, instance buffer build, present | Receives an immutable render snapshot (positions ×2, facings ×2, LOD inputs) each frame. Never touches the ECS. |
+| Render (Phase 3, REQ-RNDR-007; T3-003 spec, T3-030 build) | wgpu device, surface, instance buffer build, present | Receives one owned `FrameJob` (render snapshot with the LOD tier, sprite and line scenes, tessellated UI, camera, resize and vsync changes; TDD §10.1) per frame over a one-slot channel that replaces a stale job rather than blocking, so the main thread's accumulator never waits on the GPU. Never touches the ECS. `--single-thread-render` keeps the renderer on the main thread. |
 | Sim worker pool | `bevy_ecs` schedule parallelism inside a stage | Bounded to physical cores minus one. |
 
 Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
