@@ -27,6 +27,23 @@ release build; the code paths are unchanged, so the difference is run-to-run and
 optimisation). Numbers from other machines are not comparable with the baseline; record a new one with
 `il_cli bench --record-baseline` and note the machine here.
 
+## Re-record after HPA\* (T3-021, 2026-09-10, later the same day)
+
+Stage 3 (`RegimentMovement`, which serves the paths) is the only stage whose code changed; every key was
+re-recorded in one sitting so the baseline stays self-consistent. Mean ms per tick, the T3-001 recording → T3-021:
+
+| Key | tick | RegimentMovement (3) | Collision (7) | SoldierSteering (4) |
+|---|---|---|---|---|
+| 2000 | 3.65 → 4.74 | 0.10 → 0.13 | 1.62 → 1.74 | 0.64 → 0.78 |
+| 10000 | 11.64 → 14.04 | 0.21 → 0.28 | 5.36 → 6.00 | 2.39 → 2.90 |
+| 20000 | 22.32 → 27.62 | 0.34 → 0.51 | 9.93 → 11.34 | 5.00 → 6.68 |
+| perf_10k | 12.84 → 13.43 | 0.37 → 0.41 | 4.62 → 4.75 | 2.95 → 3.03 |
+
+Stage 3 at 20k moved by 0.17 ms and sits at 0.51 ms against its 1 ms budget. The rest of the change is
+run-to-run variance: two unrecorded 20k runs straight after gave 25.3 and 26.9 ms (Collision 10.6 / 11.1,
+Steering 6.0 / 6.7), so this machine swings about ±10 % between sittings on the same code; the T3-001 morning
+numbers were at the fast end of that band. `--strict` comparisons on this machine should allow for it.
+
 ## Exit checklist evidence
 
 - `bench_perf_20k.md`, `profiler_20k.png`: the 20k fight (T3-024).

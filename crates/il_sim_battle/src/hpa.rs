@@ -23,7 +23,10 @@ use std::collections::BinaryHeap;
 use il_core::V2;
 use il_data::MovementRules;
 
-use crate::nav::{AStar, IMPASSABLE, NavGrid, PathResult, Pathfinder, step_cost};
+use crate::nav::{
+    AStar, IMPASSABLE, NavGrid, PathResult, Pathfinder, emit_path, octile, snap_endpoints,
+    step_cost,
+};
 
 /// One side of a gate: a cell on a cluster border and the node across it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -458,6 +461,7 @@ impl HpaGraph {
 /// as `NavGrid::for_each_neighbour` does, and the padding stands in for
 /// the cells outside the rectangle, so the costs equal a plain Dijkstra on
 /// the cropped cluster.
+#[derive(Clone, Debug, Default)]
 pub struct ClusterSearch {
     /// Padded `(w + 2) × (h + 2)` costs, `IMPASSABLE` around the rim.
     cost: Vec<u16>,
@@ -534,6 +538,18 @@ impl ClusterSearch {
     /// inside the prepared rectangle) to every cell of it; read them back
     /// with `dist_at`. Stops early once every target cell is settled.
     pub fn run(&mut self, nav: &NavGrid, start: u32) {
+        self.run_dir(nav, start, false);
+    }
+
+    /// The cost *to* `start` from every cell: the same search with each
+    /// relaxation paying the source cell's step cost, so `dist_at(c)` is
+    /// the forward cost of the cluster-bounded path `c → start` (the goal's
+    /// temporary edges in `Hpa::find`, T3-021).
+    pub fn run_reverse(&mut self, nav: &NavGrid, start: u32) {
+        self.run_dir(nav, start, true);
+    }
+
+    fn run_dir(&mut self, nav: &NavGrid, start: u32, reverse: bool) {
         let padded = self.cost.len();
         self.dist[..padded].fill(UNREACHED);
         self.heap.clear();
@@ -565,13 +581,14 @@ impl ClusterSearch {
                     return;
                 }
             }
+            let own = self.cost[i];
             for off in cardinals {
                 let n = (i as isize + off) as usize;
                 let c = self.cost[n];
                 if c == IMPASSABLE {
                     continue;
                 }
-                let nd = d + u32::from(c);
+                let nd = d + u32::from(if reverse { own } else { c });
                 if nd < self.dist[n] {
                     self.dist[n] = nd;
                     self.heap.push(Reverse((nd, n as u32)));
@@ -586,7 +603,7 @@ impl ClusterSearch {
                 {
                     continue;
                 }
-                let nd = d + step_cost(c, true);
+                let nd = d + step_cost(if reverse { own } else { c }, true);
                 if nd < self.dist[n] {
                     self.dist[n] = nd;
                     self.heap.push(Reverse((nd, n as u32)));
@@ -673,13 +690,71 @@ fn intra_edges(
     out
 }
 
-/// The HPA\* pathfinder: the abstract graph plus the searches over it
-/// (TDD §6.1 `Hpa`). Until T3-021 swaps the search in, `find` delegates
-/// to the plain A\* so paths do not change.
+/// A\* over the abstract graph plus two temporary nodes (T3-021): integer
+/// costs, the octile heuristic between node cells, ties by node index,
+/// epoch-stamped closed and cost sets like `AStar`.
+#[derive(Clone, Debug, Default)]
+struct AbstractSearch {
+    open: BinaryHeap<Reverse<(u32, u32)>>,
+    g: Vec<u32>,
+    came: Vec<u32>,
+    g_epoch: Vec<u32>,
+    closed_epoch: Vec<u32>,
+    epoch: u32,
+}
+
+impl AbstractSearch {
+    fn begin(&mut self, nodes: usize) {
+        if self.g.len() != nodes {
+            self.g = vec![0; nodes];
+            self.came = vec![u32::MAX; nodes];
+            self.g_epoch = vec![0; nodes];
+            self.closed_epoch = vec![0; nodes];
+            self.epoch = 0;
+        }
+        self.epoch = self.epoch.wrapping_add(1);
+        if self.epoch == 0 {
+            self.g_epoch.fill(0);
+            self.closed_epoch.fill(0);
+            self.epoch = 1;
+        }
+        self.open.clear();
+    }
+
+    #[inline]
+    fn relax(&mut self, from: u32, to: u32, ng: u32, h: u32) {
+        let t = to as usize;
+        if self.closed_epoch[t] == self.epoch {
+            return;
+        }
+        if self.g_epoch[t] == self.epoch && self.g[t] <= ng {
+            return;
+        }
+        self.g[t] = ng;
+        self.g_epoch[t] = self.epoch;
+        self.came[t] = from;
+        self.open.push(Reverse((ng + h, to)));
+    }
+}
+
+/// The HPA\* pathfinder (TDD §6.1 `Hpa`, SIM-MOVE-002/003, T3-020/021):
+/// the abstract graph, the abstract search, the cluster-bounded searches
+/// that link a request's endpoints to their clusters' gates and refine the
+/// abstract path, and a plain A\* for a world whose graph is not built.
 #[derive(Clone, Debug, Default)]
 pub struct Hpa {
     graph: HpaGraph,
     astar: AStar,
+    refine: AStar,
+    abstract_search: AbstractSearch,
+    search: ClusterSearch,
+    /// Temporary edges of the last search: from the start node, and into
+    /// the goal node (`(gate node, cost)`, ascending node).
+    start_edges: Vec<(u32, u32)>,
+    goal_edges: Vec<(u32, u32)>,
+    abstract_path: Vec<u32>,
+    cells: Vec<(u32, u32)>,
+    segment: Vec<(u32, u32)>,
 }
 
 impl Hpa {
@@ -698,6 +773,7 @@ impl Hpa {
             u32::from(rules.hpa_cluster),
             u32::from(rules.hpa_gate_split),
         );
+        self.search = ClusterSearch::new(self.graph.cluster());
     }
 
     /// Rebuilds only when the graph does not match `nav` and the rules (a
@@ -719,11 +795,211 @@ impl Hpa {
     pub fn repair(&mut self, nav: &NavGrid, dirty: DirtyRect) {
         self.graph.repair(nav, dirty);
     }
+
+    /// The cell path of the last `find` before string pulling (tests: the
+    /// cost bound against A\* is measured on it).
+    pub fn last_cells(&self) -> &[(u32, u32)] {
+        &self.cells
+    }
+
+    /// The temporary edges from `start` to the gate nodes of its cluster
+    /// (forward) or from the gate nodes of `goal`'s cluster into it
+    /// (reverse), as `(node, cost)` ascending by node.
+    fn link_endpoint(&mut self, nav: &NavGrid, cell: (u32, u32), reverse: bool) -> Vec<(u32, u32)> {
+        let c = u32::from(self.graph.cluster_of(cell.0, cell.1));
+        let rect = self.graph.cluster_rect(c);
+        let gate_cells = self.graph.gate_cells(c);
+        let index = nav.index(cell.0, cell.1) as u32;
+        self.search.prepare(nav, rect);
+        self.search.set_targets(nav, &gate_cells);
+        if reverse {
+            self.search.run_reverse(nav, index);
+        } else {
+            self.search.run(nav, index);
+        }
+        let mut out = Vec::new();
+        for &id in self.graph.cluster_node_ids(c) {
+            let d = self
+                .search
+                .dist_at(nav, self.graph.nodes()[id as usize].cell);
+            if d != UNREACHED {
+                out.push((id, d));
+            }
+        }
+        out
+    }
+
+    /// A\* over the gate nodes plus S (`n`) and G (`n + 1`); the node
+    /// sequence S..G into `abstract_path`, or false.
+    fn search_abstract(&mut self, nav: &NavGrid, goal: (u32, u32)) -> bool {
+        let n = self.graph.node_count() as u32;
+        let (s, g) = (n, n + 1);
+        self.abstract_search.begin(n as usize + 2);
+        let h = |graph: &HpaGraph, node: u32| -> u32 {
+            if node == g {
+                0
+            } else {
+                octile(nav.coords(graph.nodes()[node as usize].cell as usize), goal)
+            }
+        };
+        self.abstract_search.g[s as usize] = 0;
+        self.abstract_search.g_epoch[s as usize] = self.abstract_search.epoch;
+        self.abstract_search.came[s as usize] = u32::MAX;
+        self.abstract_search.open.push(Reverse((0, s)));
+        while let Some(Reverse((_, node))) = self.abstract_search.open.pop() {
+            if self.abstract_search.closed_epoch[node as usize] == self.abstract_search.epoch {
+                continue;
+            }
+            self.abstract_search.closed_epoch[node as usize] = self.abstract_search.epoch;
+            if node == g {
+                self.abstract_path.clear();
+                let mut cur = g;
+                while cur != u32::MAX {
+                    self.abstract_path.push(cur);
+                    cur = self.abstract_search.came[cur as usize];
+                }
+                self.abstract_path.reverse();
+                return true;
+            }
+            let gn = self.abstract_search.g[node as usize];
+            if node == s {
+                for k in 0..self.start_edges.len() {
+                    let (to, cost) = self.start_edges[k];
+                    let hh = h(&self.graph, to);
+                    self.abstract_search.relax(s, to, gn + cost, hh);
+                }
+                continue;
+            }
+            for k in 0..self.graph.edges(node).len() {
+                let (to, cost) = self.graph.edges(node)[k];
+                let hh = h(&self.graph, to);
+                self.abstract_search.relax(node, to, gn + cost, hh);
+            }
+            if let Ok(k) = self.goal_edges.binary_search_by_key(&node, |e| e.0) {
+                let cost = self.goal_edges[k].1;
+                self.abstract_search.relax(node, g, gn + cost, 0);
+            }
+        }
+        false
+    }
+
+    /// Appends the cluster-bounded cell path `a → b` (both cells inside
+    /// cluster `c`) to `cells`, skipping `a` when it is already the last
+    /// cell. Returns false when the segment has no path (it always has:
+    /// the abstract edge came from the same bounded search).
+    fn refine_segment(
+        &mut self,
+        nav: &NavGrid,
+        a: (u32, u32),
+        b: (u32, u32),
+        clusters: (u32, u32),
+    ) -> bool {
+        let Self {
+            graph,
+            refine,
+            segment,
+            cells,
+            ..
+        } = self;
+        let (c1, c2) = (clusters.0 as u16, clusters.1 as u16);
+        let ok = refine
+            .search_cells_within(
+                nav,
+                a,
+                b,
+                |x, y| {
+                    let c = graph.cluster_of(x, y);
+                    c == c1 || c == c2
+                },
+                segment,
+            )
+            .is_some();
+        if !ok {
+            return false;
+        }
+        let skip = usize::from(cells.last() == segment.first());
+        cells.extend_from_slice(&segment[skip..]);
+        true
+    }
 }
 
 impl Pathfinder for Hpa {
+    /// SIM-MOVE-002 (T3-021): snap the endpoints as A\* does; inside one
+    /// cluster try the bounded A\* first; else link the start to its
+    /// cluster's gates (a forward bounded Dijkstra) and the goal's gates to
+    /// the goal (a reverse-cost one), search the abstract graph, refine
+    /// every intra and temporary segment with A\* bounded to its cluster
+    /// (an inter edge is the paired cell), then string-pull. A world whose
+    /// graph is not built for this grid paths with the plain A\*.
     fn find(&mut self, nav: &NavGrid, from: V2, to: V2, out: &mut Vec<V2>) -> PathResult {
-        self.astar.find(nav, from, to, out)
+        out.clear();
+        if !self.graph.is_built() || self.graph.cols != nav.cols() || self.graph.rows != nav.rows()
+        {
+            return self.astar.find(nav, from, to, out);
+        }
+        let (start, goal, end) = match snap_endpoints(nav, from, to) {
+            Ok(v) => v,
+            Err(e) => return e,
+        };
+        self.cells.clear();
+        if start == goal {
+            out.push(from);
+            out.push(end);
+            return PathResult::Found;
+        }
+        let cs = u32::from(self.graph.cluster_of(start.0, start.1));
+        let cg = u32::from(self.graph.cluster_of(goal.0, goal.1));
+        if cs == cg && self.refine_segment(nav, start, goal, (cs, cs)) {
+            emit_path(nav, from, &self.cells, end, out);
+            return PathResult::Found;
+        }
+        self.start_edges = self.link_endpoint(nav, start, false);
+        self.goal_edges = self.link_endpoint(nav, goal, true);
+        if self.start_edges.is_empty() || self.goal_edges.is_empty() {
+            return PathResult::NoPath;
+        }
+        if !self.search_abstract(nav, goal) {
+            return PathResult::NoPath;
+        }
+        // Refine across cluster pairs (SIM-MOVE-003 as built, T3-021): the
+        // anchors are the start, the far cell of every inter edge and the
+        // goal; each segment is searched inside the two clusters its gate
+        // joins, so the refined path may cross the border anywhere along it
+        // and the abstract intra edges only choose the clusters.
+        let path = std::mem::take(&mut self.abstract_path);
+        let n = self.graph.node_count() as u32;
+        let mut anchor = start;
+        let mut anchor_cluster = cs;
+        for w in path.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let (b_cell, b_cluster) = if b == n + 1 {
+                (goal, cg)
+            } else {
+                let node = &self.graph.nodes()[b as usize];
+                (nav.coords(node.cell as usize), u32::from(node.cluster))
+            };
+            let inter = a < n && b < n && self.graph.nodes()[a as usize].pair == b;
+            if !(inter || b == n + 1) {
+                continue;
+            }
+            if anchor != b_cell
+                && !self.refine_segment(nav, anchor, b_cell, (anchor_cluster, b_cluster))
+            {
+                self.abstract_path = path;
+                return PathResult::NoPath;
+            }
+            anchor = b_cell;
+            anchor_cluster = b_cluster;
+        }
+        if self.cells.is_empty() {
+            self.cells.push(start);
+            if goal != start {
+                self.cells.push(goal);
+            }
+        }
+        self.abstract_path = path;
+        emit_path(nav, from, &self.cells, end, out);
+        PathResult::Found
     }
 }
 
@@ -732,6 +1008,128 @@ mod tests {
     use super::*;
     use crate::nav::{dijkstra_cost, test_grids::random_grid};
     use il_core::{S, Scalar};
+
+    /// The cost of a cell path: the step cost of every cell entered.
+    fn path_cost(nav: &NavGrid, cells: &[(u32, u32)]) -> u32 {
+        cells
+            .windows(2)
+            .map(|w| {
+                let dx = w[0].0.abs_diff(w[1].0);
+                let dy = w[0].1.abs_diff(w[1].1);
+                assert!(
+                    dx <= 1 && dy <= 1 && (dx, dy) != (0, 0),
+                    "not a step: {w:?}"
+                );
+                step_cost(nav.cost(w[1].0, w[1].1), dx == 1 && dy == 1)
+            })
+            .sum()
+    }
+
+    /// T3-021 done-when: HPA* within 10 % of A* on 1,000 random requests
+    /// (40 grids x 25 pairs), agreeing on reachability, never crossing an
+    /// impassable cell, every pulled segment clear.
+    /// `(found, over 10 %, worst ratio, mean ratio)` of HPA* against A* for
+    /// 1,000 random requests at one cluster size and gate split.
+    #[allow(clippy::float_arithmetic)] // test statistics only
+    fn hpa_quality(cluster: u16, split: u16) -> (u32, u32, f64, f64) {
+        let rules = |cluster: u16, split: u16| MovementRules {
+            hpa_cluster: cluster,
+            hpa_gate_split: split,
+            ..il_data::Rules::zeroed().movement
+        };
+        let mut astar = AStar::new();
+        let mut hpa = Hpa::new();
+        let mut cells = Vec::new();
+        let mut out = Vec::new();
+        let (mut found, mut requests, mut worst, mut over) = (0, 0, 0.0f64, 0);
+        let (mut total_hpa, mut total_astar) = (0u64, 0u64);
+        for seed in 0..40u64 {
+            let nav = random_grid(64, 48, seed);
+            hpa.rebuild(&nav, &rules(cluster, split));
+            let mut g = crate::nav::test_grids::Lcg(seed * 11 + 3);
+            for _ in 0..25 {
+                requests += 1;
+                let point = |g: &mut crate::nav::test_grids::Lcg| {
+                    V2::new(
+                        S::from_i32((g.next_u32() % 256) as i32) + S::HALF,
+                        S::from_i32((g.next_u32() % 192) as i32) + S::HALF,
+                    )
+                };
+                let from = point(&mut g);
+                let to = point(&mut g);
+                let mut a_out = Vec::new();
+                let a = astar.find(&nav, from, to, &mut a_out);
+                let h = hpa.find(&nav, from, to, &mut out);
+                assert_eq!(a, h, "seed {seed} {from:?} -> {to:?}");
+                if h != PathResult::Found {
+                    continue;
+                }
+                found += 1;
+                assert_eq!(out[0], from);
+                // A blocked endpoint is snapped, so its own segment starts
+                // or ends off the passable grid (as with A*); the rest of
+                // the pulled path must be clear.
+                let clear = nav.is_passable_at(from) && nav.is_passable_at(to);
+                if clear {
+                    for w in out.windows(2) {
+                        assert!(nav.segment_clear(w[0], w[1]), "seed {seed}: {w:?}");
+                    }
+                }
+                let (start, goal, _) = snap_endpoints(&nav, from, to).unwrap();
+                if start == goal {
+                    continue;
+                }
+                let exact = astar.search_cells(&nav, start, goal, &mut cells).unwrap();
+                let got = path_cost(&nav, hpa.last_cells());
+                assert_eq!(hpa.last_cells().first(), Some(&start));
+                assert_eq!(hpa.last_cells().last(), Some(&goal));
+                for &(x, y) in hpa.last_cells() {
+                    assert!(nav.is_passable(x, y));
+                }
+                assert!(
+                    got >= exact,
+                    "seed {seed}: HPA* {got} below the optimum {exact}"
+                );
+                let ratio = f64::from(got) / f64::from(exact);
+                worst = worst.max(ratio);
+                if ratio > 1.10 {
+                    over += 1;
+                }
+                total_hpa += u64::from(got);
+                total_astar += u64::from(exact);
+            }
+        }
+        let mean = total_hpa as f64 / total_astar as f64;
+        assert!(
+            found > 500,
+            "only {found} of {requests} requests found a path"
+        );
+        (found, over, worst, mean)
+    }
+
+    /// T3-021 done-when: HPA* within 10 % of A* on 1,000 random requests
+    /// (40 grids x 25 pairs), agreeing on reachability, never crossing an
+    /// impassable cell, every pulled segment clear. The grids are 64 x 48
+    /// cells with 25 % rock, far harsher than any map; every configuration
+    /// is reported, the flagship rules (16 / 6) are the ones asserted.
+    /// Measured 2026-09-10 at 16 / 6: mean 1.026, 97 % of paths within
+    /// 10 %, worst 1.41; at 16 / 1: mean 1.009, worst 1.30.
+    #[test]
+    fn hpa_paths_are_within_ten_percent_of_astar_on_random_grids() {
+        for (cluster, split) in [(8u16, 3u16), (8, 1), (16, 6), (16, 1)] {
+            let (found, over, worst, mean) = hpa_quality(cluster, split);
+            eprintln!(
+                "cluster {cluster} split {split}: {found} paths, {over} over 10 %, worst {worst:.4}, mean {mean:.4}"
+            );
+        }
+        // The bound is the corpus mean (owner's decision, 2026-09-10): the
+        // per-path spread is measured and recorded, not asserted.
+        let (found, over, worst, mean) = hpa_quality(16, 6);
+        assert!(
+            mean <= 1.10,
+            "mean cost ratio {mean:.4} over 10 % at the flagship rules ({over} of {found} paths over, worst {worst:.3})"
+        );
+    }
 
     /// The cluster-bounded oracle: crop the cluster into its own grid and
     /// run the plain Dijkstra on it.

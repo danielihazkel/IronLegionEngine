@@ -491,7 +491,7 @@ impl NavGrid {
 
 /// Octile heuristic in cost units; admissible because the cheapest cell
 /// costs `COST_SCALE`.
-fn octile(from: (u32, u32), to: (u32, u32)) -> u32 {
+pub(crate) fn octile(from: (u32, u32), to: (u32, u32)) -> u32 {
     let dx = from.0.abs_diff(to.0);
     let dy = from.1.abs_diff(to.1);
     COST_SCALE * dx.max(dy) + (DIAGONAL - COST_SCALE) * dx.min(dy)
@@ -562,8 +562,27 @@ impl AStar {
         goal: (u32, u32),
         out: &mut Vec<(u32, u32)>,
     ) -> Option<u32> {
+        self.search_cells_within(nav, start, goal, |_, _| true, out)
+    }
+
+    /// [`Self::search_cells`] restricted to the cells `region` admits (the
+    /// HPA\* refinement runs it inside one cluster, T3-021). The corner-cut
+    /// rule still reads the full grid; a region that is an axis-aligned
+    /// rectangle union never needs a cell outside it for that.
+    pub fn search_cells_within(
+        &mut self,
+        nav: &NavGrid,
+        start: (u32, u32),
+        goal: (u32, u32),
+        region: impl Fn(u32, u32) -> bool,
+        out: &mut Vec<(u32, u32)>,
+    ) -> Option<u32> {
         out.clear();
-        if !nav.is_passable(start.0, start.1) || !nav.is_passable(goal.0, goal.1) {
+        if !nav.is_passable(start.0, start.1)
+            || !nav.is_passable(goal.0, goal.1)
+            || !region(start.0, start.1)
+            || !region(goal.0, goal.1)
+        {
             return None;
         }
         self.begin(nav.cell_count());
@@ -591,6 +610,9 @@ impl AStar {
             let (cx, cy) = nav.coords(node as usize);
             let g = self.g[node as usize];
             nav.for_each_neighbour(cx, cy, |_, nx, ny, step| {
+                if !region(nx, ny) {
+                    return;
+                }
                 let ng = g + step;
                 let n = nav.index(nx, ny) as u32;
                 if self.closed_epoch[n as usize] == self.epoch {
@@ -609,22 +631,51 @@ impl AStar {
     }
 }
 
+/// The snapped endpoints of a request: the start and goal cells (blocked
+/// ones moved to the nearest passable cell within `SNAP_RADIUS`) and the
+/// point the path ends on (`to` itself unless it had to be snapped).
+/// Shared by `AStar::find` and `Hpa::find` (T3-021).
+pub(crate) type Endpoints = ((u32, u32), (u32, u32), V2);
+
+pub(crate) fn snap_endpoints(nav: &NavGrid, from: V2, to: V2) -> Result<Endpoints, PathResult> {
+    let (sx, sy) = nav.cell_of(from);
+    let Some(start) = nav.nearest_passable(sx, sy) else {
+        return Err(PathResult::StartBlocked);
+    };
+    let (gx, gy) = nav.cell_of(to);
+    let Some(goal) = nav.nearest_passable(gx, gy) else {
+        return Err(PathResult::GoalBlocked);
+    };
+    let end = if goal == (gx, gy) && nav.is_passable_at(to) {
+        to
+    } else {
+        nav.cell_center(goal.0, goal.1)
+    };
+    Ok((start, goal, end))
+}
+
+/// Writes `from`, the centres of the inner cells of `cells`, and `end`
+/// into `out`, then string-pulls (shared by both pathfinders).
+pub(crate) fn emit_path(nav: &NavGrid, from: V2, cells: &[(u32, u32)], end: V2, out: &mut Vec<V2>) {
+    out.clear();
+    out.push(from);
+    if cells.len() > 2 {
+        out.extend(
+            cells[1..cells.len() - 1]
+                .iter()
+                .map(|&(cx, cy)| nav.cell_center(cx, cy)),
+        );
+    }
+    out.push(end);
+    string_pull(nav, out);
+}
+
 impl Pathfinder for AStar {
     fn find(&mut self, nav: &NavGrid, from: V2, to: V2, out: &mut Vec<V2>) -> PathResult {
         out.clear();
-        let (sx, sy) = nav.cell_of(from);
-        let Some(start) = nav.nearest_passable(sx, sy) else {
-            return PathResult::StartBlocked;
-        };
-        let (gx, gy) = nav.cell_of(to);
-        let Some(goal) = nav.nearest_passable(gx, gy) else {
-            return PathResult::GoalBlocked;
-        };
-        // The goal point itself unless it had to be snapped.
-        let end = if goal == (gx, gy) && nav.is_passable_at(to) {
-            to
-        } else {
-            nav.cell_center(goal.0, goal.1)
+        let (start, goal, end) = match snap_endpoints(nav, from, to) {
+            Ok(v) => v,
+            Err(e) => return e,
         };
         if start == goal {
             out.push(from);
@@ -635,14 +686,7 @@ impl Pathfinder for AStar {
         if self.search_cells(nav, start, goal, &mut cells).is_none() {
             return PathResult::NoPath;
         }
-        out.push(from);
-        out.extend(
-            cells[1..cells.len() - 1]
-                .iter()
-                .map(|&(cx, cy)| nav.cell_center(cx, cy)),
-        );
-        out.push(end);
-        string_pull(nav, out);
+        emit_path(nav, from, &cells, end, out);
         PathResult::Found
     }
 }

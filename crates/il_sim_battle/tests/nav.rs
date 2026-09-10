@@ -34,6 +34,16 @@ fn test_map_nav_grid_marks_rock_river_and_crossings() {
     let _ = regs;
 }
 
+fn crosses_at_bridge(out: &[V2]) -> bool {
+    out.windows(2).any(|s| {
+        (s[0].y <= S::from_i32(310)) != (s[1].y <= S::from_i32(310)) && {
+            let t = (S::from_i32(310) - s[0].y) / (s[1].y - s[0].y);
+            let x = s[0].x + (s[1].x - s[0].x) * t;
+            x >= S::from_i32(396) && x <= S::from_i32(404)
+        }
+    })
+}
+
 #[test]
 fn paths_cross_the_river_at_the_bridge_or_ford() {
     let w = common::world(10);
@@ -46,17 +56,25 @@ fn paths_cross_the_river_at_the_bridge_or_ford() {
         PathResult::Found
     );
     assert!(out.len() >= 3, "{out:?}");
-    let crosses_at_bridge = out.windows(2).any(|s| {
-        (s[0].y <= S::from_i32(310)) != (s[1].y <= S::from_i32(310)) && {
-            let t = (S::from_i32(310) - s[0].y) / (s[1].y - s[0].y);
-            let x = s[0].x + (s[1].x - s[0].x) * t;
-            x >= S::from_i32(396) && x <= S::from_i32(404)
-        }
-    });
-    assert!(crosses_at_bridge, "{out:?}");
+    assert!(crosses_at_bridge(&out), "{out:?}");
     for pair in out.windows(2) {
         assert!(nav.segment_clear(pair[0], pair[1]));
     }
+    // T3-021: the same request through HPA* (the world's own pathfinder,
+    // built by `new`) crosses at the bridge too, with clear segments.
+    let mut hpa = w.ecs().resource::<il_sim_battle::PathfinderRes>().0.clone();
+    assert!(hpa.graph().is_built());
+    let mut via_hpa = Vec::new();
+    assert_eq!(
+        hpa.find(nav, v(300.0, 150.0), v(300.0, 450.0), &mut via_hpa),
+        PathResult::Found
+    );
+    assert!(crosses_at_bridge(&via_hpa), "{via_hpa:?}");
+    for pair in via_hpa.windows(2) {
+        assert!(nav.segment_clear(pair[0], pair[1]));
+    }
+    assert_eq!(via_hpa[0], v(300.0, 150.0));
+    assert_eq!(*via_hpa.last().unwrap(), v(300.0, 450.0));
 }
 
 fn request(w: &mut il_sim_battle::BattleWorld, rid: u32, target: V2) {

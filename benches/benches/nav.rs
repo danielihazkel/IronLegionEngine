@@ -8,7 +8,7 @@ use std::path::Path;
 use criterion::{Criterion, criterion_group, criterion_main};
 use il_core::V2;
 use il_sim_battle::nav::test_grids::random_grid;
-use il_sim_battle::{AStar, BattleWorld, HpaGraph, string_pull};
+use il_sim_battle::{AStar, BattleWorld, HpaGraph, Pathfinder, string_pull};
 
 fn world() -> BattleWorld {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../game");
@@ -74,5 +74,31 @@ fn hpa_build(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, nav, hpa_build);
+/// T3-021: one `Hpa::find` corner to corner on the test map (Stage 3
+/// serves at most `paths_per_tick` = 8 of these per tick), against the
+/// plain A* on the same request.
+fn hpa_find(c: &mut Criterion) {
+    let world = world();
+    let nav = world.nav_grid();
+    let mut hpa = world
+        .ecs()
+        .resource::<il_sim_battle::PathfinderRes>()
+        .0
+        .clone();
+    let (from, to) = (
+        V2::from_f32_data(100.0, 100.0),
+        V2::from_f32_data(700.0, 500.0),
+    );
+    let mut out = Vec::new();
+    c.bench_function("hpa_find_corner_to_corner", |b| {
+        b.iter(|| hpa.find(nav, from, to, &mut out))
+    });
+    assert!(!out.is_empty());
+    let mut astar = AStar::new();
+    c.bench_function("astar_find_corner_to_corner", |b| {
+        b.iter(|| astar.find(nav, from, to, &mut out))
+    });
+}
+
+criterion_group!(benches, nav, hpa_build, hpa_find);
 criterion_main!(benches);
