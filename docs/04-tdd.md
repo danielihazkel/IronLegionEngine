@@ -86,7 +86,7 @@ The `trace`, `headless` and `fixed` flags of the Phase 0 plan were never needed:
 
 ### 1.2 Dependencies (pinned per phase)
 
-Phase 0 pins (T0-003) are the versions in the table; later phases pin their own crates when they arrive and update this table. Phase 1 pins (T1-050) are the newest mutually compatible set on 2026-09-03; `egui-wgpu` 0.36 requires `wgpu` ^30 and `egui-winit` 0.36 requires `winit` ^0.30.13.
+Phase 0 pins (T0-003) are the versions in the table; later phases pin their own crates when they arrive and update this table. Phase 1 pins (T1-050) are the newest mutually compatible set on 2026-09-03; `egui-wgpu` 0.36 requires `wgpu` ^30 and `egui-winit` 0.36 requires `winit` ^0.30.13. Phase 3 pins (T3-001) are the newest *stable* mutually compatible set on 2026-09-10: `egui`, `egui-wgpu`, `egui-winit` 0.36.2, `glam` 0.33.7, `jsonschema` 0.56 (its 0.54–0.56 breaking changes are all in the `canonical` module, which il_data does not use), the toolchain 1.98.1, and a `cargo update` of the transitive lock (31 patch bumps); `bevy_ecs`/`bevy_tasks` 0.19.1, `wgpu` 30.0.1, `kira` 0.12.4, `png` 0.18.1 and `criterion` 0.8.2 were already the newest. Skipped as prereleases: `winit` 0.31.0-beta (egui-winit 0.36 needs winit ^0.30 anyway) and `notify` 9.0.0-rc. `tracing` left il_sim_battle in the same pass (SAD §12 T-11). The `il_cli run` hash logs of `idle_1000`, `move_reform_2000` and `perf_10k` were identical before and after the bump, so no floating-point result moved; the baseline was re-recorded the same day (`docs/evidence/phase3/machine.md`).
 
 | Crate | Version (initial) | Why | Used by |
 |---|---|---|---|
@@ -94,18 +94,18 @@ Phase 0 pins (T0-003) are the versions in the table; later phases pin their own 
 | `bevy_tasks` | 0.19.1 | `ComputeTaskPool` for `BattleWorld::set_threads` | il_sim_battle |
 | `wgpu` | 30.0.1 | GPU API | il_render |
 | `winit` | 0.30.13 | window and input events | il_app, il_ui (event types; a direct dependency so `cargo test -p il_ui` unifies winit's features like il_app) |
-| `egui`, `egui-wgpu`, `egui-winit` | 0.36.1 | UI (`egui-wgpu` paint pass lives in il_render) | il_render (`egui`, `egui-wgpu` with feature `winit`), il_ui (`egui`, `egui-winit` without default features), il_app (`egui`) |
+| `egui`, `egui-wgpu`, `egui-winit` | 0.36.2 (0.36.1 in Phase 1) | UI (`egui-wgpu` paint pass lives in il_render) | il_render (`egui`, `egui-wgpu` with feature `winit`), il_ui (`egui`, `egui-winit` without default features), il_app (`egui`) |
 | `serde` (feature `derive`) | 1 | serialisation | il_core, il_data, il_sim_battle, il_cli |
 | `json5` | 1.3 | test fixtures only since T1-081; scenarios and content go through `il_data::json5`, a span-carrying parser written in T1-020 because per-field positions are needed for diagnostics and merge provenance (OQ-7 amended) | il_sim_battle, il_render, il_ui (dev-dependencies) |
 | `semver` | 1 | manifest versions and ranges | il_data |
 | `serde_json` | 1 | save headers, schema validation input | il_data, il_sim_battle, il_cli, tests (il_save when it arrives) |
-| `jsonschema` | 0.53 (`default-features = false`) | content validation, draft 2020-12 | il_data |
+| `jsonschema` | 0.56 (`default-features = false`; 0.53 in Phase 2) | content validation, draft 2020-12 | il_data |
 | `postcard` | 1.1 (feature `use-std`) | snapshot encoding (OQ-2 resolved in Phase 0) | il_sim_battle (il_save when it arrives) |
 | `mlua` (`lua54`, `vendored`) | 0.10 | Lua | il_script (Phase 6; not in the workspace yet) |
-| `glam` | 0.33.6 | render-side math only (never in sim) | il_render, il_ui, il_app |
+| `glam` | 0.33.7 (0.33.6 in Phase 1) | render-side math only (never in sim) | il_render, il_ui, il_app |
 | `png`, `bytemuck`, `pollster` | 0.18.1 / 1 / 0.4 | atlas files, GPU buffer casts, blocking on device creation | il_render; il_cli uses `png` only (`genart`) |
 | `xxhash-rust` (`xxh3`) | 0.8 | state hash | il_core |
-| `tracing` | 0.1 | one `warn!` in `Locale` for a missing key; no subscriber is installed yet and il_sim_battle declares it without using it (SAD §12 T-11) | il_data, il_sim_battle |
+| `tracing` | 0.1 | one `warn!` in `Locale` for a missing key; no subscriber is installed yet (il_sim_battle declared it unused until T3-001 dropped it, SAD §12 T-11) | il_data |
 | `criterion` | 0.8.2 | benchmarks (`benches/benches/*.rs`, `harness = false`; first bench in T1-031) | benches (dev-dependency; `il_cli` is a dev-dependency too, for the generated bench setups) |
 | `kira` | 0.12.4 (default features: cpal, symphonia with wav) | audio (OQ-8: chosen for game-oriented mixing; T2-100) | il_audio; `il_cli gensound` writes its WAV placeholders with a hand-rolled 44-byte header and no audio dependency |
 | `notify` | 8.2 (optional, behind `hot-reload`) | hot reload file watcher (dev) | il_data |
