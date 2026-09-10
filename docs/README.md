@@ -17,6 +17,7 @@ Design documents for the Iron Legion Engine, a Rust 2D strategy engine for turn-
 | 06 | [Modding SDK Spec](06-modding-sdk-spec.md) | Mod packages, manifests, override semantics, content reference, Lua API, editors. | v0.1 |
 | 07 | [Task List, Phases 0–2](07-tasks-phase-0-2.md) | Implementation tasks with done-criteria, sizes, dependencies, and per-phase exit checklists. | active |
 | 08 | [How to run](08-how-to-run.md) | Building, running the app, controls, the headless tools, mods, hot reload, tests; the manual checkpoints. | active |
+| 09 | [Task List, Phases 3–4](09-tasks-phase-3-4.md) | Phase 3 (scaling) and Phase 4 (campaign layer, MVP) tasks with done-criteria, sizes, dependencies, the Phase 2 carry-over, and per-phase exit checklists. | active |
 | — | [schemas/](schemas/) | JSON Schema drafts for content files referenced by the TDD and Modding SDK. | draft |
 
 The original LaTeX PRD (`../iron_legion_engine_prd.tex`) is v0.1 and is kept for history only.
