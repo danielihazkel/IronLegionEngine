@@ -1,6 +1,6 @@
 // Simulation Spec 15.3 row 10 (T2-082): the engine AI (side 1) beats a
 // scripted opponent that charges everything straight ahead at tick 1 in
-// more than 60 % of seeds. Same armies as ai_vs_passive.json5.
+// more than 60 % of seeds (50 since T3-011). Same armies as ai_vs_passive.json5.
 //
 // RegimentIds: side 0 = 0..6 (hastati 0-2, velites 3, archers 4, cavalry 5,
 // the general's 20-man bodyguard 6), side 1 = 7..13 in the same order.
@@ -42,7 +42,7 @@
     { tick: 1, player: 0, seq: 0, kind: { AttackMove: { regiments: [0, 1, 2, 3, 4, 5, 6], target: [520, 150] } } },
   ],
   bands: {
-    seeds: 20,
+    seeds: 50,
     seed_base: 9500,
     tick_limit: 12000,
     assertions: [

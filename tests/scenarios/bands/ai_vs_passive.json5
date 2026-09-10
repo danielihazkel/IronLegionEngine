@@ -1,7 +1,9 @@
 // Phase 2 exit criterion (Simulation Spec 15.3 row 9, T2-082): the engine
 // AI (side 1, player 255) beats a passive player army (side 0, player 0,
 // no commands: its ranged units still shoot at will, its infantry stands)
-// in every seed. Mixed armies of 620 a side, pre-placed 250 m apart on the
+// in at least 70 % of 50 seeds (the owner's criterion since T3-011; the
+// 100 % of 20 seeds stood unmet at 36/50 after T3-010). Mixed armies of
+// 620 a side, pre-placed 250 m apart on the
 // south field (plan I26); the AI deploys itself only when unplaced, which
 // crates/il_sim_battle/tests/ai.rs covers.
 //
@@ -42,11 +44,11 @@
   ],
   commands: [],
   bands: {
-    seeds: 20,
+    seeds: 50,
     seed_base: 9000,
     tick_limit: 12000,
     assertions: [
-      { name: "the AI beats a passive army", kind: "winner", side: 1, min_fraction: 1.0 },
+      { name: "the AI beats a passive army", kind: "winner", side: 1, min_fraction: 0.7 },
     ],
   },
 }

@@ -1,6 +1,8 @@
 # T2-110 (REQ-TEST-004): the Simulation Spec §15.3 outcome bands over 50
 # seeds each. Too slow for every push, so they run nightly and on demand;
-# the band files themselves are parsed by the normal test run.
+# the band files themselves are parsed by the normal test run. T3-011: the
+# scripted files must reject no command; the two AI-driven files run twice
+# and must reject the same commands on the same ticks in every seed.
 name: nightly
 
 on:

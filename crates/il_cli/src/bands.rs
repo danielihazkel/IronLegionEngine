@@ -183,8 +183,16 @@ pub enum AssertionKind {
 pub struct SeedOutcome {
     pub seed: u64,
     pub end_tick: u32,
-    /// Commands the sim rejected (a band file must have none).
+    /// Commands the sim rejected over the run. A file whose commands are all
+    /// scripted must have none; an AI-driven file (an engine-owned side)
+    /// may reject a few through the one-tick race of SIM-CMD-005 (the AI
+    /// decides at Stage 1 of `t` for `t + 1`, and the target can rout or
+    /// die in between), and those must repeat exactly (T3-011).
     pub rejected: u32,
+    /// The rejected count per tick, ticks with none left out (T3-011): the
+    /// nightly compares two runs of an AI-driven file entry by entry.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub rejected_by_tick: BTreeMap<u32, u32>,
     /// Soldiers per side at the start.
     pub initial: Vec<u32>,
     /// Soldiers per side on the field at the end.
@@ -391,6 +399,9 @@ pub struct AssertionResult {
 #[derive(Clone, Debug, Serialize)]
 pub struct FileReport {
     pub file: String,
+    /// An engine-owned side drives this file (T3-011): its rejections are
+    /// compared between runs, not banned.
+    pub ai_driven: bool,
     pub seeds: u32,
     pub seed_base: u64,
     pub tick_limit: u32,
@@ -406,6 +417,20 @@ pub struct BandReport {
     pub skipped: u32,
     /// Rejected commands summed over every seed and file.
     pub rejected: u32,
+    /// The part of `rejected` from files without an engine-owned side
+    /// (T3-011): a scripted file must reject nothing, so this must be zero.
+    pub rejected_scripted: u32,
+}
+
+/// Whether an engine-owned side drives the scenario (T2-112 plan I13,
+/// T3-011): its AI may hit the one-tick race of SIM-CMD-005, so its
+/// rejections are compared across runs rather than banned.
+pub fn ai_driven(scenario: &Scenario) -> bool {
+    scenario
+        .setup
+        .sides
+        .iter()
+        .any(|s| s.player == il_core::PlayerId::ENGINE_AI)
 }
 
 /// Parses a band file into its scenario and `bands` block.
@@ -584,10 +609,14 @@ pub fn run_seed(
     let mut first_contact = BTreeMap::new();
     let mut first_rout = BTreeMap::new();
     let mut rejected = 0u32;
+    let mut rejected_by_tick = BTreeMap::new();
     let mut hash = driver.world.hash();
     while driver.tick().0 < tick_limit {
         let (out, h) = driver.step();
-        rejected += out.rejected.len() as u32;
+        if !out.rejected.is_empty() {
+            rejected += out.rejected.len() as u32;
+            rejected_by_tick.insert(driver.tick().0, out.rejected.len() as u32);
+        }
         hash = h;
         let world = &driver.world;
         let view = world.view();
@@ -622,6 +651,7 @@ pub fn run_seed(
         seed,
         end_tick: driver.tick().0,
         rejected,
+        rejected_by_tick,
         initial,
         survivors,
         fled,
@@ -916,6 +946,10 @@ pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<Band
         let assertions = evaluate(&bands, &outcomes)?;
         let rejected: u32 = outcomes.iter().map(|o| o.rejected).sum();
         report.rejected += rejected;
+        let ai = ai_driven(&scenario);
+        if !ai {
+            report.rejected_scripted += rejected;
+        }
         for (k, a) in assertions.iter().enumerate() {
             let cross = match &bands.assertions[k].kind {
                 AssertionKind::MeanLossMatches {
@@ -974,6 +1008,7 @@ pub fn run_bands(opts: &BandOptions, out: &mut dyn Write) -> anyhow::Result<Band
         )?;
         report.files.push(FileReport {
             file,
+            ai_driven: ai,
             seeds: outcomes.len() as u32,
             seed_base: bands.seed_base,
             tick_limit: opts
@@ -1084,6 +1119,7 @@ mod tests {
             seed: 1,
             end_tick: 100,
             rejected: 0,
+            rejected_by_tick: BTreeMap::new(),
             initial: initial.to_vec(),
             survivors: survivors.to_vec(),
             fled: vec![0; initial.len()],
