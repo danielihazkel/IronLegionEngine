@@ -3,7 +3,8 @@
 //! For each file in `tests/scenarios/` (the classic corpus), each band file
 //! under `tests/scenarios/bands/` (T2-112, stepped through the band
 //! harness's `SeedDriver` so its morale pins and general kills apply) and
-//! the 10k fight `perf_10k.json5`: run the file's determinism budget
+//! the 10k fight `perf_10k.json5` and the 20k fight `large/perf_20k.json5`
+//! (T3-026): run the file's determinism budget
 //! (`determinism: { ticks, snapshot_at }`, default 10,000 / 5,000) with 1
 //! thread and with 8 threads, feeding the scenario's scripted commands
 //! (T1-081), and compare the per-tick hash vectors; snapshot the 1-thread
@@ -184,6 +185,15 @@ fn every_band_scenario_is_deterministic_across_threads_and_restore() {
 #[test]
 fn the_ten_thousand_fight_is_deterministic_across_threads_and_restore() {
     let path = il_tests::scenario_dir().join("perf_10k.json5");
+    check_corpus(&[plain(&path)], Strictness::SameRejections);
+}
+
+/// The 20k fight (T3-024/T3-026) for its short budget (400 ticks, the
+/// snapshot at 200); the file lives under `large/`, which the classic
+/// corpus does not walk.
+#[test]
+fn the_twenty_thousand_fight_is_deterministic_across_threads_and_restore() {
+    let path = il_tests::scenario_dir().join("large/perf_20k.json5");
     check_corpus(&[plain(&path)], Strictness::SameRejections);
 }
 

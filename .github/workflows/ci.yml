@@ -46,8 +46,9 @@ jobs:
       - name: Determinism proof (exit checklist)
         shell: pwsh
         run: |
-          # T2-112: the 10k fight runs 1,500 ticks here (its in-process budget is 800).
-          foreach ($pair in @(@("idle_1000", 10000, 1000), @("move_reform_2000", 10000, 1000), @("perf_10k", 1500, 100))) {
+          # T2-112: the 10k fight runs 1,500 ticks here (its in-process budget is 800);
+          # T3-026: the 20k fight 1,000 ticks (its in-process budget is 400).
+          foreach ($pair in @(@("idle_1000", 10000, 1000), @("move_reform_2000", 10000, 1000), @("perf_10k", 1500, 100), @("large/perf_20k", 1000, 100))) {
             $scenario = $pair[0]; $ticks = $pair[1]; $every = $pair[2]
             cargo run --release -p il_cli -- run tests/scenarios/$scenario.json5 --ticks $ticks --hash-every $every --hash-log a.hashlog
             cargo run --release -p il_cli -- run tests/scenarios/$scenario.json5 --ticks $ticks --hash-every $every --threads 8 --hash-log b.hashlog

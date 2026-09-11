@@ -247,7 +247,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of `idle_1000`, `move_reform_2000` and the 10k fight `perf_10k` (T2-112) and the bench comparisons at 2k, on the 10k fight and on the 20k fight; `nightly.yml` runs the outcome bands every night and on demand.
+CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of `idle_1000`, `move_reform_2000`, the 10k fight `perf_10k` (T2-112) and the 20k fight `large/perf_20k` (1,000 ticks every 100, T3-026; its in-process test runs 400 ticks with the snapshot at 200) and the bench comparisons at 2k, on the 10k fight and on the 20k fight; `nightly.yml` runs the outcome bands every night and on demand.
 
 ## 9. Where things are
 

@@ -137,6 +137,7 @@ Phase 2's exit checklist in [07](07-tasks-phase-0-2.md#phase-2-exit-checklist) h
 - [ ] **T3-026 Determinism coverage at 20k** · S · Refs REQ-TEST-002, TDD §17 · Depends T3-024
   `perf_20k.json5` joins the determinism corpus with a short in-process budget (`determinism: { ticks: 400, snapshot_at: 200 }`) and CI's release double-run (1,000 ticks every 100), as `perf_10k` did in T2-112.
   **Done when** it passes at 1 and 8 threads with the mid-battle restore, in the debug test and in CI.
+  Built 2026-09-11 (the box waits for CI's green run): `tests/tests/determinism.rs` gained a fourth test for `tests/scenarios/large/perf_20k.json5` (`determinism: { ticks: 400, snapshot_at: 200 }`, the same-rejections strictness of the AI-driven files), passing in 66 s in the debug build; CI's release double-run loop gained `large/perf_20k` at 1,000 ticks every 100 (1 against 8 threads). The file lives under `large/` (docs/08), so the classic corpus and the result test do not pick it up.
 
 ### RNDR — render thread and LOD
 
