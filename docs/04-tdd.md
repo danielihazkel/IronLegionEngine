@@ -113,6 +113,8 @@ Phase 0 pins (T0-003) are the versions in the table; later phases pin their own 
 | `notify` | 8.2 (optional, behind `hot-reload`) | hot reload file watcher (dev) | il_data |
 | `thiserror`, `anyhow` | 2 / 1 | errors (anyhow only in binaries and their libs) | all |
 | `clap` | 4 (`derive`) | command-line parsing | il_cli, il_app |
+| `windows-sys` (Windows only; features `Win32_System_ProcessStatus`, `Win32_Foundation`, `Win32_System_Threading`) | 0.61 | `bench --memory`: the process's exact peak working set through `GetProcessMemoryInfo` (T3-025, REQ-PERF-007); already in the lock through winit and wgpu | il_cli |
+| `sysinfo` (other platforms only; `default-features = false`, feature `system`) | 0.39.6 | `bench --memory` off Windows: the largest resident size sampled every 100 ticks (T3-025) | il_cli |
 | `toml` | 0.8 | manifest parsing in the dependency-rule test | tests (dev-dependency) |
 
 ## 2. Core (`il_core`)

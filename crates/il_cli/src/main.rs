@@ -122,6 +122,9 @@ struct BenchArgs {
     /// Date stored with --record-baseline.
     #[arg(long)]
     recorded: Option<String>,
+    /// Print the process's peak working set at the end of the run (T3-025).
+    #[arg(long)]
+    memory: bool,
 }
 
 #[derive(Args)]
@@ -261,6 +264,7 @@ fn main() -> anyhow::Result<()> {
                 baseline: a.baseline,
                 strict: a.strict,
                 record_baseline: a.record_baseline,
+                memory: a.memory,
                 machine: a.machine,
                 recorded: a.recorded,
             };

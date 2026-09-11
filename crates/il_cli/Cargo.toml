@@ -16,5 +16,17 @@ serde.workspace = true
 serde_json.workspace = true
 png.workspace = true
 
-[lints]
-workspace = true
+# Not `workspace = true`: `bench --memory` (T3-025) reads the process's peak
+# working set through one Win32 call, the only unsafe block outside
+# il_render (SAD §12 T-11); everything else keeps the workspace lints.
+[lints.rust]
+unsafe_code = "deny"
+
+[lints.clippy]
+float_arithmetic = "deny"
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61", features = ["Win32_System_ProcessStatus", "Win32_Foundation", "Win32_System_Threading"] }
+
+[target."cfg(not(windows))".dependencies]
+sysinfo = { version = "0.39.6", default-features = false, features = ["system"] }

@@ -94,6 +94,9 @@ pub struct BenchOptions {
     pub machine: Option<String>,
     /// Date written when recording.
     pub recorded: Option<String>,
+    /// Print the process's peak working set at the end of the run (T3-025,
+    /// REQ-PERF-007).
+    pub memory: bool,
 }
 
 impl BenchOptions {
@@ -110,7 +113,91 @@ impl BenchOptions {
             record_baseline: None,
             machine: None,
             recorded: None,
+            memory: false,
         }
+    }
+}
+
+/// The process's peak working set (T3-025, REQ-PERF-007): on Windows the
+/// exact `PeakWorkingSetSize` of `GetProcessMemoryInfo`, elsewhere the
+/// largest resident size `sysinfo` saw at the samples taken during the
+/// run. `sample` is called every [`MEMORY_SAMPLE_TICKS`] ticks and at the end.
+pub struct MemoryPeak {
+    #[cfg(not(windows))]
+    system: sysinfo::System,
+    #[cfg(not(windows))]
+    max: u64,
+}
+
+/// Ticks between memory samples.
+pub const MEMORY_SAMPLE_TICKS: u32 = 100;
+
+impl MemoryPeak {
+    pub fn new() -> Self {
+        Self {
+            #[cfg(not(windows))]
+            system: sysinfo::System::new(),
+            #[cfg(not(windows))]
+            max: 0,
+        }
+    }
+
+    /// Takes a sample (a no-op where the platform reports the peak itself).
+    pub fn sample(&mut self) {
+        #[cfg(not(windows))]
+        {
+            use sysinfo::{ProcessesToUpdate, get_current_pid};
+            if let Ok(pid) = get_current_pid() {
+                self.system
+                    .refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+                if let Some(p) = self.system.process(pid) {
+                    self.max = self.max.max(p.memory());
+                }
+            }
+        }
+    }
+
+    /// The peak in bytes and how it was measured.
+    pub fn peak(&self) -> Option<(u64, &'static str)> {
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::System::ProcessStatus::{
+                GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
+            };
+            use windows_sys::Win32::System::Threading::GetCurrentProcess;
+            let mut counters = PROCESS_MEMORY_COUNTERS {
+                cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+                PageFaultCount: 0,
+                PeakWorkingSetSize: 0,
+                WorkingSetSize: 0,
+                QuotaPeakPagedPoolUsage: 0,
+                QuotaPagedPoolUsage: 0,
+                QuotaPeakNonPagedPoolUsage: 0,
+                QuotaNonPagedPoolUsage: 0,
+                PagefileUsage: 0,
+                PeakPagefileUsage: 0,
+            };
+            // SAFETY: the current process's pseudo-handle is always valid, and
+            // `counters` is a correctly sized, writable structure whose `cb`
+            // names its size, as the call requires.
+            #[allow(unsafe_code)]
+            let ok =
+                unsafe { GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, counters.cb) };
+            (ok != 0).then_some((
+                counters.PeakWorkingSetSize as u64,
+                "exact, GetProcessMemoryInfo",
+            ))
+        }
+        #[cfg(not(windows))]
+        {
+            (self.max > 0).then_some((self.max, "sampled every 100 ticks, sysinfo"))
+        }
+    }
+}
+
+impl Default for MemoryPeak {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -165,6 +252,16 @@ pub struct BenchReport {
     pub tick: Summary,
     /// Sum of the stage means over [`PHASE1_STAGES`].
     pub phase1_stages_mean_ms: f64,
+    /// `--memory` (T3-025): the process's peak working set at the end.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peak_memory: Option<PeakMemory>,
+}
+
+/// The peak working set of a `--memory` run.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PeakMemory {
+    pub bytes: u64,
+    pub how: String,
 }
 
 impl BenchReport {
@@ -490,6 +587,7 @@ impl StageTimer {
             stages,
             tick: Summary::of(&mut self.ticks),
             phase1_stages_mean_ms,
+            peak_memory: None,
         }
     }
 }
@@ -520,16 +618,31 @@ pub fn measure(opts: &BenchOptions) -> anyhow::Result<BenchReport> {
     let mut world = BattleWorld::new(&scenario.setup, regs)?;
     world.set_threads(opts.threads);
     let mut timer = StageTimer::new();
+    let mut memory = opts.memory.then(MemoryPeak::new);
     while world.tick().0 < opts.ticks && world.phase() != il_sim_battle::BattlePhase::Ended {
         let commands = script.take_for(world.tick().next());
         world.step_observed(&commands, &mut timer);
+        if let Some(m) = &mut memory
+            && world.tick().0.is_multiple_of(MEMORY_SAMPLE_TICKS)
+        {
+            m.sample();
+        }
     }
+    if let Some(m) = &mut memory {
+        m.sample();
+    }
+    let peak = memory.and_then(|m| m.peak());
     let soldiers = if name.is_some() {
         soldiers
     } else {
         opts.soldiers
     };
-    Ok(timer.report_named(name, soldiers, regiments, opts.threads))
+    let mut report = timer.report_named(name, soldiers, regiments, opts.threads);
+    report.peak_memory = peak.map(|(bytes, how)| PeakMemory {
+        bytes,
+        how: how.to_owned(),
+    });
+    Ok(report)
 }
 
 fn write_table(
@@ -599,6 +712,14 @@ fn write_table(
         PHASE1_STAGES.end(),
         report.phase1_stages_mean_ms
     )?;
+    if let Some(m) = &report.peak_memory {
+        writeln!(
+            out,
+            "peak working set: {:.0} MB ({})",
+            m.bytes as f64 / (1024.0 * 1024.0),
+            m.how
+        )?;
+    }
     Ok(())
 }
 
@@ -718,6 +839,7 @@ mod tests {
                 max_ms: tick,
             },
             phase1_stages_mean_ms: 0.0,
+            peak_memory: None,
         }
     }
 
