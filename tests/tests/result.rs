@@ -54,6 +54,48 @@ fn every_scenario_result_reconciles_with_its_setup() {
                 );
                 killed += u32::from(x.killed);
                 fled += u32::from(x.fled);
+                // SIM-FORM-015 (T3-041): one row per setup group, summing
+                // to the regiment's totals.
+                let groups = setup_side
+                    .regiments
+                    .iter()
+                    .chain(
+                        setup_side
+                            .reinforcements
+                            .iter()
+                            .flat_map(|g| g.regiments.iter()),
+                    )
+                    .find(|r| r.id == x.id)
+                    .map(|r| r.groups())
+                    .unwrap_or_default();
+                assert_eq!(
+                    x.units.len(),
+                    groups.len(),
+                    "{name}: rows of regiment {}",
+                    x.id
+                );
+                for (row, g) in x.units.iter().zip(&groups) {
+                    assert_eq!(row.unit_type, g.unit_type, "{name}: regiment {}", x.id);
+                    assert_eq!(
+                        row.initial,
+                        row.survivors + row.killed + row.fled,
+                        "{name}: regiment {} group {} does not reconcile: {row:?}",
+                        x.id,
+                        g.unit_type
+                    );
+                }
+                let sum = |f: fn(&il_sim_battle::UnitGroupResult) -> u16| -> u32 {
+                    x.units.iter().map(|u| u32::from(f(u))).sum()
+                };
+                assert_eq!(sum(|u| u.initial), u32::from(x.initial), "{name}: {}", x.id);
+                assert_eq!(
+                    sum(|u| u.survivors),
+                    u32::from(x.survivors),
+                    "{name}: {}",
+                    x.id
+                );
+                assert_eq!(sum(|u| u.killed), u32::from(x.killed), "{name}: {}", x.id);
+                assert_eq!(sum(|u| u.fled), u32::from(x.fled), "{name}: {}", x.id);
             }
         }
         assert_eq!(r.summary.total_killed, killed, "{name}");

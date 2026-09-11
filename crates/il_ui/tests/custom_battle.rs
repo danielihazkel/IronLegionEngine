@@ -96,14 +96,8 @@ fn the_draft_names_what_is_wrong() {
     d.sides[1].controller = Controller::You;
     assert_eq!(d.to_setup(&catalog).unwrap_err(), BuildError::SeveralYou);
     d.sides[1].controller = Controller::Idle;
-    d.sides[0].rows[0].count = 1000;
-    d.sides[1].rows = (0..33)
-        .map(|_| RowDraft {
-            unit: 0,
-            count: 1000,
-            experience: 0,
-        })
-        .collect();
+    d.sides[0].rows[0].groups[0].count = 1000;
+    d.sides[1].rows = (0..33).map(|_| RowDraft::single(0, 1000, 0)).collect();
     assert!(d.soldiers() > SOLDIER_CAP);
     assert!(matches!(
         d.to_setup(&catalog).unwrap_err(),
@@ -118,11 +112,7 @@ fn the_draft_names_what_is_wrong() {
             faction: 0,
             controller: Controller::EngineAi,
             general: 0,
-            rows: vec![RowDraft {
-                unit: 0,
-                count: 10,
-                experience: 0,
-            }],
+            rows: vec![RowDraft::single(0, 10, 0)],
         });
     }
     assert!(matches!(
@@ -140,6 +130,50 @@ fn the_draft_names_what_is_wrong() {
     idle.sides[1].controller = Controller::Idle;
     let setup = idle.to_setup(&catalog).unwrap();
     assert_eq!(setup.sides[1].player, PlayerId(1));
+}
+
+/// T3-041 (SIM-FORM-012): a row with two unit groups becomes a `units`
+/// composition the sim accepts and spawns as two groups; a group of nobody
+/// is a bad count; the composition round-trips through a saved file.
+#[test]
+fn a_row_with_two_groups_composes_a_mixed_regiment() {
+    let regs = regs();
+    let catalog = catalog(&regs);
+    let mut d = BuilderState::default_for(&catalog, 3);
+    // A second group of the side's first unit (a unit type may repeat).
+    d.sides[0].rows[0].groups.push(il_ui::GroupDraft {
+        unit: 0,
+        count: 40,
+        experience: 4,
+    });
+    assert_eq!(d.sides[0].rows[0].count(), 160);
+    assert_eq!(d.soldiers(), 160 + 1 + 120 + 1);
+    let setup = d.to_setup(&catalog).unwrap();
+    let r = &setup.sides[0].regiments[0];
+    assert!(r.unit_type.is_none() && r.count.is_none());
+    assert_eq!(r.units.len(), 2);
+    assert_eq!((r.units[0].count, r.units[1].count), (120, 40));
+    assert_eq!(r.units[1].experience, 4);
+    assert_eq!(r.total(), 160);
+    let world = BattleWorld::new(&setup, regs.clone()).expect("the sim accepts the composition");
+    assert_eq!(
+        world
+            .view()
+            .regiment_living_by_group(il_core::RegimentId(0)),
+        vec![121, 40],
+        "two groups, the general in the first"
+    );
+    // The file form keeps the composition.
+    let text = serde_json::to_string_pretty(&setup).unwrap();
+    let back: il_sim_battle::BattleSetup = json5::from_str(&text).unwrap();
+    assert_eq!(back, setup);
+    assert!(text.contains("\"units\""), "{text}");
+    // A group of nobody is a bad count.
+    d.sides[0].rows[0].groups[1].count = 0;
+    assert_eq!(
+        d.to_setup(&catalog).unwrap_err(),
+        BuildError::BadCount { side: 0 }
+    );
 }
 
 #[test]
@@ -210,6 +244,13 @@ fn the_menu_screens_draw_headless() {
             experience: 3,
             ammo: 0,
             arrived: true,
+            parts: vec![il_ui::ResultPart {
+                unit: "Velites".into(),
+                initial: 40,
+                survivors: 30,
+                killed: 8,
+                fled: 2,
+            }],
         }],
     }];
     let ctx = egui::Context::default();

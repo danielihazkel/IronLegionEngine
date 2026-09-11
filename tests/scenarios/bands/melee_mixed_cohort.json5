@@ -1,0 +1,50 @@
+// Simulation Spec §15.3 row 11 (T3-041, SIM-FORM-012..015): a mixed cohort of
+// 40 velites and 100 hastati in `rome:cohort` (the velites in the front rank,
+// the hastati behind) attack-moves into 120 hoplites standing in phalanx
+// 80 m east, fire at will: the velites' javelins land before contact, then
+// the hastati's pila, then the melee. The winner clause is measured at 50
+// seeds (35/50 on 2026-09-11 in release, mean 86.6 of 141 left against 10.8
+// of 121) and pinned below it at 60 % (owner's decision).
+//
+// RegimentIds are allocated in setup order, side 0 first: the cohort 0,
+// the hoplites 1. Everything sits on open ground north of the river.
+{
+  map_id: "rome:test_field",
+  seed: 0,                       // replaced by bands.seed_base + i
+  // T2-112: the determinism test's budget (restore at 1,000 per Simulation Spec 15.3).
+  determinism: { ticks: 1500, snapshot_at: 1000 },
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        {
+          id: 1,
+          units: [
+            { unit_type: "rome:velites", count: 40 },
+            { unit_type: "rome:hastati", count: 100 },
+          ],
+          formation: "rome:cohort", position: [300, 150], facing_deg: 0,
+        },
+      ],
+    },
+    {
+      faction: "greece:greece", player: 1, deployment_zone: 1,
+      general: { unit_type: "greece:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "greece:hoplite", count: 120, formation: "rome:phalanx", position: [380, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    { tick: 1, player: 0, seq: 0, kind: { AttackMove: { regiments: [0], target: { x: 380, y: 150 } } } },
+  ],
+  bands: {
+    seeds: 50,
+    seed_base: 11000,
+    tick_limit: 6000,            // 5 min of sim time; stops early when a side is wiped out
+    assertions: [
+      { name: "the cohort wins", kind: "winner", side: 0, min_fraction: 0.60 },
+    ],
+  },
+}

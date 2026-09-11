@@ -90,6 +90,7 @@
       remove_side: "Remove side",
       add_side: "Add a side",
       add_row: "Add a regiment",
+      add_unit: "+ unit",
       soldiers: " soldiers",
       experience: "exp ",
       total: "{soldiers} soldiers of {cap}",
@@ -191,6 +192,8 @@
     },
     // The regiment card strip (T2-090).
     cards: {
+      part: "{unit} {count}",
+      sep: " · ",
       strength: "{soldiers}/{initial}",
       volleys: "{count} volleys",
       engaged: "engaged",
@@ -230,6 +233,7 @@
       side_line: "general {fate} · loot {loot}",
       col: { unit: "Unit", initial: "Initial", survivors: "Survivors", killed: "Killed", fled: "Fled", experience: "Experience", ammo: "Ammo" },
       never_arrived: "{unit} (never arrived)",
+      part: "  · {unit}",
       replay: "Replay saved to {path}",
       back: "Back to the menu",
       rematch: "Rematch (next seed)",

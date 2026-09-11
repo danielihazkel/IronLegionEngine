@@ -36,8 +36,8 @@ pub use command_card::{
 };
 pub use context::{UiContext, UiOutput};
 pub use custom_battle::{
-    BuildError, BuilderAction, BuilderCatalog, BuilderState, Controller, FactionChoice, MapChoice,
-    RowDraft, SideDraft, UnitChoice, custom_battle,
+    BuildError, BuilderAction, BuilderCatalog, BuilderState, Controller, FactionChoice, GroupDraft,
+    MapChoice, RowDraft, SideDraft, UnitChoice, custom_battle,
 };
 pub use egui;
 pub use input::{Drag, Gesture, InputState, gesture_matches};
@@ -58,7 +58,9 @@ pub use pick::{
     regiments_of_type_on_screen,
 };
 pub use profiler::{ProfilerStats, StageStat, profiler_overlay};
-pub use result::{ResultAction, ResultRow, ResultScreenModel, ResultSide, result_screen};
+pub use result::{
+    ResultAction, ResultPart, ResultRow, ResultScreenModel, ResultSide, result_screen,
+};
 pub use selection::{GROUPS, Selection};
 pub use settings::{
     BindingRow, Capture, SettingsAction, SettingsDraft, SettingsState, Tab, settings_screen,

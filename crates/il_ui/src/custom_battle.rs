@@ -9,7 +9,8 @@
 use il_core::PlayerId;
 use il_data::{ContentId, Locale, UnitCategory};
 use il_sim_battle::{
-    BattleSetup, GeneralSetup, RegimentSetup, SOLDIER_CAP, SideSetup, VictoryRules, Weather,
+    BattleSetup, GeneralSetup, RegimentSetup, SOLDIER_CAP, SideSetup, UnitGroupSetup, VictoryRules,
+    Weather,
 };
 
 /// Roster limits (decision 12).
@@ -65,12 +66,37 @@ pub enum Controller {
     Idle,
 }
 
+/// One unit group of a regiment row (T3-041, SIM-FORM-012).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RowDraft {
+pub struct GroupDraft {
     /// Index into the faction's `units`.
     pub unit: usize,
     pub count: u16,
     pub experience: u8,
+}
+
+/// One regiment of a side: its unit groups in order (one for a plain
+/// regiment; `+ unit` adds another, SIM-FORM-012).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowDraft {
+    pub groups: Vec<GroupDraft>,
+}
+
+impl RowDraft {
+    pub fn single(unit: usize, count: u16, experience: u8) -> Self {
+        Self {
+            groups: vec![GroupDraft {
+                unit,
+                count,
+                experience,
+            }],
+        }
+    }
+
+    /// Soldiers in the regiment.
+    pub fn count(&self) -> u32 {
+        self.groups.iter().map(|g| u32::from(g.count)).sum()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -165,11 +191,7 @@ impl BuilderState {
             faction,
             controller,
             general: 0,
-            rows: vec![RowDraft {
-                unit: 0,
-                count: 120,
-                experience: 0,
-            }],
+            rows: vec![RowDraft::single(0, 120, 0)],
         };
         let second = usize::from(catalog.factions.len() > 1);
         Self {
@@ -188,7 +210,7 @@ impl BuilderState {
     pub fn soldiers(&self) -> u32 {
         self.sides
             .iter()
-            .map(|s| 1 + s.rows.iter().map(|r| u32::from(r.count)).sum::<u32>())
+            .map(|s| 1 + s.rows.iter().map(RowDraft::count).sum::<u32>())
             .sum()
     }
 
@@ -239,19 +261,34 @@ impl BuilderState {
             };
             let mut regiments = Vec::new();
             for r in &s.rows {
-                if r.count == 0 || r.count > MAX_COUNT {
+                if r.groups.is_empty() || r.count() > u32::from(u16::MAX) {
                     return Err(BuildError::BadCount { side: i });
                 }
-                let unit = faction
-                    .units
-                    .get(r.unit)
-                    .ok_or(BuildError::EmptySide { side: i })?;
-                regiments.push(RegimentSetup {
-                    experience: Some(r.experience.min(MAX_EXPERIENCE)),
-                    formation: None,
-                    position: None,
-                    facing_deg: None,
-                    ..RegimentSetup::single(next_id, unit.id.clone(), r.count)
+                let mut groups = Vec::with_capacity(r.groups.len());
+                for g in &r.groups {
+                    if g.count == 0 || g.count > MAX_COUNT {
+                        return Err(BuildError::BadCount { side: i });
+                    }
+                    let unit = faction
+                        .units
+                        .get(g.unit)
+                        .ok_or(BuildError::EmptySide { side: i })?;
+                    groups.push(UnitGroupSetup {
+                        unit_type: unit.id.clone(),
+                        count: g.count,
+                        experience: g.experience.min(MAX_EXPERIENCE),
+                    });
+                }
+                // One group is the shorthand, more the composition
+                // (SIM-FORM-012, T3-041).
+                regiments.push(if groups.len() == 1 {
+                    let g = groups.remove(0);
+                    RegimentSetup {
+                        experience: Some(g.experience),
+                        ..RegimentSetup::single(next_id, g.unit_type, g.count)
+                    }
+                } else {
+                    RegimentSetup::mixed(next_id, groups)
                 });
                 next_id += 1;
             }
@@ -384,7 +421,9 @@ pub fn custom_battle(
                         }) {
                             side.general = 0;
                             for r in &mut side.rows {
-                                r.unit = 0;
+                                for g in &mut r.groups {
+                                    g.unit = 0;
+                                }
                             }
                         }
                         for (c, key) in [
@@ -413,38 +452,64 @@ pub fn custom_battle(
                     });
                     let mut remove_row = None;
                     let n_rows = side.rows.len();
-                    egui::Grid::new("rows").num_columns(4).show(ui, |ui| {
+                    // T3-041: a regiment is a column of unit groups; `+ unit`
+                    // adds one under the row, the minus on a group removes it,
+                    // the minus on the first group removes the regiment.
+                    egui::Grid::new("rows").num_columns(5).show(ui, |ui| {
                         for (k, row) in side.rows.iter_mut().enumerate() {
-                            ui.push_id(k, |ui| {
-                                if let Some(f) = faction {
-                                    combo(ui, "unit", &mut row.unit, &f.units, |u| u.name.clone());
-                                }
-                            });
-                            ui.add(
-                                egui::DragValue::new(&mut row.count)
-                                    .range(1..=MAX_COUNT)
-                                    .suffix(l.get("il.custom.soldiers")),
-                            );
-                            ui.add(
-                                egui::DragValue::new(&mut row.experience)
-                                    .range(0..=MAX_EXPERIENCE)
-                                    .prefix(l.get("il.custom.experience")),
-                            );
-                            if n_rows > 1 && ui.small_button(MINUS).clicked() {
-                                remove_row = Some(k);
+                            let mut remove_group = None;
+                            let n_groups = row.groups.len();
+                            for (gi, group) in row.groups.iter_mut().enumerate() {
+                                ui.push_id((k, gi), |ui| {
+                                    if let Some(f) = faction {
+                                        combo(ui, "unit", &mut group.unit, &f.units, |u| {
+                                            u.name.clone()
+                                        });
+                                    }
+                                    ui.add(
+                                        egui::DragValue::new(&mut group.count)
+                                            .range(1..=MAX_COUNT)
+                                            .suffix(l.get("il.custom.soldiers")),
+                                    );
+                                    ui.add(
+                                        egui::DragValue::new(&mut group.experience)
+                                            .range(0..=MAX_EXPERIENCE)
+                                            .prefix(l.get("il.custom.experience")),
+                                    );
+                                    if gi == 0 {
+                                        if ui.small_button(l.get("il.custom.add_unit")).clicked() {
+                                            remove_group = Some(usize::MAX);
+                                        }
+                                        if n_rows > 1 && ui.small_button(MINUS).clicked() {
+                                            remove_row = Some(k);
+                                        }
+                                    } else {
+                                        ui.label("");
+                                        if n_groups > 1 && ui.small_button(MINUS).clicked() {
+                                            remove_group = Some(gi);
+                                        }
+                                    }
+                                });
+                                ui.end_row();
                             }
-                            ui.end_row();
+                            match remove_group {
+                                Some(usize::MAX) => row.groups.push(GroupDraft {
+                                    unit: 0,
+                                    count: 40,
+                                    experience: 0,
+                                }),
+                                Some(gi) => {
+                                    row.groups.remove(gi);
+                                }
+                                None => {}
+                            }
                         }
                     });
                     if let Some(k) = remove_row {
                         side.rows.remove(k);
                     }
                     if ui.small_button(l.get("il.custom.add_row")).clicked() {
-                        side.rows.push(RowDraft {
-                            unit: 0,
-                            count: 120,
-                            experience: 0,
-                        });
+                        side.rows.push(RowDraft::single(0, 120, 0));
                     }
                     ui.separator();
                 });
@@ -461,11 +526,7 @@ pub fn custom_battle(
                     faction,
                     controller: Controller::EngineAi,
                     general: 0,
-                    rows: vec![RowDraft {
-                        unit: 0,
-                        count: 120,
-                        experience: 0,
-                    }],
+                    rows: vec![RowDraft::single(0, 120, 0)],
                 });
             }
             ui.label(l.fmt(

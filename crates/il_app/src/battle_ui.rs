@@ -5,6 +5,7 @@
 //! shows in a battle.
 
 use std::collections::BTreeSet;
+use std::fmt::Display;
 
 use glam::Vec2;
 use il_core::{RegimentId, Scalar};
@@ -48,6 +49,49 @@ impl Default for BattleUi {
             settings: None,
         }
     }
+}
+
+/// A regiment's label (T3-041, SIM-FORM-012): the unit's name, or for a
+/// mixed regiment every group's name with its living count, joined by
+/// `il.cards.sep` ("Hastati 100 · Velites 40").
+pub fn composition_label(view: &BattleView, regs: &Registries, id: RegimentId) -> String {
+    let l = &regs.locale;
+    let units = view.regiment_units(id);
+    if units.len() <= 1 {
+        return units
+            .first()
+            .map(|g| l.get(&regs.units.get(g.unit).name_key).to_string())
+            .unwrap_or_default();
+    }
+    let living = view.regiment_living_by_group(id);
+    units
+        .iter()
+        .zip(living.iter().chain(std::iter::repeat(&0)))
+        .map(|(g, n)| {
+            l.fmt(
+                "il.cards.part",
+                &[
+                    (
+                        "unit",
+                        &l.get(&regs.units.get(g.unit).name_key) as &dyn Display,
+                    ),
+                    ("count", n),
+                ],
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(l.get("il.cards.sep"))
+}
+
+/// Living soldiers of the regiment's ranged groups (T3-041): the divisor of
+/// the card's mean volleys.
+fn ranged_living(view: &BattleView, regs: &Registries, id: RegimentId) -> u32 {
+    view.regiment_units(id)
+        .iter()
+        .zip(view.regiment_living_by_group(id))
+        .filter(|(g, _)| regs.units.get(g.unit).ranged.is_some())
+        .map(|(_, n)| u32::from(n))
+        .sum()
 }
 
 /// The result screen's rows (T2-091, decision 15): per side the faction's
@@ -105,6 +149,25 @@ pub fn result_sides(session: &BattleSession, result: &BattleResult) -> Vec<Resul
                         experience: r.experience_gain,
                         ammo: r.ammo_left,
                         arrived: r.arrived,
+                        // SIM-FORM-015 (T3-041): the groups of a mixed regiment.
+                        parts: if r.units.len() > 1 {
+                            r.units
+                                .iter()
+                                .map(|u| il_ui::ResultPart {
+                                    unit: regs
+                                        .units
+                                        .lookup(&u.unit_type)
+                                        .map(|h| l.get(&regs.units.get(h).name_key).to_string())
+                                        .unwrap_or_else(|| u.unit_type.to_string()),
+                                    initial: u.initial,
+                                    survivors: u.survivors,
+                                    killed: u.killed,
+                                    fled: u.fled,
+                                })
+                                .collect()
+                        } else {
+                            Vec::new()
+                        },
                     })
                     .collect(),
             }
@@ -170,7 +233,7 @@ pub fn selection_rows(session: &BattleSession, selection: &Selection) -> Vec<Sel
         .filter_map(|id| view.regiment(*id))
         .map(|r| SelectedRegiment {
             id: r.id,
-            unit: l.get(&regs.units.get(r.unit).name_key).to_string(),
+            unit: composition_label(&view, regs, r.id),
             soldiers: r.soldier_count,
             formation: l
                 .get(&regs.formations.get(r.formation).name_key)
@@ -265,7 +328,7 @@ pub fn card_models(session: &BattleSession, selection: &Selection) -> Vec<Regime
         })
         .map(|r| RegimentCard {
             id: r.id,
-            unit: l.get(&regs.units.get(r.unit).name_key).to_string(),
+            unit: composition_label(&view, regs, r.id),
             soldiers: r.soldier_count,
             initial: u32::from(r.initial),
             morale_state: r.morale_state,
@@ -275,9 +338,10 @@ pub fn card_models(session: &BattleSession, selection: &Selection) -> Vec<Regime
                     &regs.rules.fatigue,
                 )))
                 .to_string(),
-            // `ammo` is the soldiers' sum; a volley spends one per soldier.
+            // `ammo` is the soldiers' sum; a volley spends one per ranged
+            // soldier (T3-041: the ranged groups' living count).
             volleys: r.fire.map(|_| {
-                let n = r.soldier_count.max(1);
+                let n = ranged_living(&view, regs, r.id).max(1);
                 (u32::from(view.ammo(r.id)) / n) as u16
             }),
             engaged: r.engaged,

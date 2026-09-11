@@ -427,3 +427,84 @@ fn groups_sharing_no_formation_take_the_first_list_with_a_warning() {
     let plain = BattleWorld::new(&s, common::regs()).unwrap();
     assert!(plain.setup_warnings().is_empty());
 }
+
+// ---------------------------------------------------------------- T3-041
+
+/// The band file, embedded (sim crates never read the filesystem).
+const MELEE_MIXED_COHORT: &str =
+    include_str!("../../../tests/scenarios/bands/melee_mixed_cohort.json5");
+
+/// SIM-FORM-014/015 (T3-041): in the band's fight the velites' javelins
+/// land on the hoplites before the first contact, and the result carries
+/// one row per group that sums to the regiment's totals.
+#[test]
+fn the_velites_throw_before_contact_and_the_result_lists_every_group() {
+    let s: Scenario = json5::from_str(MELEE_MIXED_COHORT).expect("band file parses");
+    let mut w = BattleWorld::new(&s.setup, common::regs()).unwrap();
+    w.set_threads(1);
+    let mut script = s.script();
+    let mut volleys_before_contact = 0u32;
+    let mut hoplite_deaths_before_contact = 0u32;
+    let mut engaged_at = None;
+    for _ in 0..3_000u32 {
+        let cmds = script.take_for(w.tick().next());
+        let out = w.step(&cmds);
+        for e in &out.events {
+            match e {
+                il_sim_battle::BattleEvent::Engaged { .. } if engaged_at.is_none() => {
+                    engaged_at = Some(w.tick().0);
+                }
+                il_sim_battle::BattleEvent::VolleyFired { regiment, .. }
+                    if engaged_at.is_none() && *regiment == RegimentId(0) =>
+                {
+                    volleys_before_contact += 1;
+                }
+                il_sim_battle::BattleEvent::SoldierDied { regiment, .. }
+                    if engaged_at.is_none() && *regiment == RegimentId(1) =>
+                {
+                    hoplite_deaths_before_contact += 1;
+                }
+                _ => {}
+            }
+        }
+        if w.phase() == il_sim_battle::BattlePhase::Ended {
+            break;
+        }
+    }
+    let engaged_at = engaged_at.expect("the cohort reached the phalanx");
+    assert!(
+        volleys_before_contact > 0,
+        "no volley before tick {engaged_at}"
+    );
+    assert!(
+        hoplite_deaths_before_contact > 0,
+        "the javelins killed nobody before tick {engaged_at}"
+    );
+    // The result: two rows for the cohort (the general in the velites'
+    // group), one for the hoplites, each summing to its regiment.
+    let result = w.result();
+    let cohort = &result.sides[0].regiments[0];
+    assert_eq!(cohort.units.len(), 2);
+    assert_eq!(cohort.units[0].unit_type, common::cid("rome:velites"));
+    assert_eq!(cohort.units[1].unit_type, common::cid("rome:hastati"));
+    assert_eq!(
+        (cohort.units[0].initial, cohort.units[1].initial),
+        (41, 100)
+    );
+    for r in result.sides.iter().flat_map(|s| s.regiments.iter()) {
+        let sum = |f: fn(&il_sim_battle::UnitGroupResult) -> u16| -> u32 {
+            r.units.iter().map(|u| u32::from(f(u))).sum()
+        };
+        assert_eq!(sum(|u| u.initial), u32::from(r.initial), "{}", r.id);
+        assert_eq!(sum(|u| u.survivors), u32::from(r.survivors), "{}", r.id);
+        assert_eq!(sum(|u| u.killed), u32::from(r.killed), "{}", r.id);
+        assert_eq!(sum(|u| u.fled), u32::from(r.fled), "{}", r.id);
+        for u in &r.units {
+            assert_eq!(u.initial, u.survivors + u.killed + u.fled, "{u:?}");
+        }
+    }
+    assert!(
+        cohort.units.iter().any(|u| u.killed > 0) || cohort.killed == 0,
+        "losses are attributed to a group: {cohort:?}"
+    );
+}

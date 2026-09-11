@@ -19,6 +19,20 @@ pub struct ResultRow {
     pub ammo: u16,
     /// A reinforcement group that never entered the field.
     pub arrived: bool,
+    /// The unit groups of a mixed regiment (SIM-FORM-015, T3-041); empty
+    /// for a single-unit regiment.
+    pub parts: Vec<ResultPart>,
+}
+
+/// One unit group's counts under a mixed regiment's row (T3-041).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResultPart {
+    /// Localised unit name.
+    pub unit: String,
+    pub initial: u16,
+    pub survivors: u16,
+    pub killed: u16,
+    pub fled: u16,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -124,6 +138,18 @@ pub fn result_screen(ctx: &egui::Context, model: &ResultScreenModel<'_>) -> Opti
                                     ui.label(r.experience.to_string());
                                     ui.label(r.ammo.to_string());
                                     ui.end_row();
+                                    // T3-041: a mixed regiment's groups, one
+                                    // sub-row each.
+                                    for p in &r.parts {
+                                        ui.weak(l.fmt("il.result.part", &[("unit", &p.unit)]));
+                                        ui.weak(p.initial.to_string());
+                                        ui.weak(p.survivors.to_string());
+                                        ui.weak(p.killed.to_string());
+                                        ui.weak(p.fled.to_string());
+                                        ui.label("");
+                                        ui.label("");
+                                        ui.end_row();
+                                    }
                                 }
                             });
                     }

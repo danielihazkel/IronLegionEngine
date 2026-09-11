@@ -4,8 +4,10 @@
 use bevy_ecs::prelude::*;
 use il_core::{S, Scalar};
 
-use crate::components::{Combat, Morale, RangedState, Regiment};
-use crate::interface::{BattleResult, BattleSummary, GeneralFate, RegimentResult, SideResult};
+use crate::components::{Combat, GroupTallies, Morale, RangedState, Regiment, Soldier};
+use crate::interface::{
+    BattleResult, BattleSummary, GeneralFate, RegimentResult, SideResult, UnitGroupResult,
+};
 use crate::morale::general::general_fate;
 use crate::resources::{BattleFlow, BattlePhase, Clock, Ids, Phase, Regs, SetupRes, Sides};
 
@@ -26,7 +28,9 @@ pub fn experience_gain(kills: u32, survived: bool, exp_per_kill: S, exp_survive:
 /// per side, the general's fate (SIM-GEN-004 with `lost` = another side
 /// won) and the loot (`loot_per_enemy_killed × enemy soldiers killed`, the
 /// winner only). Reinforcement groups that never spawned are listed with
-/// `arrived: false` and their full count as survivors.
+/// `arrived: false` and their full count as survivors. Every regiment also
+/// carries one `UnitGroupResult` per group (SIM-FORM-015, T3-041), the rows
+/// summing to its totals.
 pub fn compute(world: &World) -> BattleResult {
     let phase = world.resource::<Phase>().0;
     let flow = *world.resource::<BattleFlow>();
@@ -34,7 +38,8 @@ pub fn compute(world: &World) -> BattleResult {
     let sides = &world.resource::<Sides>().0;
     let setup = world.resource::<SetupRes>().0.as_ref();
     let ids = world.resource::<Ids>();
-    let rules = &world.resource::<Regs>().0.rules.battle_flow;
+    let regs = &world.resource::<Regs>().0;
+    let rules = &regs.rules.battle_flow;
     let winner = (phase == BattlePhase::Ended)
         .then_some(flow.winner)
         .flatten();
@@ -65,6 +70,38 @@ pub fn compute(world: &World) -> BattleResult {
             .filter_map(|e| world.get::<RangedState>(e))
             .map(|s| u32::from(s.ammo))
             .sum();
+        // SIM-FORM-015 (T3-041): one row per group; survivors are the
+        // living of the group plus its withdrawn, fled its tally, killed
+        // the rest of its spawn count.
+        let mut living = vec![0u16; r.units.len()];
+        for sid in &r.soldiers {
+            if let Some(e) = ids.soldier_entity(*sid)
+                && let Some(s) = world.get::<Soldier>(e)
+                && let Some(n) = living.get_mut(usize::from(s.group))
+            {
+                *n = n.saturating_add(1);
+            }
+        }
+        let tallies = world.get::<GroupTallies>(*entity);
+        let units: Vec<UnitGroupResult> = r
+            .units
+            .iter()
+            .enumerate()
+            .map(|(g, ug)| {
+                let withdrawn = tallies
+                    .and_then(|t| t.withdrawn.get(g).copied())
+                    .unwrap_or(0);
+                let fled = tallies.and_then(|t| t.fled.get(g).copied()).unwrap_or(0);
+                let survivors = living[g].saturating_add(withdrawn);
+                UnitGroupResult {
+                    unit_type: regs.units.id_of(ug.unit).clone(),
+                    initial: ug.count,
+                    survivors,
+                    killed: ug.count.saturating_sub(survivors).saturating_sub(fled),
+                    fled,
+                }
+            })
+            .collect();
         if let Some(k) = killed_per_side.get_mut(usize::from(r.side)) {
             *k += u32::from(killed);
         }
@@ -83,7 +120,7 @@ pub fn compute(world: &World) -> BattleResult {
                 ),
                 ammo_left: u16::try_from(ammo_left).unwrap_or(u16::MAX),
                 arrived: true,
-                units: Vec::new(),
+                units,
             });
         }
     }
@@ -105,7 +142,18 @@ pub fn compute(world: &World) -> BattleResult {
                             experience_gain: 0,
                             ammo_left: 0,
                             arrived: false,
-                            units: Vec::new(),
+                            // Never on the field: every group in full.
+                            units: r
+                                .groups()
+                                .iter()
+                                .map(|g| UnitGroupResult {
+                                    unit_type: g.unit_type.clone(),
+                                    initial: g.count,
+                                    survivors: g.count,
+                                    killed: 0,
+                                    fled: 0,
+                                })
+                                .collect(),
                         });
                     }
                 }
