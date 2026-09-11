@@ -255,43 +255,109 @@ impl Ctx<'_, '_, '_> {
     }
 }
 
+/// Scratch of `melee_recount` (T3-023; derived, never hashed or
+/// snapshotted): the soldiers that carried an attacker count after the last
+/// recount, so the next one zeroes only those instead of every soldier.
+#[derive(Resource, Default)]
+pub struct AttackersScratch {
+    touched: Vec<Entity>,
+}
+
 /// Recomputes `Attackers` from the targets and each regiment's `engaged`
 /// flag from its soldiers, both in ascending id order. `emit` pushes
 /// `Engaged` events on the false-to-true edge (Stage 9); restore passes
 /// `false` and rebuilds the attacker counts only: `Combat` is stored state
 /// (the flag was read at Stage 9, before Stage 14 may have routed the
 /// soldiers, so rederiving it from the FSM would drift; T2-070).
+///
+/// As built since T3-023 (SAD T-10): at Stage 9 only the soldiers of
+/// regiments the gate let fight (`may_fight && near_enemy`) can hold a
+/// target or be `Fighting`, because `melee_target` has just cleared both
+/// for everyone else, so the count walks those regiments' lists only, the
+/// reset touches only the soldiers counted last tick (`AttackersScratch`),
+/// and a gated-out regiment is `engaged == false` without a walk. The
+/// counts and flags are the ones the full walk gave. Restore, where the
+/// gate has not run, keeps the full walk.
 fn recount(world: &mut World, emit: bool) {
     let tick = world.resource::<Clock>().tick;
-    let soldier_entities: Vec<(SoldierId, Entity)> =
-        world.resource::<Ids>().soldier_entities.clone();
-    for (_, e) in &soldier_entities {
-        if let Some(mut a) = world.get_mut::<Attackers>(*e) {
-            a.n = 0;
-        }
-    }
-    for (_, e) in &soldier_entities {
-        let Some(target) = world.get::<MeleeState>(*e).and_then(|m| m.target) else {
-            continue;
-        };
-        if let Some(te) = world.resource::<Ids>().soldier_entity(target)
-            && let Some(mut a) = world.get_mut::<Attackers>(te)
-        {
-            a.n = a.n.saturating_add(1);
-        }
-    }
-
     let regiment_entities: Vec<Entity> = world
         .resource::<Ids>()
         .regiment_entities
         .iter()
         .map(|(_, e)| *e)
         .collect();
+    let n = regiment_entities.len();
+    let active: Vec<bool> = {
+        let gate = world.resource::<MeleeGateRes>();
+        if emit && gate.may_fight.len() == n && gate.near_enemy.len() == n {
+            (0..n)
+                .map(|i| gate.may_fight[i] && gate.near_enemy[i])
+                .collect()
+        } else {
+            vec![true; n]
+        }
+    };
+
+    world.resource_scope(|world, mut scratch: Mut<AttackersScratch>| {
+        if emit {
+            for e in scratch.touched.drain(..) {
+                if let Some(mut a) = world.get_mut::<Attackers>(e) {
+                    a.n = 0;
+                }
+            }
+        } else {
+            scratch.touched.clear();
+            let soldier_entities: Vec<Entity> = world
+                .resource::<Ids>()
+                .soldier_entities
+                .iter()
+                .map(|(_, e)| *e)
+                .collect();
+            for e in soldier_entities {
+                if let Some(mut a) = world.get_mut::<Attackers>(e) {
+                    a.n = 0;
+                }
+            }
+        }
+        let mut soldiers: Vec<SoldierId> = Vec::new();
+        for (i, entity) in regiment_entities.iter().enumerate() {
+            if !active[i] {
+                continue;
+            }
+            let Some(regiment) = world.get::<Regiment>(*entity) else {
+                continue;
+            };
+            soldiers.clear();
+            soldiers.extend_from_slice(&regiment.soldiers);
+            for &sid in &soldiers {
+                let ids = world.resource::<Ids>();
+                let Some(e) = ids.soldier_entity(sid) else {
+                    continue;
+                };
+                let Some(target) = world.get::<MeleeState>(e).and_then(|m| m.target) else {
+                    continue;
+                };
+                let Some(te) = ids.soldier_entity(target) else {
+                    continue;
+                };
+                if let Some(mut a) = world.get_mut::<Attackers>(te) {
+                    if a.n == 0 {
+                        scratch.touched.push(te);
+                    }
+                    a.n = a.n.saturating_add(1);
+                }
+            }
+        }
+    });
+    if !emit {
+        return;
+    }
+
     let (window, mass_mult) = {
         let c = &world.resource::<Regs>().0.rules.combat;
         (u32::from(c.charge_window_ticks), c.charge_mass_mult)
     };
-    for entity in regiment_entities {
+    for (i, entity) in regiment_entities.into_iter().enumerate() {
         // The first fighter's target names the charged regiment.
         let (rid, engaged, struck, running, soldiers) = {
             let Some(regiment) = world.get::<Regiment>(entity) else {
@@ -299,23 +365,24 @@ fn recount(world: &mut World, emit: bool) {
             };
             let ids = world.resource::<Ids>();
             let mut struck = None;
-            let engaged = regiment.soldiers.iter().any(|&sid| {
-                let Some(e) = ids.soldier_entity(sid) else {
-                    return false;
-                };
-                let fighting = world
-                    .get::<Fsm>(e)
-                    .is_some_and(|f| f.state == SoldierState::Fighting);
-                if fighting && struck.is_none() {
-                    struck = world
-                        .get::<MeleeState>(e)
-                        .and_then(|m| m.target)
-                        .and_then(|t| ids.soldier_entity(t))
-                        .and_then(|te| world.get::<Soldier>(te))
-                        .map(|s| s.regiment);
-                }
-                fighting
-            });
+            let engaged = active[i]
+                && regiment.soldiers.iter().any(|&sid| {
+                    let Some(e) = ids.soldier_entity(sid) else {
+                        return false;
+                    };
+                    let fighting = world
+                        .get::<Fsm>(e)
+                        .is_some_and(|f| f.state == SoldierState::Fighting);
+                    if fighting && struck.is_none() {
+                        struck = world
+                            .get::<MeleeState>(e)
+                            .and_then(|m| m.target)
+                            .and_then(|t| ids.soldier_entity(t))
+                            .and_then(|te| world.get::<Soldier>(te))
+                            .map(|s| s.regiment);
+                    }
+                    fighting
+                });
             let running = world
                 .get::<Order>(entity)
                 .is_some_and(|o| o.speed == SpeedMode::Run);
@@ -327,9 +394,6 @@ fn recount(world: &mut World, emit: bool) {
                 regiment.soldiers.clone(),
             )
         };
-        if !emit {
-            continue;
-        }
         let Some(mut combat) = world.get_mut::<Combat>(entity) else {
             continue;
         };
@@ -351,9 +415,6 @@ fn recount(world: &mut World, emit: bool) {
         }
         if let Some(mult) = mass {
             set_mass(world, &soldiers, mult);
-        }
-        if !emit {
-            continue;
         }
         if engaged && !was {
             world
