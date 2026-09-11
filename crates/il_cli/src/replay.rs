@@ -89,7 +89,14 @@ pub fn replay(opts: &ReplayOptions, out: &mut dyn Write) -> anyhow::Result<Repla
     }
     let report = il_save::verify(&replay, regs, opts.threads)?;
     match report.divergence {
-        None => writeln!(out, "verified {} ticks", report.ticks)?,
+        None => {
+            writeln!(out, "verified {} ticks", report.ticks)?;
+            // T3-070: the recording's last hash, for a comparison with a
+            // fresh `il_cli run` to the same tick (the nightly's 20k line).
+            if let Some(last) = replay.hashes.last() {
+                writeln!(out, "final hash {last}")?;
+            }
+        }
         Some(d) => writeln!(
             out,
             "divergence at tick {}: expected {} got {}",

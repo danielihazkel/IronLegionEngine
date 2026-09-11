@@ -39,3 +39,24 @@ jobs:
         run: |
           cargo run --release -p il_cli -- autoresolve tests/scenarios/ai_skirmish_300.json5 --record-replay target/nightly.ilrp
           cargo run --release -p il_cli -- replay target/nightly.ilrp --verify --threads 8
+
+      # T3-070 (REQ-SAVE-005, Phase 3 exit criterion): the 20k fight recorded
+      # to its end, verified on eight threads, and its final hash compared
+      # with a fresh run of the same file to the same tick. `--ai none` keeps
+      # the file's scripted attacker (two engine armies never meet on this
+      # map, SAD T-15). About half an hour on the runner.
+      - name: Record, verify and re-run the 20k fight
+        shell: pwsh
+        run: |
+          cargo run --release -p il_cli -- autoresolve tests/scenarios/large/perf_20k.json5 --ai none --threads 8 --record-replay target/nightly_20k.ilrp --json target/nightly_20k.json
+          if ($LASTEXITCODE -ne 0) { throw "autoresolve failed or the battle did not end" }
+          $verify = cargo run --release -p il_cli -- replay target/nightly_20k.ilrp --verify --threads 8
+          if ($LASTEXITCODE -ne 0) { throw "the 20k replay did not verify: $verify" }
+          Write-Output $verify
+          $ticks = [int](($verify | Select-String '^verified (\d+) ticks$').Matches[0].Groups[1].Value)
+          $recorded = ($verify | Select-String '^final hash ([0-9a-f]{16})$').Matches[0].Groups[1].Value
+          cargo run --release -p il_cli -- run tests/scenarios/large/perf_20k.json5 --ticks $ticks --hash-every $ticks --threads 8 --hash-log target/nightly_20k.hashlog
+          if ($LASTEXITCODE -ne 0) { throw "the second run failed" }
+          $line = (Get-Content target/nightly_20k.hashlog | Select-Object -Last 1)
+          Write-Output "second run: $line"
+          if ($line -ne "$ticks,$recorded") { throw "final hash differs: recorded $recorded, second run $line" }

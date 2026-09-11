@@ -67,7 +67,13 @@ fn a_recorded_autoresolve_verifies_and_prints_its_header() {
     assert!(report.ok(), "{report:?}");
     assert_eq!(report.ticks, 300);
     assert_eq!(outcome.exit_code(), 0);
-    assert_eq!(String::from_utf8(out).unwrap().trim(), "verified 300 ticks");
+    let text = String::from_utf8(out).unwrap();
+    let mut lines = text.lines();
+    assert_eq!(lines.next(), Some("verified 300 ticks"));
+    // T3-070: the recording's last hash follows, sixteen hex digits.
+    let last = lines.next().expect("a final hash line");
+    assert!(last.starts_with("final hash "), "{last}");
+    assert_eq!(last.len(), "final hash ".len() + 16, "{last}");
 
     let eight = ReplayOptions {
         threads: 8,
