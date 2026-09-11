@@ -17,7 +17,7 @@ use il_data::{Layout, UnitCategory};
 use crate::combat::formulas::{
     Arc, arc_mults, attack_arc, aura_attack_mult, braced, charge_mults, cooldown_ticks,
     experience_mult, fatigue_mults, hit_probability, melee_damage, morale_mults,
-    terrain_defence_mult,
+    terrain_defence_at,
 };
 use crate::components::{
     Body, Combat, Facing, FatigueC, FormationState, Fsm, Health, MeleeState, Morale, MoraleState,
@@ -222,18 +222,7 @@ impl Ctx<'_, '_, '_> {
             )
             * anti_cav_i;
         let (dmg_mult, def_mult) = arc_mults(arc, c);
-        let (zone_mult, ford) = self.map.zone_at(p_j).map_or((S::ONE, false), |h| {
-            let z = self.regs.zones.get(h);
-            (z.defence_mult, z.ford)
-        });
-        let terrain = terrain_defence_mult(
-            zone_mult,
-            ford,
-            self.map.height_at(p_j),
-            self.map.height_at(p_i),
-            &rules.movement,
-            c,
-        );
+        let terrain = terrain_defence_at(self.map, self.regs, p_i, p_j);
         let d = unit_j.defence
             * fm_j.defence
             * mm_j.defence

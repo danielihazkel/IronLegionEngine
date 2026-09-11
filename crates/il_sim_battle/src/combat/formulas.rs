@@ -248,6 +248,30 @@ pub fn terrain_defence_mult(
     zone_defence_mult * ford_mult * (S::ONE + r.height_defence * sat)
 }
 
+/// SIM-CMBT-016 read off the map: the defender's zone (`defence_mult`,
+/// `ford`) at `p_defender` and both heights, through
+/// [`terrain_defence_mult`]. The melee calls this for every attack, so a
+/// test of it covers the production path (T3-042).
+pub fn terrain_defence_at(
+    map: &crate::map::LoadedMap,
+    regs: &il_data::Registries,
+    p_attacker: V2,
+    p_defender: V2,
+) -> S {
+    let (zone_mult, ford) = map.zone_at(p_defender).map_or((S::ONE, false), |h| {
+        let z = regs.zones.get(h);
+        (z.defence_mult, z.ford)
+    });
+    terrain_defence_mult(
+        zone_mult,
+        ford,
+        map.height_at(p_defender),
+        map.height_at(p_attacker),
+        &regs.rules.movement,
+        &regs.rules.combat,
+    )
+}
+
 /// SIM-CMBT-010: the attack interval scaled by the fatigue, morale and
 /// status multipliers, rounded to the nearest tick, at least 2.
 pub fn cooldown_ticks(base: u16, fatigue_interval: S, morale_interval: S, status: S) -> u16 {

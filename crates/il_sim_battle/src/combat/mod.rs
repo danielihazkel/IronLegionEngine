@@ -31,7 +31,7 @@ pub use formulas::{
     Arc, FatigueMults, StatMults, apex_height, arc_mults, attack_arc, aura_attack_mult, braced,
     charge_mults, cooldown_ticks, experience_mult, fatigue_mults, flight_ticks, footprint_area,
     hit_probability, melee_damage, morale_mults, range_mult, ranged_damage, scatter,
-    stat_hit_probability, status_mults, terrain_defence_mult,
+    stat_hit_probability, status_mults, terrain_defence_at, terrain_defence_mult,
 };
 pub use gate::melee_gate;
 pub use pursue::pursue_update;
