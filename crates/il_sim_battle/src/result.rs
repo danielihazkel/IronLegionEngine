@@ -83,6 +83,7 @@ pub fn compute(world: &World) -> BattleResult {
                 ),
                 ammo_left: u16::try_from(ammo_left).unwrap_or(u16::MAX),
                 arrived: true,
+                units: Vec::new(),
             });
         }
     }
@@ -97,13 +98,14 @@ pub fn compute(world: &World) -> BattleResult {
                     if let Some(side) = out.get_mut(s) {
                         side.regiments.push(RegimentResult {
                             id: r.id,
-                            initial: r.count,
-                            survivors: r.count,
+                            initial: r.total(),
+                            survivors: r.total(),
                             fled: 0,
                             killed: 0,
                             experience_gain: 0,
                             ammo_left: 0,
                             arrived: false,
+                            units: Vec::new(),
                         });
                     }
                 }

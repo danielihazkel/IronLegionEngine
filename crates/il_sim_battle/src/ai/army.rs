@@ -257,14 +257,14 @@ pub fn lay_line(
     (double, true)
 }
 
-fn info(r: &RegRow, regs: &Registries) -> RegimentInfo {
+fn info(r: &RegRow, _regs: &Registries) -> RegimentInfo {
     RegimentInfo {
         id: r.id,
         pos: r.anchor,
         category: r.category,
         count: r.count,
         template: r.template,
-        radius: regs.units.get(r.unit).soldier_radius,
+        radius: r.radius,
     }
 }
 

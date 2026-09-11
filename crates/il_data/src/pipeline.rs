@@ -775,8 +775,8 @@ mod tests {
         let hastati = regs.units.get(h);
         assert_eq!(
             hastati.formations.len(),
-            4,
-            "line, column, loose, square (T2-080)"
+            5,
+            "line, column, loose, square (T2-080) and the cohort (T3-040)"
         );
         // T2-080: the AI kinds and the faction's resolved profile.
         assert_eq!(regs.ai_action_sets.len(), 2);

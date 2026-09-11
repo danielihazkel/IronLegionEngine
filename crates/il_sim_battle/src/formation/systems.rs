@@ -16,7 +16,7 @@ use crate::components::{Anchor, FormationState, Order, Pos, Rank, Regiment, Slot
 use crate::formation::assign::{
     AssignScratch, AssignSoldier, assign_slots, local_to_world, slot_world,
 };
-use crate::formation::layout::{effective_ranks, files_used, layout_slots, spacing};
+use crate::formation::layout::{effective_ranks, files_used, label_slots, layout_slots, spacing};
 use crate::resources::{Clock, Ids, Regs};
 
 /// SIM-FORM-030: the fraction of a regiment's soldiers within `radius` of
@@ -68,7 +68,7 @@ pub fn formation_integrity(
     let ids = &ids;
     let regs = &regs;
     let run = |(r, anchor, mut state): (&Regiment, &Anchor, Mut<FormationState>)| {
-        let radius = regs.0.units.get(r.unit).soldier_radius;
+        let radius = crate::composition::widest_radius(&regs.0, &r.units);
         let (sf, _) = spacing(regs.0.formations.get(state.template), radius);
         state.integrity = integrity(
             r,
@@ -139,7 +139,7 @@ fn reform_one(
 ) {
     let rules = &regs.0.rules.formation;
     let template = regs.0.formations.get(state.template);
-    let radius = regs.0.units.get(regiment.unit).soldier_radius;
+    let radius = crate::composition::widest_radius(&regs.0, &regiment.units);
     let n = regiment.soldiers.len() as u16;
     state.ranks = effective_ranks(template, n, Some(state.ranks));
     layout_slots(template, n, state.ranks, radius, &mut state.slots);
@@ -161,6 +161,9 @@ fn reform_one(
         });
         prev.push(slot.slot);
     }
+    // SIM-FORM-013 (T3-040): the zones' slots labelled by the living
+    // counts per category, so a reform after deaths keeps the zones.
+    label_slots(template, &mut state.slots, &category_counts_of(&members));
     assign_slots(
         &members,
         &state.slots,
@@ -173,6 +176,18 @@ fn reform_one(
     state.laid_out_facing = anchor.facing;
     state.needs_reform = false;
     state.dirty = true;
+}
+
+/// Per-category counts of the members, in first-seen order.
+fn category_counts_of(members: &[AssignSoldier]) -> Vec<(il_data::UnitCategory, u16)> {
+    let mut out: Vec<(il_data::UnitCategory, u16)> = Vec::new();
+    for m in members {
+        match out.iter_mut().find(|(c, _)| *c == m.category) {
+            Some((_, n)) => *n = n.saturating_add(1),
+            None => out.push((m.category, 1)),
+        }
+    }
+    out
 }
 
 /// Stage 2, first: lay out and assign every regiment that needs it.
@@ -262,18 +277,23 @@ pub fn rebuild_formation_derived(world: &mut World) {
         .map(|(_, e)| *e)
         .collect();
     for entity in regiment_entities {
-        let (template, unit, n, ranks) = {
+        let (template, units, n, ranks) = {
             let regiment = world.get::<Regiment>(entity).expect("regiment");
             let state = world
                 .get::<FormationState>(entity)
                 .expect("formation state");
             (
                 state.template,
-                regiment.unit,
+                regiment.units.clone(),
                 regiment.soldiers.len() as u16,
                 state.ranks,
             )
         };
+        let soldier_ids = world
+            .get::<Regiment>(entity)
+            .expect("regiment")
+            .soldiers
+            .clone();
         let slots = {
             let regs = &world.resource::<Regs>().0;
             let mut slots = Vec::new();
@@ -281,16 +301,24 @@ pub fn rebuild_formation_derived(world: &mut World) {
                 regs.formations.get(template),
                 n,
                 ranks,
-                regs.units.get(unit).soldier_radius,
+                crate::composition::widest_radius(regs, &units),
                 &mut slots,
             );
+            // The living counts per category (T3-040), as the reform does.
+            let mut counts: Vec<(il_data::UnitCategory, u16)> = Vec::new();
+            for sid in &soldier_ids {
+                if let Some(e) = world.resource::<Ids>().soldier_entity(*sid)
+                    && let Some(s) = world.get::<Soldier>(e)
+                {
+                    match counts.iter_mut().find(|(c, _)| *c == s.category) {
+                        Some((_, k)) => *k = k.saturating_add(1),
+                        None => counts.push((s.category, 1)),
+                    }
+                }
+            }
+            label_slots(regs.formations.get(template), &mut slots, &counts);
             slots
         };
-        let soldier_ids = world
-            .get::<Regiment>(entity)
-            .expect("regiment")
-            .soldiers
-            .clone();
         let mut assignment = Vec::with_capacity(soldier_ids.len());
         for sid in soldier_ids {
             let slot = world

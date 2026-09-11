@@ -41,12 +41,13 @@ use il_sim_battle::{AiState, ArmyPlan, BattleWorld, Command, CommandKind, FireMo
 /// cooldowns, statuses, withdrawn, visibility masks) joined the layout; and
 /// in T2-060 when the visibility masks were first filled; and in T2-071 when
 /// `BattleFlow.ended_at` joined the layout; and in T2-080 when the AI
-/// state (outbox, plans) joined the layout).
+/// state (outbox, plans) joined the layout; and in T3-040 when the
+/// per-group tallies of `GroupTallies` joined the layout).
 /// Stable across process runs; changes only when the hash layout, the
 /// spawn placement, the content values or the RNG seeding change.
-const GOLDEN_FRESH: u64 = 0x716a_fbd1_5009_64c1;
+const GOLDEN_FRESH: u64 = 0x8286_31ca_ebaf_8eb8;
 /// Golden hash after 1,000 idle ticks of the same world.
-const GOLDEN_1000: u64 = 0x6251_53fb_6146_7e6e;
+const GOLDEN_1000: u64 = 0x7845_99b0_1941_c988;
 
 type Mutation = Box<dyn Fn(&mut BattleWorld)>;
 
@@ -683,6 +684,18 @@ fn every_hashed_field_changes_the_hash() {
                 .resource_mut::<Rng>()
                 .stream(StreamId::Morale)
                 .next_u32();
+        }),
+    ));
+
+    // T3-040: the per-group tallies.
+    cases.push((
+        "group tallies",
+        Box::new(|w| {
+            let e = regiment_entity(w, 1);
+            w.ecs_mut()
+                .get_mut::<il_sim_battle::components::GroupTallies>(e)
+                .unwrap()
+                .fled[0] += 1;
         }),
     ));
 

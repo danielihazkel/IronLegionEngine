@@ -217,7 +217,8 @@ fn rows(world: &World) -> Vec<Row> {
                     samples: Vec::new(),
                 };
             };
-            let unit = regs.units.get(r.unit);
+            // The largest group's sight (T3-040).
+            let unit_los = crate::composition::los_radius(regs, &r.units);
             let (zone_los, conceal) = map.zone_at(a.pos).map_or((S::ONE, false), |h| {
                 let z = regs.zones.get(h);
                 (z.los_mult, z.conceal)
@@ -237,7 +238,7 @@ fn rows(world: &World) -> Vec<Row> {
                 facing: a.facing,
                 conceal,
                 los_radius: los_radius(
-                    unit.los_radius,
+                    unit_los,
                     zone_los,
                     map.height_at(a.pos),
                     map.mean_height,

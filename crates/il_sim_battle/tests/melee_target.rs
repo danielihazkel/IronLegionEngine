@@ -20,14 +20,10 @@ use il_sim_battle::{BattleSetup, BattleWorld, Command, CommandKind, RegimentSetu
 
 fn at(id: u32, unit: &str, count: u16, x: f32, y: f32, facing_deg: f32) -> RegimentSetup {
     RegimentSetup {
-        id,
-        unit_type: cid(unit),
-        count,
-        experience: 0,
-        fatigue: 0.0,
         formation: None,
         position: Some([x, y]),
         facing_deg: Some(facing_deg),
+        ..RegimentSetup::single(id, cid(unit), count)
     }
 }
 

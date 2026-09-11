@@ -127,6 +127,9 @@ pub fn run(opts: &RunOptions, out: &mut dyn Write) -> anyhow::Result<Vec<(Tick, 
         }
         None => BattleWorld::new(&scenario.setup, regs)?,
     };
+    for w in world.setup_warnings() {
+        eprintln!("warning: {w}");
+    }
     world.set_threads(opts.threads);
 
     let mut log_file = match &opts.hash_log {

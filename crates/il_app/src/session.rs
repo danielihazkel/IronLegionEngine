@@ -84,6 +84,25 @@ impl BattleSession {
         script: ScriptedCommands,
         ai_players: Vec<PlayerId>,
     ) -> Self {
+        // T3-040: the setup check's soft findings open the event ring.
+        let warnings: Vec<String> = world
+            .setup_warnings()
+            .iter()
+            .map(|w| format!("setup warning: {w}"))
+            .collect();
+        let mut session = Self::build(world, local_player, script, ai_players);
+        for text in warnings {
+            session.push_event(Tick::ZERO, text);
+        }
+        session
+    }
+
+    fn build(
+        world: BattleWorld,
+        local_player: PlayerId,
+        script: ScriptedCommands,
+        ai_players: Vec<PlayerId>,
+    ) -> Self {
         Self {
             world,
             accumulator: 0.0,
@@ -558,14 +577,10 @@ mod tests {
                     bodyguard: None,
                 },
                 regiments: vec![RegimentSetup {
-                    id: 1,
-                    unit_type: cid("rome:hastati"),
-                    count: 5,
-                    experience: 0,
-                    fatigue: 0.0,
                     formation: None,
                     position: Some([300.0, 150.0]),
                     facing_deg: Some(0.0),
+                    ..RegimentSetup::single(1, cid("rome:hastati"), 5)
                 }],
                 reinforcements: vec![],
                 ai_profile: None,

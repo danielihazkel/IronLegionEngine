@@ -321,8 +321,8 @@ pub fn build_debug_lines(
             if let Some(state) = view.formation_state(r.id) {
                 let regs = view.regs();
                 let template = regs.formations.get(state.template);
-                let radius = regs.units.get(r.unit).soldier_radius;
-                let width = il_sim_battle::movement::formation_width(template, state.files, radius);
+                let width =
+                    il_sim_battle::movement::formation_width(template, state.files, r.radius);
                 for wp in &path.waypoints[usize::from(path.next)..] {
                     if wp.corridor < width {
                         lines.circle(proj(v2(wp.p)), 8.0, 4, NARROW);

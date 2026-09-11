@@ -100,6 +100,8 @@ pub struct SoldierRow {
     pub fatigue: S,
     /// The general's rank; `None` for everyone else (SIM-GEN-001, T2-043).
     pub general: Option<u8>,
+    /// Index into the regiment's composition (SIM-FORM-012, T3-040).
+    pub group: u8,
 }
 
 /// One regiment as the presentation layer sees it.
@@ -107,7 +109,11 @@ pub struct SoldierRow {
 pub struct RegimentRow {
     pub id: RegimentId,
     pub side: u8,
+    /// The first group's unit; `BattleView::regiment_units` lists them all
+    /// (T3-040).
     pub unit: Handle<UnitType>,
+    /// The widest group's `soldier_radius`: the formation's spacing.
+    pub radius: S,
     pub anchor_pos: V2,
     pub anchor_facing: Angle<S>,
     pub order: OrderKind,
@@ -228,6 +234,7 @@ fn soldier_row(
         ammo: ranged.map(|r| r.ammo),
         fatigue: fatigue.f,
         general: general.map(|g| g.rank),
+        group: s.group,
     }
 }
 
@@ -238,6 +245,7 @@ fn regiment_row(
         id: r.id,
         side: r.side,
         unit: r.unit,
+        radius: S::ZERO,
         anchor_pos: anchor.pos,
         anchor_facing: anchor.facing,
         order: order.kind,
@@ -355,19 +363,78 @@ impl<'w> BattleView<'w> {
     /// Every regiment in ascending `RegimentId` order.
     pub fn regiments(&self) -> impl Iterator<Item = RegimentRow> + 'w {
         let ids = &self.world.resource::<Ids>().regiment_entities;
+        let regs: &'w il_data::Registries = &self.world.resource::<Regs>().0;
         self.q
             .regiment
             .iter_many_manual(self.world, ids.iter().map(|(_, e)| *e))
-            .map(regiment_row)
+            .map(move |item| {
+                let radius = crate::composition::widest_radius(regs, &item.0.units);
+                RegimentRow {
+                    radius,
+                    ..regiment_row(item)
+                }
+            })
     }
 
     pub fn regiment(&self, id: RegimentId) -> Option<RegimentRow> {
         let entity = self.world.resource::<Ids>().regiment_entity(id)?;
+        let regs = &self.world.resource::<Regs>().0;
         self.q
             .regiment
             .get_manual(self.world, entity)
             .ok()
-            .map(regiment_row)
+            .map(|item| {
+                let radius = crate::composition::widest_radius(regs, &item.0.units);
+                RegimentRow {
+                    radius,
+                    ..regiment_row(item)
+                }
+            })
+    }
+
+    /// The regiment's composition in setup order (SIM-FORM-012, T3-040).
+    pub fn regiment_units(&self, id: RegimentId) -> &'w [crate::components::UnitGroup] {
+        self.world
+            .resource::<Ids>()
+            .regiment_entity(id)
+            .and_then(|e| self.world.get::<Regiment>(e))
+            .map_or(&[], |r| r.units.as_slice())
+    }
+
+    /// The formations the regiment may take (SIM-FORM-014, T3-040): the
+    /// composition's intersection in the first unit's order.
+    pub fn regiment_formations(&self, id: RegimentId) -> Vec<Handle<FormationTemplate>> {
+        let regs = &self.world.resource::<Regs>().0;
+        match self
+            .world
+            .resource::<Ids>()
+            .regiment_entity(id)
+            .and_then(|e| self.world.get::<Regiment>(e))
+        {
+            Some(r) => crate::composition::Composition::of(regs, &r.units).formations,
+            None => Vec::new(),
+        }
+    }
+
+    /// Living soldiers per group of the regiment, in setup order (T3-040).
+    pub fn regiment_living_by_group(&self, id: RegimentId) -> Vec<u16> {
+        let ids = self.world.resource::<Ids>();
+        let Some(r) = ids
+            .regiment_entity(id)
+            .and_then(|e| self.world.get::<Regiment>(e))
+        else {
+            return Vec::new();
+        };
+        let mut living = vec![0u16; r.units.len()];
+        for sid in &r.soldiers {
+            if let Some(e) = ids.soldier_entity(*sid)
+                && let Some(s) = self.world.get::<Soldier>(e)
+                && let Some(n) = living.get_mut(usize::from(s.group))
+            {
+                *n = n.saturating_add(1);
+            }
+        }
+        living
     }
 
     /// The regiment's formation state (slots are local offsets; see

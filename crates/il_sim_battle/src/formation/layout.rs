@@ -132,6 +132,34 @@ pub fn layout_slots(t: &FormationTemplate, n: u16, ranks: u8, radius: S, out: &m
     layout_for(t.layout).layout(t, n, ranks, radius, out);
 }
 
+/// SIM-FORM-011/013 (T3-040): labels the slots of a laid-out template by
+/// the regiment's category counts. In slot order (rank-major), the first
+/// `count_c` slots inside category `c`'s role zone keep the label `c`; the
+/// zone's remaining slots and every slot outside a zone become `None`, so
+/// a category's overflow spills to the nearest free slot of any rank and
+/// the categories no zone names take what is left from the front. A
+/// template without zones labels nothing (the groups are laid out in list
+/// order by the spawn assignment).
+pub fn label_slots(t: &FormationTemplate, slots: &mut [Slot], counts: &[(UnitCategory, u16)]) {
+    if t.role_zones.is_empty() {
+        for s in slots.iter_mut() {
+            s.category = None;
+        }
+        return;
+    }
+    let mut left: Vec<(UnitCategory, u16)> = counts.to_vec();
+    for s in slots.iter_mut() {
+        s.category =
+            category_for(t, s.rank).filter(|c| match left.iter_mut().find(|(k, _)| k == c) {
+                Some((_, n)) if *n > 0 => {
+                    *n -= 1;
+                    true
+                }
+                _ => false,
+            });
+    }
+}
+
 /// The rank count a layout actually produces (`ranks` for line-likes, the
 /// derived value for column and wedge, the side depth for a square).
 pub fn ranks_used(slots: &[Slot]) -> u8 {
@@ -477,5 +505,85 @@ mod tests {
         assert_eq!(effective_ranks(&t, 500, None), 4);
         assert_eq!(files_for(7, 3), 3);
         assert_eq!(files_for(1, 4), 1);
+    }
+
+    /// SIM-FORM-011/013 (T3-040): zone slots labelled up to the category's
+    /// count, the rest free; unzoned categories and zoneless templates
+    /// label nothing.
+    #[test]
+    fn label_slots_follows_the_zones_and_the_counts() {
+        let json = r#"{ "id": "t:cohort", "name_key": "t.c", "layout": "line", "default_ranks": 4,
+            "min_ranks": 1, "max_ranks": 8, "spacing_file": 1.0, "spacing_rank": 1.2,
+            "role_zones": [ { "unit_category": "skirmisher", "ranks_from": 1, "ranks_to": 1 },
+                            { "unit_category": "infantry", "ranks_from": 2, "ranks_to": 8 } ] }"#;
+        let t: FormationTemplate = serde_json::from_str(json).unwrap();
+        let radius = S::from_f32_data(0.4);
+        let mut slots = Vec::new();
+        layout_slots(&t, 140, 4, radius, &mut slots); // 35 files
+        // 40 skirmishers, 100 infantry: the 35 front slots go to the
+        // skirmishers, the infantry zone's 105 slots hold 100 infantry and
+        // leave 5 free for the overflow.
+        label_slots(
+            &t,
+            &mut slots,
+            &[
+                (UnitCategory::Skirmisher, 40),
+                (UnitCategory::Infantry, 100),
+            ],
+        );
+        assert!(
+            slots
+                .iter()
+                .filter(|s| s.rank == 0)
+                .all(|s| s.category == Some(UnitCategory::Skirmisher))
+        );
+        assert_eq!(
+            slots
+                .iter()
+                .filter(|s| s.category == Some(UnitCategory::Infantry))
+                .count(),
+            100
+        );
+        assert_eq!(slots.iter().filter(|s| s.category.is_none()).count(), 5);
+        // Fewer skirmishers than front slots: the rest of the front rank is
+        // free; more infantry than zone slots: the zone is full.
+        label_slots(
+            &t,
+            &mut slots,
+            &[
+                (UnitCategory::Skirmisher, 10),
+                (UnitCategory::Infantry, 130),
+            ],
+        );
+        assert_eq!(
+            slots
+                .iter()
+                .filter(|s| s.rank == 0 && s.category == Some(UnitCategory::Skirmisher))
+                .count(),
+            10
+        );
+        assert_eq!(
+            slots
+                .iter()
+                .filter(|s| s.rank == 0 && s.category.is_none())
+                .count(),
+            25
+        );
+        assert_eq!(
+            slots
+                .iter()
+                .filter(|s| s.category == Some(UnitCategory::Infantry))
+                .count(),
+            105
+        );
+        // A category no zone names labels nothing.
+        label_slots(&t, &mut slots, &[(UnitCategory::Cavalry, 140)]);
+        assert!(slots.iter().all(|s| s.category.is_none()));
+        // A zoneless template labels nothing.
+        let plain = template(Layout::Line);
+        let mut plain_slots = Vec::new();
+        layout_slots(&plain, 20, 4, radius, &mut plain_slots);
+        label_slots(&plain, &mut plain_slots, &[(UnitCategory::Skirmisher, 20)]);
+        assert!(plain_slots.iter().all(|s| s.category.is_none()));
     }
 }

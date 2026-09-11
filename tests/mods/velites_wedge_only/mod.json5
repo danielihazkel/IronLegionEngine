@@ -1,0 +1,11 @@
+// T3-040 (SIM-FORM-014): the velites may only form a wedge (a cavalry
+// template no infantry lists), so a cohort of hastati and velites has no
+// formation in common; the setup check warns
+// and the first group's list stands (`crates/il_sim_battle/tests/mixed.rs`).
+{
+  id: "velites_wedge_only",
+  name_key: "velites_wedge_only.mod.name",
+  version: "0.1.0",
+  engine_version: "*",
+  dependencies: [{ id: "rome", version: ">=0.1.0" }],
+}

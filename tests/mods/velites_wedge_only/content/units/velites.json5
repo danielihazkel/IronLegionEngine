@@ -1,0 +1,6 @@
+// Only the wedge: nothing in common with the hastati's list.
+{
+  $override: "merge",
+  id: "rome:velites",
+  formations: ["rome:wedge"],
+}

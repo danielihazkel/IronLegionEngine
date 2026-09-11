@@ -582,13 +582,13 @@ fn validate_and_apply(
             // Every regiment must be allowed the template before any changes.
             for entity in &entities {
                 let regiment = world.get::<Regiment>(*entity).expect("validated");
-                let allowed = world
-                    .resource::<Regs>()
-                    .0
-                    .units
-                    .get(regiment.unit)
-                    .formations
-                    .contains(&handle);
+                // SIM-FORM-014 (T3-040): the composition's allowed list.
+                let allowed = crate::composition::Composition::of(
+                    &world.resource::<Regs>().0,
+                    &regiment.units,
+                )
+                .formations
+                .contains(&handle);
                 if !allowed {
                     return Err(RejectReason::FormationNotAllowed {
                         regiment: regiment.id,
@@ -633,14 +633,14 @@ fn validate_and_apply(
                     let r = world.get::<Regiment>(e).expect("validated");
                     let a = world.get::<Anchor>(e).expect("anchor");
                     let f = world.get::<FormationState>(e).expect("formation");
-                    let unit = regs.units.get(r.unit);
+                    let comp = crate::composition::Composition::of(&regs, &r.units);
                     RegimentInfo {
                         id: r.id,
                         pos: a.pos,
-                        category: unit.category,
+                        category: comp.category,
                         count: r.soldiers.len() as u16,
                         template: f.template,
-                        radius: unit.soldier_radius,
+                        radius: crate::composition::widest_radius(&regs, &r.units),
                     }
                 })
                 .collect();
@@ -1007,7 +1007,7 @@ fn apply_facing(world: &mut World, entity: Entity, facing: Angle<S>) {
         let f = world.get::<FormationState>(entity).expect("formation");
         spacing(
             regs.formations.get(f.template),
-            regs.units.get(r.unit).soldier_radius,
+            crate::composition::widest_radius(regs, &r.units),
         )
         .1
     };

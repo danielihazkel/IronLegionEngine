@@ -10,7 +10,7 @@
 
 use bevy_ecs::prelude::*;
 use il_core::{Angle, S, Scalar, TICKS_PER_SECOND, Tick, V2};
-use il_data::{FormationTemplate, Handle, Layout, MovementRules, Registries, UnitType};
+use il_data::{FormationTemplate, Layout, MovementRules, Registries, UnitType};
 
 use crate::combat::{fatigue_mults, morale_mults};
 use crate::command::SpeedMode;
@@ -69,14 +69,6 @@ pub fn formation_width(template: &FormationTemplate, files: u16, radius: S) -> S
         sf
     };
     S::from_i32(i32::from(files)) * sf
-}
-
-/// The column template a unit can morph into, if it has one.
-fn column_template(unit: &UnitType, regs: &Registries) -> Option<Handle<FormationTemplate>> {
-    unit.formations
-        .iter()
-        .copied()
-        .find(|h| regs.formations.get(*h).layout == Layout::Column)
 }
 
 type SoldierRead<'w, 's> = Query<'w, 's, (&'static Pos, &'static SlotRef)>;
@@ -166,8 +158,9 @@ fn follow_one(
 ) {
     let rules = &regs.rules.movement;
     let dt = tick_dt();
-    let unit = regs.units.get(regiment.unit);
-    let radius = unit.soldier_radius;
+    // SIM-FORM-013 (T3-040): the widest group's radius sets the width, the
+    // slowest group's speed the pace.
+    let radius = crate::composition::widest_radius(regs, &regiment.units);
 
     // Waypoint bookkeeping: skip every waypoint already within reach.
     while let Some(wp) = path.current() {
@@ -201,7 +194,8 @@ fn follow_one(
     if state.prior_template.is_none() {
         if wp.corridor < width
             && template.layout != Layout::Column
-            && let Some(column) = column_template(unit, regs)
+            && let Some(column) =
+                crate::composition::Composition::of(regs, &regiment.units).column_template(regs)
         {
             state.prior_template = Some(state.template);
             state.template = column;
@@ -235,7 +229,7 @@ fn follow_one(
     // morale (T2-040, `speed_mult`) × formation × zone × slope, × morph and
     // straggler factors.
     let template = regs.formations.get(state.template);
-    let mut v = mode_speed(unit, order.speed)
+    let mut v = crate::composition::slowest_speed(regs, &regiment.units, order.speed)
         * speed_mult
         * template.speed_mult
         * zone_move_mult(map, regs, anchor.pos)

@@ -18,14 +18,10 @@ use il_sim_battle::{
 
 fn reg(id: u32, unit: &str, count: u16, position: Option<[f32; 2]>) -> RegimentSetup {
     RegimentSetup {
-        id,
-        unit_type: cid(unit),
-        count,
-        experience: 0,
-        fatigue: 0.0,
         formation: Some(cid("rome:line")),
         position,
         facing_deg: None,
+        ..RegimentSetup::single(id, cid(unit), count)
     }
 }
 
@@ -533,7 +529,7 @@ fn reinforcements_arrive_in_column_at_their_edge_and_are_validated() {
     assert_eq!(w.regiment_count(), 4);
     // The cap: a group that would pass it is dropped with an event.
     let mut huge = s.clone();
-    huge.sides[0].reinforcements[0].regiments[1].count = 33_000;
+    huge.sides[0].reinforcements[0].regiments[1].count = Some(33_000);
     assert!(matches!(
         BattleWorld::new(&huge, regs),
         Err(SetupError::OverCap { .. })

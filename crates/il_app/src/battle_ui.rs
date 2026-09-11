@@ -76,7 +76,8 @@ pub fn result_sides(session: &BattleSession, result: &BattleResult) -> Vec<Resul
                             .chain(ss.reinforcements.iter().flat_map(|g| g.regiments.iter()))
                             .find(|r| r.id == id)
                     })
-                    .and_then(|r| regs.units.lookup(&r.unit_type))
+                    .and_then(|r| r.first_unit())
+                    .and_then(|id| regs.units.lookup(id))
                     .map(|h| l.get(&regs.units.get(h).name_key).to_string())
                     .unwrap_or_else(|| format!("#{id}"))
             };
@@ -308,18 +309,16 @@ pub fn command_model<'a>(
         .iter()
         .filter_map(|id| view.regiment(*id))
         .find_map(|r| r.fire);
+    // SIM-FORM-014 (T3-040): the composition's allowed formations.
     let formations = first.map_or_else(Vec::new, |r| {
-        regs.units
-            .get(r.unit)
-            .formation_ids
+        view.regiment_formations(r.id)
             .iter()
             .enumerate()
-            .filter_map(|(i, id)| {
-                let h = regs.formations.lookup(id)?;
-                Some((
+            .map(|(i, h)| {
+                (
                     (i + 1) as u8,
-                    l.get(&regs.formations.get(h).name_key).to_string(),
-                ))
+                    l.get(&regs.formations.get(*h).name_key).to_string(),
+                )
             })
             .collect()
     });

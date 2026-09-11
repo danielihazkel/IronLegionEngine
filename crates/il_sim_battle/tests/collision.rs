@@ -171,7 +171,7 @@ fn a_resolve_pass_preserves_the_momentum_weighted_centre() {
     // Drop a cavalry soldier onto an infantry soldier and let Stage 7 push
     // them apart: m·p summed over the pair is unchanged.
     let mut setup = common::two_sides(1);
-    setup.sides[1].regiments[0].unit_type = common::cid("persia:cavalry");
+    setup.sides[1].regiments[0].unit_type = Some(common::cid("persia:cavalry"));
     setup.sides[0].regiments[0].position = Some([300.0, 150.0]);
     setup.sides[1].regiments[0].position = Some([300.3, 150.0]);
     far_bodyguards(&mut setup);

@@ -44,7 +44,7 @@
   los_radius: 200,
 
   abilities: ["rome:testudo"],
-  formations: ["rome:line", "rome:column", "rome:loose", "rome:square"],
+  formations: ["rome:line", "rome:column", "rome:loose", "rome:square", "rome:cohort"],
 
   sprite_set: "rome:sprites_infantry",
   sounds: {},

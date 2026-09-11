@@ -8,11 +8,12 @@
 
 use bevy_ecs::prelude::*;
 use il_core::{Angle, RegimentId, S, Scalar, Tick, V2};
-use il_data::{
-    ContentId, GroupFormationTemplate, GroupKind, Handle, Layout, MapEdge, TimeoutWinner, UnitType,
-};
+use il_data::{ContentId, GroupFormationTemplate, GroupKind, Handle, MapEdge, TimeoutWinner};
 
-use crate::components::{Fsm, Morale, MoraleState, Order, OrderKind, Regiment, SoldierState};
+use crate::components::{
+    Fsm, Morale, MoraleState, Order, OrderKind, Regiment, SoldierState, UnitGroup,
+};
+use crate::composition::{Composition, widest_radius};
 use crate::events::BattleEvent;
 use crate::formation::{RegimentInfo, arrange_group, effective_ranks};
 use crate::interface::{RegimentSetup, ReinforcementGroup, SOLDIER_CAP};
@@ -73,7 +74,7 @@ fn battle_line_template(gap: S) -> GroupFormationTemplate {
 pub fn auto_placements(
     regs: &il_data::Registries,
     map: &LoadedMap,
-    regiments: &[(&RegimentSetup, Handle<UnitType>, u16)],
+    regiments: &[(&RegimentSetup, Vec<UnitGroup>, u16)],
     zone: u8,
     others: &[V2],
 ) -> Vec<(V2, Angle<S>)> {
@@ -82,20 +83,20 @@ pub fn auto_placements(
     let infos: Vec<RegimentInfo> = regiments
         .iter()
         .enumerate()
-        .map(|(k, (r, unit, count))| {
-            let u = regs.units.get(*unit);
+        .map(|(k, (r, units, count))| {
+            let comp = Composition::of(regs, units);
             let template = r
                 .formation
                 .as_ref()
                 .and_then(|id| regs.formations.lookup(id))
-                .unwrap_or_else(|| u.default_formation());
+                .unwrap_or_else(|| regs.units.get(comp.first).default_formation());
             RegimentInfo {
                 id: RegimentId(k as u32),
                 pos: centre,
-                category: u.category,
+                category: comp.category,
                 count: *count,
                 template,
-                radius: u.soldier_radius,
+                radius: widest_radius(regs, units),
             }
         })
         .collect();
@@ -149,19 +150,6 @@ pub fn edge_entry(map: &LoadedMap, edge: MapEdge) -> (V2, Angle<S>, V2) {
     }
 }
 
-/// The unit's Column template, or its default (SIM-FLOW-016).
-fn column_template(
-    regs: &il_data::Registries,
-    unit: Handle<UnitType>,
-) -> Handle<il_data::FormationTemplate> {
-    let u = regs.units.get(unit);
-    u.formations
-        .iter()
-        .copied()
-        .find(|h| regs.formations.get(*h).layout == Layout::Column)
-        .unwrap_or_else(|| u.default_formation())
-}
-
 /// Spawns one reinforcement group in Column at its edge midpoint, the
 /// regiments side by side along the edge (`group_gap` apart), facing into
 /// the map. Returns the regiments spawned.
@@ -170,28 +158,32 @@ fn spawn_group(world: &mut World, side: u8, group: &ReinforcementGroup) -> Vec<R
     let map = world.resource::<MapRes>().0.clone();
     let (mid, facing, along) = edge_entry(&map, group.edge);
     let gap = regs.rules.formation.group_gap;
-    // Widths in Column, then cumulative offsets centred on the midpoint.
-    let widths: Vec<(S, Handle<UnitType>, Handle<il_data::FormationTemplate>)> = group
+    // Widths in Column (the composition's first Column template, else the
+    // first group's default), then cumulative offsets centred on the
+    // midpoint.
+    let widths: Vec<(S, Handle<il_data::FormationTemplate>)> = group
         .regiments
         .iter()
         .map(|r| {
-            let unit = regs.units.lookup(&r.unit_type).expect("validated");
-            let template = column_template(&regs, unit);
+            let units = crate::composition::resolve_groups(&regs, r);
+            let comp = Composition::of(&regs, &units);
+            let template = comp
+                .column_template(&regs)
+                .unwrap_or_else(|| regs.units.get(comp.first).default_formation());
             let t = regs.formations.get(template);
-            let ranks = effective_ranks(t, r.count, None);
-            let files = crate::formation::files_for(r.count, ranks.max(1));
+            let ranks = effective_ranks(t, r.total(), None);
+            let files = crate::formation::files_for(r.total(), ranks.max(1));
             (
-                formation_width(t, files.max(1), regs.units.get(unit).soldier_radius),
-                unit,
+                formation_width(t, files.max(1), widest_radius(&regs, &units)),
                 template,
             )
         })
         .collect();
-    let total = widths.iter().fold(S::ZERO, |acc, (w, _, _)| acc + *w)
+    let total = widths.iter().fold(S::ZERO, |acc, (w, _)| acc + *w)
         + gap * S::from_i32(widths.len().saturating_sub(1) as i32);
     let mut cursor = -total * S::HALF;
     let mut spawned = Vec::with_capacity(group.regiments.len());
-    for (r, (w, unit, template)) in group.regiments.iter().zip(&widths) {
+    for (r, (w, template)) in group.regiments.iter().zip(&widths) {
         let centre = cursor + *w * S::HALF;
         cursor = cursor + *w + gap;
         let anchor = map.clamp(mid + along * centre);
@@ -201,7 +193,7 @@ fn spawn_group(world: &mut World, side: u8, group: &ReinforcementGroup) -> Vec<R
             facing_deg: None,
             ..r.clone()
         };
-        crate::spawn::spawn_regiment(world, side, &setup, *unit, None, Some((anchor, facing)));
+        crate::spawn::spawn_regiment(world, side, &setup, None, Some((anchor, facing)));
         if let Some((id, _)) = world.resource::<Ids>().regiment_entities.last() {
             spawned.push(*id);
         }
@@ -228,7 +220,7 @@ fn spawn_due_reinforcements(world: &mut World, tick: Tick) {
             if group.arrival_tick > since {
                 break;
             }
-            let incoming: u32 = group.regiments.iter().map(|r| u32::from(r.count)).sum();
+            let incoming: u32 = group.regiments.iter().map(|r| u32::from(r.total())).sum();
             let alive = world.soldier_count_alive();
             world.resource_mut::<Sides>().0[s].reinforcements_spawned = (done + 1) as u8;
             if alive + incoming > SOLDIER_CAP {

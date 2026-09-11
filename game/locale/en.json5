@@ -17,6 +17,7 @@
       line: { name: "Line" },
       column: { name: "Column" },
       loose: { name: "Loose" },
+      cohort: { name: "Cohort" },
       phalanx: { name: "Phalanx" },
       square: { name: "Square" },
       wedge: { name: "Wedge" },

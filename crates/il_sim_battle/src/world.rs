@@ -62,6 +62,8 @@ pub struct BattleWorld {
     pub(crate) schedules: Vec<Schedule>,
     pub(crate) tick: Tick,
     pub(crate) phase: BattlePhase,
+    /// The setup check's soft findings (T3-040).
+    pub(crate) setup_warnings: Vec<crate::spawn::SetupWarning>,
 }
 
 impl core::fmt::Debug for BattleWorld {
@@ -132,6 +134,7 @@ impl BattleWorld {
             schedules: build_schedules(),
             tick: Tick::ZERO,
             phase,
+            setup_warnings: Vec::new(),
         };
         w.refresh_hash();
         w
@@ -167,6 +170,12 @@ impl BattleWorld {
     /// The nav grid derived from the map.
     pub fn nav_grid(&self) -> &NavGrid {
         &self.world.resource::<NavGridRes>().0
+    }
+
+    /// The soft findings of the setup check (T3-040, SIM-FORM-014): the
+    /// battle built, but the caller should show these.
+    pub fn setup_warnings(&self) -> &[crate::spawn::SetupWarning] {
+        &self.setup_warnings
     }
 
     /// The setup this world was built from, if any.

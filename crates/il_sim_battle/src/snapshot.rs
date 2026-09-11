@@ -16,9 +16,9 @@ use crate::ai::{AiState, ArmyPlan};
 use crate::command::{Command, FireMode, SpeedMode};
 use crate::components::{
     Anchor, Attackers, Body, Combat, Cooldowns, DEATHS_RING, Energy, Facing, FatigueC, Fire,
-    FormationState, Fsm, GeneralTag, Health, MeleeState, Morale, MoraleState, Order, OrderKind,
-    Path, Pos, PrevFacing, PrevPos, RangedState, Rank, Regiment, RegimentFatigue, SlotRef, Soldier,
-    SoldierState, StatusEffect, Statuses, Vel, Waypoint,
+    FormationState, Fsm, GeneralTag, GroupTallies, Health, MeleeState, Morale, MoraleState, Order,
+    OrderKind, Path, Pos, PrevFacing, PrevPos, RangedState, Rank, Regiment, RegimentFatigue,
+    SlotRef, Soldier, SoldierState, StatusEffect, Statuses, UnitGroup, Vel, Waypoint,
 };
 use crate::interface::BattleSetup;
 use crate::map::{FLAT_MAP_ID, MapError};
@@ -50,7 +50,7 @@ use crate::world::{BattleWorld, InstallMapError};
 /// 9: the battle AI's state (T2-080): the command outbox for the next tick
 ///    and one optional army plan per side.
 /// 10: the army plan carries `standoff_since` and `run_in` (T3-010).
-pub const SNAPSHOT_VERSION: u32 = 10;
+pub const SNAPSHOT_VERSION: u32 = 11;
 
 /// A ranged regiment's `Fire` component.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -69,12 +69,26 @@ pub struct StatusSnap {
     pub hostile: bool,
 }
 
+/// One unit group of a regiment (T3-040, version 11).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnitGroupSnap {
+    pub unit_type: ContentId,
+    pub count: u16,
+    pub experience: u8,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RegimentSnap {
     pub id: RegimentId,
     pub side: u8,
     pub setup_id: u32,
+    /// The first group's unit (kept for readers of the header).
     pub unit_type: ContentId,
+    /// The composition in setup order (T3-040, version 11).
+    pub units: Vec<UnitGroupSnap>,
+    /// `GroupTallies`, one entry per group (T3-040, version 11).
+    pub group_fled: Vec<u16>,
+    pub group_withdrawn: Vec<u16>,
     pub anchor_pos: V2,
     pub anchor_facing: Angle<S>,
     pub morale: S,
@@ -138,6 +152,8 @@ pub struct SoldierSnap {
     /// `(ammo, cooldown)`, present exactly when the unit has a `ranged`
     /// block (T2-030).
     pub ranged: Option<(u16, u16)>,
+    /// Index into the regiment's `units` (T3-040, version 11).
+    pub group: u8,
     /// The general's rank, present exactly for the general (T2-040/043).
     pub general: Option<u8>,
 }
@@ -268,12 +284,24 @@ impl BattleWorld {
                 let energy = world.get::<Energy>(*entity).expect("energy");
                 let cooldowns = world.get::<Cooldowns>(*entity).expect("cooldowns");
                 let statuses = world.get::<Statuses>(*entity).expect("statuses");
+                let tallies = world.get::<GroupTallies>(*entity).expect("group tallies");
                 debug_assert_eq!(*id, r.id);
                 RegimentSnap {
                     id: r.id,
                     side: r.side,
                     setup_id: r.setup_id,
                     unit_type: regs.units.id_of(r.unit).clone(),
+                    units: r
+                        .units
+                        .iter()
+                        .map(|g| UnitGroupSnap {
+                            unit_type: regs.units.id_of(g.unit).clone(),
+                            count: g.count,
+                            experience: g.experience,
+                        })
+                        .collect(),
+                    group_fled: tallies.fled.clone(),
+                    group_withdrawn: tallies.withdrawn.clone(),
                     anchor_pos: anchor.pos,
                     anchor_facing: anchor.facing,
                     morale: morale.m,
@@ -350,6 +378,7 @@ impl BattleWorld {
                         .get::<RangedState>(*entity)
                         .map(|r| (r.ammo, r.cooldown)),
                     general: world.get::<GeneralTag>(*entity).map(|g| g.rank),
+                    group: s.group,
                 }
             })
             .collect();
@@ -419,6 +448,29 @@ impl BattleWorld {
                 .units
                 .lookup(&r.unit_type)
                 .ok_or_else(|| RestoreError::UnknownUnitType(r.unit_type.clone()))?;
+            // T3-040: the composition; an old single-unit record reads as
+            // one group of the regiment's unit.
+            let mut units = Vec::with_capacity(r.units.len().max(1));
+            for g in &r.units {
+                units.push(UnitGroup {
+                    unit: regs
+                        .units
+                        .lookup(&g.unit_type)
+                        .ok_or_else(|| RestoreError::UnknownUnitType(g.unit_type.clone()))?,
+                    count: g.count,
+                    experience: g.experience,
+                });
+            }
+            if units.is_empty() {
+                units.push(UnitGroup {
+                    unit,
+                    count: r.initial,
+                    experience: r.experience,
+                });
+            }
+            if r.group_fled.len() != units.len() || r.group_withdrawn.len() != units.len() {
+                return Err(RestoreError::Malformed("group tallies length"));
+            }
             let template = regs
                 .formations
                 .lookup(&r.formation)
@@ -443,8 +495,13 @@ impl BattleWorld {
                         id: r.id,
                         side: r.side,
                         setup_id: r.setup_id,
-                        unit,
+                        unit: units[0].unit,
+                        units: units.clone(),
                         soldiers: Vec::new(),
+                    },
+                    GroupTallies {
+                        fled: r.group_fled.clone(),
+                        withdrawn: r.group_withdrawn.clone(),
                     },
                     Anchor {
                         pos: r.anchor_pos,
@@ -550,13 +607,18 @@ impl BattleWorld {
                     regiment: s.regiment,
                 })?;
             // The general carries its own unit type (SIM-GEN-001, T2-043),
-            // resolved from the stored setup; everyone else the regiment's.
+            // resolved from the stored setup; everyone else its group's
+            // (T3-040).
             let (regiment_unit, side) = {
                 let r = w
                     .world
                     .get::<Regiment>(regiment_entity)
                     .expect("just spawned");
-                (r.unit, r.side)
+                let group = r
+                    .units
+                    .get(usize::from(s.group))
+                    .ok_or(RestoreError::Malformed("soldier group out of range"))?;
+                (group.unit, r.side)
             };
             let unit = if s.general.is_some() {
                 let id = &snapshot
@@ -584,6 +646,7 @@ impl BattleWorld {
                         regiment: s.regiment,
                         unit,
                         category,
+                        group: s.group,
                     },
                     Pos { p: s.p },
                     // Interpolation state is render-only; start it at the

@@ -247,14 +247,11 @@ impl BuilderState {
                     .get(r.unit)
                     .ok_or(BuildError::EmptySide { side: i })?;
                 regiments.push(RegimentSetup {
-                    id: next_id,
-                    unit_type: unit.id.clone(),
-                    count: r.count,
-                    experience: r.experience.min(MAX_EXPERIENCE),
-                    fatigue: 0.0,
+                    experience: Some(r.experience.min(MAX_EXPERIENCE)),
                     formation: None,
                     position: None,
                     facing_deg: None,
+                    ..RegimentSetup::single(next_id, unit.id.clone(), r.count)
                 });
                 next_id += 1;
             }

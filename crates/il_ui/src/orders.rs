@@ -383,16 +383,13 @@ pub fn preset_deploy_commands(
     let infos: Vec<RegimentInfo> = view
         .regiments()
         .filter(|r| r.side == side && r.soldier_count > 0)
-        .map(|r| {
-            let unit = regs.units.get(r.unit);
-            RegimentInfo {
-                id: r.id,
-                pos: r.anchor_pos,
-                category: unit.category,
-                count: u16::try_from(r.soldier_count).unwrap_or(u16::MAX),
-                template: r.formation,
-                radius: unit.soldier_radius,
-            }
+        .map(|r| RegimentInfo {
+            id: r.id,
+            pos: r.anchor_pos,
+            category: regs.units.get(r.unit).category,
+            count: u16::try_from(r.soldier_count).unwrap_or(u16::MAX),
+            template: r.formation,
+            radius: r.radius,
         })
         .collect();
     arrange_group(
@@ -484,15 +481,16 @@ fn formation_commands(
     let Some(index) = usize::from(n).checked_sub(1) else {
         return Vec::new();
     };
-    let units = &ctx.view.regs().units;
-    // One SetFormation per template, templates in ContentId order.
+    let formations = &ctx.view.regs().formations;
+    // One SetFormation per template, templates in ContentId order; the
+    // hotkey indexes the composition's allowed list (SIM-FORM-014, T3-040).
     let mut by_template: BTreeMap<ContentId, Vec<RegimentId>> = BTreeMap::new();
     for id in regiments {
-        let Some(r) = ctx.view.regiment(*id) else {
-            continue;
-        };
-        if let Some(template) = units.get(r.unit).formation_ids.get(index) {
-            by_template.entry(template.clone()).or_default().push(*id);
+        if let Some(h) = ctx.view.regiment_formations(*id).get(index) {
+            by_template
+                .entry(formations.id_of(*h).clone())
+                .or_default()
+                .push(*id);
         }
     }
     by_template
@@ -520,7 +518,7 @@ fn drag_commands(
         };
         let regs = ctx.view.regs();
         let template = regs.formations.get(r.formation);
-        let radius = regs.units.get(r.unit).soldier_radius;
+        let radius = r.radius;
         let count = u16::try_from(r.soldier_count).unwrap_or(u16::MAX);
         let ranks = ranks_for_width(
             template,

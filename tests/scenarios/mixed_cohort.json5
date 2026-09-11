@@ -1,0 +1,42 @@
+// T3-040 (REQ-FORM-008; SIM-FORM-012..015): a mixed regiment. Side 0 is one
+// cohort of 40 velites and 100 hastati in `rome:cohort` (skirmishers in
+// the front rank, infantry behind; the general rides in the velites'
+// group), marched 60 m east at tick 1 (at the hastati's walk, the slowest
+// group) and sent at the hastati of side 1 at tick 400 (the velites throw
+// on the way in, the melee reforms the zones after the deaths). In the
+// determinism corpus (1 and 8 threads, a restore at 1,500) and the result
+// reconciliation (one row per group).
+//
+// RegimentIds: side 0 = 0 (the cohort); side 1 = 1.
+{
+  map_id: "rome:test_field",
+  seed: 3040,
+  determinism: { ticks: 3000, snapshot_at: 1500 },
+  sides: [
+    {
+      faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        {
+          id: 1,
+          units: [
+            { unit_type: "rome:velites", count: 40 },
+            { unit_type: "rome:hastati", count: 100, experience: 2 },
+          ],
+          formation: "rome:cohort", position: [300, 150], facing_deg: 0,
+        },
+      ],
+    },
+    {
+      faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [
+        { id: 2, unit_type: "rome:hastati", count: 120, formation: "rome:line", position: [520, 150], facing_deg: 180 },
+      ],
+    },
+  ],
+  commands: [
+    { tick: 1, player: 0, seq: 0, kind: { Move: { regiments: [0], target: { x: 360, y: 150 }, facing: null, speed: "Walk" } } },
+    { tick: 400, player: 0, seq: 0, kind: { AttackMove: { regiments: [0], target: { x: 520, y: 150 } } } },
+  ],
+}

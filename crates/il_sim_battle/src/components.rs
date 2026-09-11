@@ -22,6 +22,9 @@ pub struct Soldier {
     pub regiment: RegimentId,
     pub unit: Handle<UnitType>,
     pub category: UnitCategory,
+    /// Index into `Regiment.units` (SIM-FORM-012, T3-040): identity, like
+    /// `id`; the general rides in group 0.
+    pub group: u8,
 }
 
 /// Position at the end of the current tick.
@@ -142,6 +145,15 @@ pub struct GeneralTag {
 
 // --------------------------------------------------------------- regiments
 
+/// One unit group of a regiment (SIM-FORM-012, T3-040): `count` is the
+/// soldiers the group spawned with (the general counted in group 0).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UnitGroup {
+    pub unit: Handle<UnitType>,
+    pub count: u16,
+    pub experience: u8,
+}
+
 #[derive(Component, Clone, Debug)]
 pub struct Regiment {
     pub id: RegimentId,
@@ -149,9 +161,32 @@ pub struct Regiment {
     pub side: u8,
     /// Campaign regiment id echoed into `BattleResult` (`RegimentSetup.id`).
     pub setup_id: u32,
+    /// The first group's unit: abilities, energy and the code that reads
+    /// one unit (SIM-FORM-014); `composition` derives the rest.
     pub unit: Handle<UnitType>,
+    /// The composition in setup order (never empty).
+    pub units: Vec<UnitGroup>,
     /// Ascending ids of living soldiers.
     pub soldiers: Vec<SoldierId>,
+}
+
+/// Per-group counts of soldiers that left the field (SIM-FORM-015, T3-040):
+/// one entry per `Regiment.units` group, written beside `Combat.fled` and
+/// `Combat.withdrawn` so the result can list every group. Hashed and
+/// snapshotted.
+#[derive(Component, Clone, Debug, Default, PartialEq, Eq)]
+pub struct GroupTallies {
+    pub fled: Vec<u16>,
+    pub withdrawn: Vec<u16>,
+}
+
+impl GroupTallies {
+    pub fn new(groups: usize) -> Self {
+        Self {
+            fled: vec![0; groups],
+            withdrawn: vec![0; groups],
+        }
+    }
 }
 
 /// SIM-PROJ-001 / SIM-PROJ-003: a ranged regiment's fire mode, the enemy
@@ -475,6 +510,7 @@ impl_hashable_struct!(Order {
     since
 });
 impl_hashable_struct!(Waypoint { p, corridor });
+impl_hashable_struct!(GroupTallies { fled, withdrawn });
 impl_hashable_struct!(Path {
     waypoints,
     next,

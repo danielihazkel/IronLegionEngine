@@ -11,8 +11,8 @@ pub use group::{
     Placement, RegimentInfo, arrange_group, arranged_width, lateral_order, ranks_for_width,
 };
 pub use layout::{
-    LayoutFn, Slot, effective_ranks, files_for, files_used, layout_for, layout_slots, ranks_used,
-    spacing,
+    LayoutFn, Slot, effective_ranks, files_for, files_used, label_slots, layout_for, layout_slots,
+    ranks_used, spacing,
 };
 pub use systems::{
     formation_apply, formation_integrity, formation_layout, integrity, rebuild_formation_derived,

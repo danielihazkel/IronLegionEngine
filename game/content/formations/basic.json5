@@ -27,6 +27,24 @@
     speed_mult: 1.0,
   },
   {
+    // SIM-FORM-011/013 (T3-040): a mixed cohort, skirmishers in the front
+    // rank and infantry behind. Ranks in role_zones are 1-based.
+    id: "rome:cohort",
+    name_key: "rome.formations.cohort.name",
+    layout: "line",
+    default_ranks: 4,
+    min_ranks: 2,
+    max_ranks: 8,
+    spacing_file: 1.0,
+    spacing_rank: 1.2,
+    role_zones: [
+      { unit_category: "skirmisher", ranks_from: 1, ranks_to: 1 },
+      { unit_category: "infantry", ranks_from: 2, ranks_to: 8 },
+    ],
+    morph_ticks: 60,
+    speed_mult: 1.0,
+  },
+  {
     id: "rome:loose",
     name_key: "rome.formations.loose.name",
     layout: "loose",

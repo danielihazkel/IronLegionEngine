@@ -70,14 +70,14 @@ pub fn commands(world: &World, side: u8, profile: Handle<AiProfile>, out: &mut D
         if r.side != side || r.soldiers.is_empty() {
             continue;
         }
-        let unit = regs.units.get(r.unit);
+        let comp = crate::composition::Composition::of(&regs, &r.units);
         let info = RegimentInfo {
             id: *id,
             pos: a.pos,
-            category: unit.category,
+            category: comp.category,
             count: r.soldiers.len() as u16,
             template: f.template,
-            radius: unit.soldier_radius,
+            radius: crate::composition::widest_radius(&regs, &r.units),
         };
         current.push((info, a.pos));
         if state.general_regiment != Some(*id) {

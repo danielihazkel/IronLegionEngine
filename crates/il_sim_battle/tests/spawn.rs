@@ -21,14 +21,10 @@ fn cid(s: &str) -> ContentId {
 
 fn regiment(id: u32, unit: &str, count: u16, x: f32, facing_deg: f32) -> RegimentSetup {
     RegimentSetup {
-        id,
-        unit_type: cid(unit),
-        count,
-        experience: 0,
-        fatigue: 0.0,
         formation: None,
         position: Some([x, 150.0]),
         facing_deg: Some(facing_deg),
+        ..RegimentSetup::single(id, cid(unit), count)
     }
 }
 
@@ -165,7 +161,7 @@ fn unknown_ai_profile_override_is_rejected() {
 #[test]
 fn unknown_unit_types_and_missing_sides_are_rejected() {
     let mut setup = two_sides(10);
-    setup.sides[1].regiments[0].unit_type = cid("rome:nope");
+    setup.sides[1].regiments[0].unit_type = Some(cid("rome:nope"));
     assert_eq!(
         BattleWorld::new(&setup, regs()).unwrap_err(),
         SetupError::UnknownUnitType {

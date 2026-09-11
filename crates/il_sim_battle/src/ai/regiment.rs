@@ -261,7 +261,6 @@ pub fn decide(
     }
 
     // ---- formation ------------------------------------------------------
-    let unit = regs.units.get(me.unit);
     let winner = select(
         set,
         Channel::Formation,
@@ -269,7 +268,7 @@ pub fn decide(
             ActionKind::SwitchFormation { layout } => {
                 *layout != me.layout
                     && !me.morphing
-                    && unit
+                    && me
                         .formations
                         .iter()
                         .any(|h| regs.formations.get(*h).layout == *layout)
@@ -280,7 +279,7 @@ pub fn decide(
         Some(rng),
     );
     if let Some(ActionKind::SwitchFormation { layout }) = winner.map(|c| &c.action.kind)
-        && let Some(h) = unit
+        && let Some(h) = me
             .formations
             .iter()
             .find(|h| regs.formations.get(**h).layout == *layout)

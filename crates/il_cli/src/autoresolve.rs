@@ -87,6 +87,9 @@ pub fn autoresolve(
     let regs = crate::load_registries_with_mods(&opts.content_root, &opts.mods)?;
     let scenario = crate::load_scenario(&opts.scenario)?;
     let mut world = BattleWorld::new(&scenario.setup, regs)?;
+    for w in world.setup_warnings() {
+        eprintln!("warning: {w}");
+    }
     world.set_threads(opts.threads.max(1));
     let max_ticks = opts.max_ticks.unwrap_or_else(|| default_max_ticks(&world));
 

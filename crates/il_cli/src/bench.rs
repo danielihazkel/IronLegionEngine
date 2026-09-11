@@ -406,14 +406,14 @@ pub fn generate_scenario(soldiers: u32) -> anyhow::Result<Scenario> {
             },
             regiments: (0..regiments)
                 .map(|i| RegimentSetup {
-                    id: i + 1,
-                    unit_type: cid(UNIT_TYPES[(i % UNIT_TYPES.len() as u32) as usize]),
-                    count: REGIMENT_SIZE,
-                    experience: 0,
-                    fatigue: 0.0,
                     formation: None,
                     position: Some(anchor(i)),
                     facing_deg: Some(90.0),
+                    ..RegimentSetup::single(
+                        i + 1,
+                        cid(UNIT_TYPES[(i % UNIT_TYPES.len() as u32) as usize]),
+                        REGIMENT_SIZE,
+                    )
                 })
                 .collect(),
             reinforcements: Vec::new(),

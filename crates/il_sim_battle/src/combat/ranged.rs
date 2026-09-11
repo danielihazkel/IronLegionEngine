@@ -150,21 +150,23 @@ pub fn ranged_target(world: &mut World) {
         let Some(fire) = world.get::<Fire>(*entity).copied() else {
             continue;
         };
-        let (side, alive, unit, anchor, morale_ok) = {
+        let (side, alive, ranged_unit, anchor, morale_ok) = {
             let r = world.get::<Regiment>(*entity).expect("regiment");
             let a = world.get::<Anchor>(*entity).expect("anchor");
             let m = world.get::<Morale>(*entity).expect("morale");
+            let regs = &world.resource::<Regs>().0;
             (
                 r.side,
                 !r.soldiers.is_empty(),
-                r.unit,
+                // SIM-FORM-014 (T3-040): the first ranged group's block.
+                crate::composition::Composition::of(regs, &r.units).ranged_unit,
                 a.pos,
                 !matches!(m.state, MoraleState::Routing | MoraleState::Shattered),
             )
         };
         let ranged = {
             let regs = &world.resource::<Regs>().0;
-            regs.units.get(unit).ranged.clone()
+            ranged_unit.and_then(|u| regs.units.get(u).ranged.clone())
         };
         let Some(ranged) = ranged else {
             continue;
@@ -572,7 +574,7 @@ fn statistical_shot(world: &World, shot: &Shot, tick: Tick, seed: u64) -> Option
     if regiment.soldiers.is_empty() {
         return None;
     }
-    let radius = regs.units.get(regiment.unit).soldier_radius;
+    let radius = crate::composition::widest_radius(regs, &regiment.units);
     let area = {
         let from_slots = world
             .get::<FormationState>(te)
@@ -708,10 +710,11 @@ pub fn ranged_spawn(world: &mut World) {
         if volley {
             let reload = world
                 .get::<Regiment>(entity)
-                .map(|r| r.unit)
-                .and_then(|u| {
+                .and_then(|r| {
                     let regs = &world.resource::<Regs>().0;
-                    regs.units.get(u).ranged.as_ref().map(|rg| rg.reload_ticks)
+                    crate::composition::Composition::of(regs, &r.units)
+                        .ranged_unit
+                        .and_then(|u| regs.units.get(u).ranged.as_ref().map(|rg| rg.reload_ticks))
                 })
                 .unwrap_or(1);
             let st_interval = world

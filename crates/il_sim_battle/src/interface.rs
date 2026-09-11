@@ -95,18 +95,45 @@ fn default_rank() -> u8 {
     1
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-pub struct RegimentSetup {
-    /// Campaign regiment id, echoed in `RegimentResult`.
-    pub id: u32,
+/// One unit group of a regiment's composition (SIM-FORM-012, T3-040): the
+/// unit, how many, and the group's experience.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnitGroupSetup {
     pub unit_type: ContentId,
     pub count: u16,
     #[serde(default)]
     pub experience: u8,
+}
+
+/// Which of the two regiment forms a setup got wrong (SIM-FORM-012).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetupForm {
+    /// Both the `unit_type` / `count` / `experience` shorthand and `units`.
+    BothForms,
+    /// Neither form: no `unit_type` and an empty `units`.
+    Empty,
+}
+
+/// A regiment of a side (SIM-FORM-012). On the wire a JSON5 file gives the
+/// single-group shorthand (`unit_type`, `count`, `experience`) or the
+/// `units` composition; the absent form is left out of a written file
+/// (`RegimentSetupWire`), while the binary encodings of snapshots and
+/// replays, which are not self-describing, always carry every field
+/// (`RegimentSetupFull`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct RegimentSetup {
+    /// Campaign regiment id, echoed in `RegimentResult`.
+    pub id: u32,
+    /// The single-group shorthand (SIM-FORM-012): `unit_type` + `count`
+    /// (+ `experience`), or the `units` composition, never both.
+    pub unit_type: Option<ContentId>,
+    pub count: Option<u16>,
+    pub experience: Option<u8>,
+    /// The ordered unit groups of a mixed regiment (T3-040); empty in the
+    /// shorthand form. `groups()` gives either form as a list.
+    pub units: Vec<UnitGroupSetup>,
     /// Data-side `f32`, converted with `from_f32_data` at spawn.
-    #[serde(default)]
     pub fatigue: f32,
-    #[serde(default)]
     pub formation: Option<ContentId>,
     /// Pre-deploy override (PRD OQ-9, T2-070): the anchor position in world
     /// units. A regiment with a position spawns deployed there (checked
@@ -114,12 +141,201 @@ pub struct RegimentSetup {
     /// regiment has one starts with its deployment confirmed; when every
     /// side does, the battle starts in the Battle phase. Without it the
     /// regiment is auto-placed at its zone centre and awaits `Deploy`.
-    #[serde(default)]
     pub position: Option<[f32; 2]>,
     /// Anchor facing in degrees, counter-clockwise from +x, for a
     /// pre-deployed regiment (default 0).
-    #[serde(default)]
     pub facing_deg: Option<f32>,
+}
+
+/// The human-readable form (JSON5 files): the unset form is left out.
+#[derive(Serialize, Deserialize)]
+struct RegimentSetupWire {
+    id: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    unit_type: Option<ContentId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    count: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    experience: Option<u8>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    units: Vec<UnitGroupSetup>,
+    #[serde(default)]
+    fatigue: f32,
+    #[serde(default)]
+    formation: Option<ContentId>,
+    #[serde(default)]
+    position: Option<[f32; 2]>,
+    #[serde(default)]
+    facing_deg: Option<f32>,
+}
+
+/// The binary form (postcard): every field, always.
+#[derive(Serialize, Deserialize)]
+struct RegimentSetupFull {
+    id: u32,
+    unit_type: Option<ContentId>,
+    count: Option<u16>,
+    experience: Option<u8>,
+    units: Vec<UnitGroupSetup>,
+    fatigue: f32,
+    formation: Option<ContentId>,
+    position: Option<[f32; 2]>,
+    facing_deg: Option<f32>,
+}
+
+macro_rules! setup_forms {
+    ($t:ident) => {
+        impl From<&RegimentSetup> for $t {
+            fn from(r: &RegimentSetup) -> Self {
+                Self {
+                    id: r.id,
+                    unit_type: r.unit_type.clone(),
+                    count: r.count,
+                    experience: r.experience,
+                    units: r.units.clone(),
+                    fatigue: r.fatigue,
+                    formation: r.formation.clone(),
+                    position: r.position,
+                    facing_deg: r.facing_deg,
+                }
+            }
+        }
+        impl From<$t> for RegimentSetup {
+            fn from(w: $t) -> Self {
+                Self {
+                    id: w.id,
+                    unit_type: w.unit_type,
+                    count: w.count,
+                    experience: w.experience,
+                    units: w.units,
+                    fatigue: w.fatigue,
+                    formation: w.formation,
+                    position: w.position,
+                    facing_deg: w.facing_deg,
+                }
+            }
+        }
+    };
+}
+setup_forms!(RegimentSetupWire);
+setup_forms!(RegimentSetupFull);
+
+impl Serialize for RegimentSetup {
+    fn serialize<Ser: serde::Serializer>(&self, s: Ser) -> Result<Ser::Ok, Ser::Error> {
+        if s.is_human_readable() {
+            RegimentSetupWire::from(self).serialize(s)
+        } else {
+            RegimentSetupFull::from(self).serialize(s)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RegimentSetup {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        if d.is_human_readable() {
+            RegimentSetupWire::deserialize(d).map(Self::from)
+        } else {
+            RegimentSetupFull::deserialize(d).map(Self::from)
+        }
+    }
+}
+
+impl RegimentSetup {
+    /// A single-group regiment with the defaults (no experience, fresh, the
+    /// unit's first formation, auto-placed).
+    pub fn single(id: u32, unit_type: ContentId, count: u16) -> Self {
+        Self {
+            id,
+            unit_type: Some(unit_type),
+            count: Some(count),
+            experience: None,
+            units: Vec::new(),
+            fatigue: 0.0,
+            formation: None,
+            position: None,
+            facing_deg: None,
+        }
+    }
+
+    /// A mixed regiment of `units` in list order (SIM-FORM-012).
+    pub fn mixed(id: u32, units: Vec<UnitGroupSetup>) -> Self {
+        Self {
+            units,
+            ..Self::single(id, ContentId::new("il:none").expect("valid id"), 0)
+        }
+        .without_shorthand()
+    }
+
+    fn without_shorthand(mut self) -> Self {
+        self.unit_type = None;
+        self.count = None;
+        self.experience = None;
+        self
+    }
+
+    /// Whether exactly one form is given (SIM-FORM-012).
+    pub fn form(&self) -> Result<(), SetupForm> {
+        let shorthand =
+            self.unit_type.is_some() || self.count.is_some() || self.experience.is_some();
+        match (shorthand, self.units.is_empty()) {
+            (true, false) => Err(SetupForm::BothForms),
+            (false, true) => Err(SetupForm::Empty),
+            _ if self.unit_type.is_none() && self.units.is_empty() => Err(SetupForm::Empty),
+            _ => Ok(()),
+        }
+    }
+
+    /// The composition as an ordered list of groups: `units`, or the
+    /// shorthand as one group (an absent `count` reads 0, which the setup
+    /// check rejects as `EmptyRegiment`).
+    pub fn groups(&self) -> Vec<UnitGroupSetup> {
+        if !self.units.is_empty() {
+            return self.units.clone();
+        }
+        self.unit_type
+            .clone()
+            .map(|unit_type| UnitGroupSetup {
+                unit_type,
+                count: self.count.unwrap_or(0),
+                experience: self.experience.unwrap_or(0),
+            })
+            .into_iter()
+            .collect()
+    }
+
+    /// Soldiers in the regiment: the groups' counts summed (saturating).
+    pub fn total(&self) -> u16 {
+        if !self.units.is_empty() {
+            return self
+                .units
+                .iter()
+                .fold(0u16, |a, g| a.saturating_add(g.count));
+        }
+        self.count.unwrap_or(0)
+    }
+
+    /// The regiment's experience level: the count-weighted mean of the
+    /// groups', floored (SIM-FORM-012 as amended in T3-040).
+    pub fn experience_mean(&self) -> u8 {
+        let groups = self.groups();
+        let n: u32 = groups.iter().map(|g| u32::from(g.count)).sum();
+        if n == 0 {
+            return groups.first().map_or(0, |g| g.experience);
+        }
+        let sum: u32 = groups
+            .iter()
+            .map(|g| u32::from(g.count) * u32::from(g.experience))
+            .sum();
+        u8::try_from(sum / n).unwrap_or(u8::MAX)
+    }
+
+    /// The first group's unit type (the shorthand's), if any.
+    pub fn first_unit(&self) -> Option<&ContentId> {
+        self.units
+            .first()
+            .map(|g| &g.unit_type)
+            .or(self.unit_type.as_ref())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -143,7 +359,7 @@ impl BattleSetup {
                     .iter()
                     .chain(s.reinforcements.iter().flat_map(|g| g.regiments.iter()))
             })
-            .map(|r| u32::from(r.count))
+            .map(|r| u32::from(r.total()))
             .sum::<u32>()
             + self.sides.len() as u32
     }
@@ -247,6 +463,17 @@ pub enum GeneralFate {
     Captured,
 }
 
+/// One unit group's counts in the result (SIM-FORM-015, T3-040; filled
+/// from T3-041): the rows of a regiment sum to its totals.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnitGroupResult {
+    pub unit_type: ContentId,
+    pub initial: u16,
+    pub survivors: u16,
+    pub killed: u16,
+    pub fled: u16,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegimentResult {
     pub id: u32,
@@ -260,6 +487,9 @@ pub struct RegimentResult {
     /// (T2-070); such regiments count in full as survivors.
     #[serde(default = "default_true")]
     pub arrived: bool,
+    /// One row per unit group in setup order (SIM-FORM-015).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub units: Vec<UnitGroupResult>,
 }
 
 fn default_true() -> bool {

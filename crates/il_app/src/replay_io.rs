@@ -40,7 +40,7 @@ pub fn summary(stem: &str, setup: &BattleSetup) -> String {
     let soldiers: u32 = setup
         .sides
         .iter()
-        .flat_map(|s| s.regiments.iter().map(|r| u32::from(r.count)))
+        .flat_map(|s| s.regiments.iter().map(|r| u32::from(r.total())))
         .sum();
     format!("{stem}: {} sides, {soldiers} soldiers", setup.sides.len())
 }

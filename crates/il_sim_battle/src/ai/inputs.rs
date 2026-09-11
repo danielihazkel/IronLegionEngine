@@ -16,8 +16,9 @@ use crate::combat::formulas::{Arc, attack_arc};
 use crate::command::FireMode;
 use crate::components::{
     Anchor, Combat, Cooldowns, Energy, Fire, FormationState, Morale, MoraleState, Order, OrderKind,
-    Path, RangedState, Regiment, RegimentFatigue,
+    Path, RangedState, Regiment, RegimentFatigue, Soldier,
 };
+use crate::composition::{Composition, widest_radius};
 use crate::movement::regiment::{anchor_moves, formation_width};
 use crate::resources::{Ids, MapRes, Regs, Sides};
 use crate::visibility::Visibility;
@@ -54,7 +55,11 @@ pub struct RegRow {
     pub fire_mode: Option<FireMode>,
     /// Half the current formation width, metres.
     pub half_width: S,
-    /// `count × unit.cost` (plan I12).
+    /// The widest group's `soldier_radius` (T3-040).
+    pub radius: S,
+    /// The composition's allowed formations (SIM-FORM-014, T3-040).
+    pub formations: Vec<Handle<il_data::FormationTemplate>>,
+    /// `Σ living_g × unit_g.cost` over the groups (plan I12, SIM-FORM-014).
     pub weight: S,
     pub layout: Layout,
     pub template: Handle<il_data::FormationTemplate>,
@@ -100,9 +105,15 @@ fn row(
     let m = world.get::<Morale>(entity)?;
     let f = world.get::<FormationState>(entity)?;
     let p = world.get::<Path>(entity)?;
-    let unit = regs.units.get(r.unit);
+    // SIM-FORM-014 (T3-040): the composition's category, radius, cost and
+    // ranged block.
+    let comp = Composition::of(regs, &r.units);
+    let radius = widest_radius(regs, &r.units);
+    let ranged = comp
+        .ranged_unit
+        .and_then(|u| regs.units.get(u).ranged.as_ref());
     let template = regs.formations.get(f.template);
-    let half_width = formation_width(template, f.files.max(1), unit.soldier_radius) * S::HALF;
+    let half_width = formation_width(template, f.files.max(1), radius) * S::HALF;
     let fire = world.get::<Fire>(entity);
     let (slots, ammo) = if own {
         let cooldowns = world.get::<Cooldowns>(entity);
@@ -111,7 +122,7 @@ fn row(
             .enumerate()
             .map(|(i, h)| (h, cooldowns.and_then(|c| c.0.get(i).copied()).unwrap_or(0)))
             .collect();
-        let ammo = match &unit.ranged {
+        let ammo = match ranged {
             Some(ranged) if ranged.ammo > 0 => {
                 let ids = world.resource::<Ids>();
                 let best = r
@@ -138,7 +149,7 @@ fn row(
         facing: a.facing,
         count: r.soldiers.len() as u16,
         unit: r.unit,
-        category: unit.category,
+        category: comp.category,
         order: o.kind,
         order_target: o.target,
         order_target_regiment: o.target_regiment,
@@ -150,14 +161,28 @@ fn row(
         fatigue: world
             .get::<RegimentFatigue>(entity)
             .map_or(S::ZERO, |f| f.mean),
-        range: unit.ranged.as_ref().map(|rg| rg.range),
-        direct_fire: unit
-            .ranged
-            .as_ref()
-            .is_some_and(|rg| rg.arc == il_data::ProjectileArc::Direct),
+        range: ranged.map(|rg| rg.range),
+        direct_fire: ranged.is_some_and(|rg| rg.arc == il_data::ProjectileArc::Direct),
         fire_mode: fire.map(|f| f.mode),
         half_width,
-        weight: S::from_i32(r.soldiers.len() as i32) * S::from_i32(unit.cost.min(1 << 20) as i32),
+        radius,
+        formations: comp.formations,
+        weight: {
+            // Living soldiers per group times the group's unit cost.
+            let ids = world.resource::<Ids>();
+            let mut living = vec![0i32; r.units.len()];
+            for sid in &r.soldiers {
+                if let Some(e) = ids.soldier_entity(*sid)
+                    && let Some(s) = world.get::<Soldier>(e)
+                    && let Some(n) = living.get_mut(usize::from(s.group))
+                {
+                    *n += 1;
+                }
+            }
+            r.units.iter().zip(&living).fold(S::ZERO, |acc, (g, n)| {
+                acc + S::from_i32(*n) * S::from_i32(regs.units.get(g.unit).cost.min(1 << 20) as i32)
+            })
+        },
         layout: template.layout,
         template: f.template,
         morphing: f.prior_template.is_some(),

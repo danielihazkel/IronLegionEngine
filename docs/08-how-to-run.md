@@ -217,7 +217,7 @@ cargo run -p il_cli -- genart
 cargo run -p il_cli -- gensound
 ```
 
-- `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
+- `run` prints `tick,hash` lines; two runs, or one thread against eight, must print identical hashes. A setup warning (T3-040: a mixed regiment whose unit groups share no formation) prints on stderr as `warning: side S: regiment R: ...` before the first line; `autoresolve` prints the same, and the app lists it in the event panel (`F12`) when the battle opens. `--snapshot-at N` writes `snapshot.bin` next to the scenario and `--restore-from` continues from it.
 - `validate` loads the mod roots you list and prints every diagnostic with file, line and column; exit code 1 on errors.
 - `bench` steps a generated move/reform battle (`--soldiers 2000|10000|20000`, `--ticks 600`) or, with `--scenario <file>`, any scenario file (`tests/scenarios/perf_10k.json5` is the Phase 2 profile: 10,000 soldiers fighting, `--ticks 1200` by default; a run stops early at `Ended`), and prints mean, p95 and max per schedule stage. `--baseline` compares against the checked-in numbers (a scenario is keyed by its file stem), `--strict` fails at +20 %, `--record-baseline` writes a new one. Always run it in release; `docs/evidence/phase2/bench_perf_10k.md` holds the 10k table (T2-111). `--memory` (T3-025) adds the process's peak working set at the end of the run (exact on Windows through `GetProcessMemoryInfo`, a sampled maximum elsewhere), the REQ-PERF-007 figure of `docs/evidence/phase3/memory_32k.md`.
 - `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), kill a side's general at a tick through `bands.harness: [{ tick, kill_general }]` (row 7, T2-043), and a `mean_loss_matches` or `mean_loss_below` row compares two files' mean losses after both have run (`volley_testudo.json5` must lose at most 60 % of `volley_velites_vs_hastati.json5`, T2-050).
@@ -234,7 +234,7 @@ cargo bench -p il_benches --benches
 
 ## 6. Mods
 
-A mod is a folder with a `mod.json5` and a `content/` tree (Modding SDK, `docs/06-modding-sdk-spec.md`). `tests/mods/speed_override/` is the smallest example: it changes one number of the hastati.
+A mod is a folder with a `mod.json5` and a `content/` tree (Modding SDK, `docs/06-modding-sdk-spec.md`). `tests/mods/speed_override/` is the smallest example: it changes one number of the hastati; `tests/mods/velites_wedge_only/` (T3-040) leaves the velites only the wedge so a mixed cohort's groups share no formation and the setup warning shows.
 
 ```
 cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --threads 8 --mod tests/mods/speed_override

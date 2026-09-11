@@ -40,7 +40,7 @@ fn every_scenario_result_reconciles_with_its_setup() {
                         .iter()
                         .flat_map(|g| g.regiments.iter()),
                 )
-                .map(|x| u32::from(x.count))
+                .map(|x| u32::from(x.total()))
                 .sum::<u32>()
                 + 1;
             let initial: u32 = side.regiments.iter().map(|x| u32::from(x.initial)).sum();

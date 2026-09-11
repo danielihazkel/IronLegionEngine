@@ -43,7 +43,7 @@
   los_radius: 250,
 
   abilities: [],
-  formations: ["rome:loose", "rome:line", "rome:column"],
+  formations: ["rome:loose", "rome:line", "rome:column", "rome:cohort"],
 
   sprite_set: "rome:sprites_skirmisher",
   sounds: {},

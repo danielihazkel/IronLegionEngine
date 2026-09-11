@@ -8,6 +8,7 @@ pub mod ai;
 pub mod combat;
 pub mod command;
 pub mod components;
+pub mod composition;
 pub mod events;
 pub mod flow;
 pub mod flow_battle;
@@ -43,8 +44,8 @@ pub use hpa::{DirtyRect, GateNode, Hpa, HpaGraph};
 pub use il_data::Rules;
 pub use interface::{
     BattleResult, BattleSetup, DeterminismBudget, GeneralFate, GeneralSetup, RegimentResult,
-    RegimentSetup, ReinforcementGroup, SOLDIER_CAP, Scenario, ScriptedCommands, SideResult,
-    SideSetup, VictoryRules, Weather,
+    RegimentSetup, ReinforcementGroup, SOLDIER_CAP, Scenario, ScriptedCommands, SetupForm,
+    SideResult, SideSetup, UnitGroupResult, UnitGroupSetup, VictoryRules, Weather,
 };
 pub use map::{FLAT_MAP_ID, LoadedMap, MapError, polygon_contains};
 pub use nav::{AStar, NavGrid, PathResult, Pathfinder, string_pull};
@@ -55,7 +56,7 @@ pub use resources::{
 pub use schedule::{NoopObserver, Stage, StageObserver};
 pub use snapshot::{RestoreError, SNAPSHOT_VERSION, Snapshot};
 pub use spatial::{Entry as GridEntry, SpatialGrid};
-pub use spawn::SetupError;
+pub use spawn::{SetupError, SetupWarning};
 pub use view::{AbilityRow, BattleView, ProjectileRow, RegimentRow, SoldierRow, StatusRow};
 pub use visibility::{Seen, Visibility};
 pub use world::{BattleWorld, StepOutput};

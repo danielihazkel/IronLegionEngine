@@ -65,6 +65,16 @@ fn accepts(slot: &Slot, category: UnitCategory) -> bool {
     slot.category.is_none_or(|c| c == category)
 }
 
+/// SIM-FORM-011/013 (T3-040): a soldier takes an unlabelled slot only once
+/// no slot labelled with its category is free, so a zone fills with its
+/// own category before the overflow slots are given away.
+fn takes(slot: &Slot, category: UnitCategory, labelled_free: &[u16; 6]) -> bool {
+    match slot.category {
+        Some(c) => c == category,
+        None => labelled_free[category as usize] == 0,
+    }
+}
+
 /// The nearest free slot accepting `category`, ties by lower index: cells
 /// of the slot grid are visited ring by ring around the soldier's cell and
 /// the search stops once the best candidate is closer than any unvisited
@@ -79,6 +89,7 @@ fn nearest_free(
     local: V2,
     pos: V2,
     category: UnitCategory,
+    labelled_free: &[u16; 6],
 ) -> Option<usize> {
     let (cx, cy) = index.cell_of(local);
     let (cols, rows) = (index.cols() as i64, index.rows() as i64);
@@ -91,7 +102,7 @@ fn nearest_free(
         }
         for i in index.cell_entries(x as u32, y as u32) {
             let slot = usize::from(index.entries()[i].id);
-            if taken[slot] || !accepts(&slots[slot], category) {
+            if taken[slot] || !takes(&slots[slot], category, labelled_free) {
                 continue;
             }
             let d = world[slot].distance_sq(pos);
@@ -170,17 +181,32 @@ pub fn assign_slots(
         return;
     }
 
+    // Free slots labelled per category (T3-040): a category fills its own
+    // labelled slots before it takes an unlabelled one.
+    let mut labelled_free = [0u16; 6];
+    for s in slots {
+        if let Some(c) = s.category {
+            labelled_free[c as usize] += 1;
+        }
+    }
+    let take = |slot: usize, labelled_free: &mut [u16; 6]| {
+        if let Some(c) = slots[slot].category {
+            labelled_free[c as usize] -= 1;
+        }
+    };
+
     // Pass 1: keep.
     let keep_sq = rules.keep_slot_radius * rules.keep_slot_radius;
     for (k, soldier) in soldiers.iter().enumerate() {
         if let Some(slot) = prev.get(k).copied().flatten()
             && let Some(world) = scratch.world.get(usize::from(slot))
             && !scratch.taken[usize::from(slot)]
-            && accepts(&slots[usize::from(slot)], soldier.category)
+            && takes(&slots[usize::from(slot)], soldier.category, &labelled_free)
             && world.distance_sq(soldier.pos) <= keep_sq
         {
             out[k] = Some(slot);
             scratch.taken[usize::from(slot)] = true;
+            take(usize::from(slot), &mut labelled_free);
         }
     }
 
@@ -224,10 +250,12 @@ pub fn assign_slots(
             soldier.pos - min,
             soldier.pos,
             soldier.category,
+            &labelled_free,
         );
         if let Some(slot) = best {
             out[k] = Some(slot as u16);
             scratch.taken[slot] = true;
+            take(slot, &mut labelled_free);
             let (x, y) = index.cell_of(scratch.world[slot] - min);
             scratch.free_in_cell[y as usize * cols + x as usize] -= 1;
         }

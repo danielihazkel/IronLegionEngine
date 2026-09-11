@@ -6,8 +6,8 @@ use il_core::{StateHash, StateHasher};
 
 use crate::components::{
     Anchor, Combat, Cooldowns, Energy, Facing, FatigueC, Fire, FormationState, Fsm, GeneralTag,
-    Health, MeleeState, Morale, Order, Path, Pos, PrevFacing, PrevPos, RangedState, Regiment,
-    RegimentFatigue, SlotRef, Statuses, Vel,
+    GroupTallies, Health, MeleeState, Morale, Order, Path, Pos, PrevFacing, PrevPos, RangedState,
+    Regiment, RegimentFatigue, SlotRef, Statuses, Vel,
 };
 use crate::resources::{
     BattleFlow, Clock, Events, Ids, LastHash, MoraleShocks, PendingDamage, Phase, Projectiles,
@@ -64,6 +64,7 @@ pub fn compute_hash(world: &mut World) -> StateHash {
         &Energy,
         &Cooldowns,
         &Statuses,
+        &GroupTallies,
     )>();
     for entity in regiment_entities {
         let (
@@ -79,6 +80,7 @@ pub fn compute_hash(world: &mut World) -> StateHash {
             energy,
             cooldowns,
             statuses,
+            tallies,
         ) = regiments
             .get(world, entity)
             .expect("regiment entity in Ids has regiment components");
@@ -107,6 +109,8 @@ pub fn compute_hash(world: &mut World) -> StateHash {
             h.write(&s.stacks);
             h.write(&s.hostile);
         }
+        // T3-040: the per-group fled and withdrawn counts.
+        h.write(tallies);
     }
 
     let mut soldiers = world.query::<(

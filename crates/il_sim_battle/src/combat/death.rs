@@ -14,8 +14,8 @@ use il_core::{RegimentId, SoldierId, Tick, V2};
 
 use crate::combat::Kills;
 use crate::components::{
-    Combat, DEATHS_RING, FormationState, Fsm, MeleeState, Morale, Pos, Regiment, Soldier,
-    SoldierState,
+    Combat, DEATHS_RING, FormationState, Fsm, GroupTallies, MeleeState, Morale, Pos, Regiment,
+    Soldier, SoldierState,
 };
 use crate::events::BattleEvent;
 use crate::resources::{
@@ -162,6 +162,20 @@ pub(crate) fn detach_from_regiment(
     Some(re)
 }
 
+/// SIM-FORM-015 (T3-040): the group's own fled or withdrawn count.
+fn tally_group(world: &mut World, regiment: Entity, group: u8, withdrawing: bool) {
+    if let Some(mut t) = world.get_mut::<GroupTallies>(regiment) {
+        let list = if withdrawing {
+            &mut t.withdrawn
+        } else {
+            &mut t.fled
+        };
+        if let Some(n) = list.get_mut(usize::from(group)) {
+            *n = n.saturating_add(1);
+        }
+    }
+}
+
 /// Takes the (ascending) soldiers out of every query at once (SIM-CORE-008):
 /// nobody targets them any more (a fighter without a target holds still
 /// until its next retarget tick, SIM-CORE-011), they leave `Ids`, the
@@ -224,7 +238,7 @@ pub(crate) fn remove_soldiers(world: &mut World, gone: &[SoldierId]) {
 /// no casualty ring, no kill credit.
 pub fn resolve_fled(world: &mut World) {
     let tick = world.resource::<Clock>().tick;
-    let fled: Vec<(SoldierId, RegimentId, V2, SoldierState)> = {
+    let fled: Vec<(SoldierId, RegimentId, u8, V2, SoldierState)> = {
         let ids = world.resource::<Ids>();
         let nav = &world.resource::<NavGridRes>().0;
         let flow = world.resource::<FlowFields>();
@@ -235,19 +249,20 @@ pub fn resolve_fled(world: &mut World) {
                 if !matches!(fsm.state, SoldierState::Routing | SoldierState::Withdrawing) {
                     return None;
                 }
-                let regiment = world.get::<Soldier>(*e)?.regiment;
+                let soldier = world.get::<Soldier>(*e)?;
+                let (regiment, group) = (soldier.regiment, soldier.group);
                 let side = world.get::<Regiment>(ids.regiment_entity(regiment)?)?.side;
                 let p = world.get::<Pos>(*e)?.p;
                 flow.for_side(side)
                     .is_some_and(|f| f.is_exit(nav, p))
-                    .then_some((*id, regiment, p, fsm.state))
+                    .then_some((*id, regiment, group, p, fsm.state))
             })
             .collect()
     };
     if fled.is_empty() {
         return;
     }
-    for (id, regiment, pos, state) in &fled {
+    for (id, regiment, group, pos, state) in &fled {
         // SIM-FLOW-002/014 (T2-070): a withdrawer is a survivor, a router
         // is fled.
         let withdrawing = *state == SoldierState::Withdrawing;
@@ -267,14 +282,15 @@ pub fn resolve_fled(world: &mut World) {
                 }
             },
         );
-        if let Some(re) = detach_from_regiment(world, *regiment, *id)
-            && let Some(mut c) = world.get_mut::<Combat>(re)
-        {
-            if withdrawing {
-                c.withdrawn = c.withdrawn.saturating_add(1);
-            } else {
-                c.fled = c.fled.saturating_add(1);
+        if let Some(re) = detach_from_regiment(world, *regiment, *id) {
+            if let Some(mut c) = world.get_mut::<Combat>(re) {
+                if withdrawing {
+                    c.withdrawn = c.withdrawn.saturating_add(1);
+                } else {
+                    c.fled = c.fled.saturating_add(1);
+                }
             }
+            tally_group(world, re, *group, withdrawing);
         }
     }
     let ids: Vec<SoldierId> = fled.iter().map(|f| f.0).collect();
@@ -286,16 +302,17 @@ pub fn resolve_fled(world: &mut World) {
 /// `SoldierFled` each, removed like the dead (ascending id).
 pub fn escape_all_routers(world: &mut World) {
     let tick = world.resource::<Clock>().tick;
-    let routers: Vec<(SoldierId, RegimentId, V2)> = {
+    let routers: Vec<(SoldierId, RegimentId, u8, V2)> = {
         let ids = world.resource::<Ids>();
         ids.soldier_entities
             .iter()
             .filter_map(|(id, e)| {
                 let fsm = world.get::<Fsm>(*e)?;
                 (fsm.state == SoldierState::Routing).then(|| {
-                    let regiment = world.get::<Soldier>(*e).map(|s| s.regiment)?;
+                    let s = world.get::<Soldier>(*e)?;
+                    let (regiment, group) = (s.regiment, s.group);
                     let p = world.get::<Pos>(*e)?.p;
-                    Some((*id, regiment, p))
+                    Some((*id, regiment, group, p))
                 })?
             })
             .collect()
@@ -303,7 +320,7 @@ pub fn escape_all_routers(world: &mut World) {
     if routers.is_empty() {
         return;
     }
-    for (id, regiment, pos) in &routers {
+    for (id, regiment, group, pos) in &routers {
         world.resource_mut::<Events>().0.push(
             tick,
             BattleEvent::SoldierFled {
@@ -312,10 +329,11 @@ pub fn escape_all_routers(world: &mut World) {
                 pos: *pos,
             },
         );
-        if let Some(re) = detach_from_regiment(world, *regiment, *id)
-            && let Some(mut c) = world.get_mut::<Combat>(re)
-        {
-            c.fled = c.fled.saturating_add(1);
+        if let Some(re) = detach_from_regiment(world, *regiment, *id) {
+            if let Some(mut c) = world.get_mut::<Combat>(re) {
+                c.fled = c.fled.saturating_add(1);
+            }
+            tally_group(world, re, *group, false);
         }
     }
     let ids: Vec<SoldierId> = routers.iter().map(|f| f.0).collect();
