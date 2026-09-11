@@ -20,10 +20,11 @@ use crate::components::{
 };
 use crate::formation::slot_world;
 use crate::map::LoadedMap;
+use crate::movement::collision::Disc;
 use crate::movement::regiment::{mode_speed, slope_mult, tick_dt, zone_move_mult};
 use crate::nav::NavGrid;
 use crate::resources::{Clock, FlowFields, Ids, MapRes, NavGridRes, Regs, SpatialGridRes};
-use crate::spatial::SpatialGrid;
+use crate::spatial::{SoldierBodies, SpatialGrid};
 use il_data::Layout;
 
 /// SIM-MOVE-023: the rotations tried, in order, when the look-ahead segment
@@ -89,11 +90,13 @@ struct Steer<'a, 'w, 's> {
     map: &'a LoadedMap,
     nav: &'a NavGrid,
     grid: &'a SpatialGrid<il_core::SoldierId>,
-    /// Neighbour radii (grid entries carry the entity).
-    bodies: &'a Query<'w, 's, &'static Body>,
+    /// Neighbour radii, aligned with the grid entries (T3-022).
+    bodies: &'a [Disc],
     /// Target regiments (SIM-MOR-034: cavalry chase routers at run).
     soldiers: &'a Query<'w, 's, &'static Soldier>,
-    regiments: &'a RegimentRead<'w, 's>,
+    /// One entry per `Ids.regiment_entities` index, built once per tick
+    /// (T3-022).
+    regiments: &'a [Option<RegimentItem<'a>>],
     ids: &'a Ids,
     /// Escape fields per side (SIM-FLOW-002).
     flow: &'a FlowFields,
@@ -117,25 +120,37 @@ impl Steer<'_, '_, '_> {
     /// SIM-MOVE-022: separation from the nearest `sep_max_neighbours`
     /// within touching distance plus `sep_margin`, from the previous tick's
     /// grid, summed nearest-first (ties by id).
-    fn separation(&self, id: il_core::SoldierId, p: V2, r: S, scratch: &mut Vec<usize>) -> V2 {
+    ///
+    /// As built since T3-022: the candidates are keyed `(d², index)` (the
+    /// index ascends with the id, so the key is the order the T1-043
+    /// stable sort by distance gave), the `k` nearest are selected with
+    /// `select_nth_unstable_by` and only those `k` are sorted; the summed
+    /// terms and their order are unchanged.
+    fn separation(&self, id: il_core::SoldierId, p: V2, r: S, scratch: &mut Vec<(S, usize)>) -> V2 {
         let rules = &self.regs.rules.movement;
         let reach = r + r + self.max_radius + self.max_radius + rules.sep_margin;
-        self.grid.query_circle_indices(p, reach, scratch);
-        // Nearest first; the query returned ascending ids, and the sort is
-        // stable, so equal distances keep id order.
         let entries = self.grid.entries();
-        scratch.retain(|&i| entries[i].id != id);
-        scratch.sort_by(|&a, &b| {
-            entries[a]
-                .pos
-                .distance_sq(p)
-                .partial_cmp(&entries[b].pos.distance_sq(p))
-                .expect("finite distances")
+        scratch.clear();
+        self.grid.for_each_in_circle(p, reach, |i| {
+            if entries[i].id != id {
+                scratch.push((entries[i].pos.distance_sq(p), i));
+            }
         });
+        let k = usize::from(rules.sep_max_neighbours);
+        let key = |a: &(S, usize), b: &(S, usize)| {
+            a.0.partial_cmp(&b.0)
+                .expect("finite distances")
+                .then(a.1.cmp(&b.1))
+        };
+        if scratch.len() > k && k > 0 {
+            scratch.select_nth_unstable_by(k - 1, key);
+            scratch.truncate(k);
+        }
+        scratch.sort_unstable_by(key);
         let mut sep = V2::ZERO;
-        for &i in scratch.iter().take(usize::from(rules.sep_max_neighbours)) {
+        for &(_, i) in scratch.iter().take(k) {
             let e = &entries[i];
-            let r_j = self.bodies.get(e.entity).map_or(self.max_radius, |b| b.r);
+            let r_j = self.bodies.get(i).map_or(self.max_radius, |b| b.r);
             let touch = r + r + r_j + r_j + rules.sep_margin;
             let d = e.pos.distance(p);
             if d >= touch || d <= S::ZERO {
@@ -183,7 +198,7 @@ impl Steer<'_, '_, '_> {
         regiment: Option<RegimentItem<'_>>,
         vel: &mut Vel,
         facing: &mut Facing,
-        scratch: &mut Vec<usize>,
+        scratch: &mut Vec<(S, usize)>,
     ) {
         let rules = &self.regs.rules.movement;
         let combat = &self.regs.rules.combat;
@@ -205,17 +220,17 @@ impl Steer<'_, '_, '_> {
             entries
                 .binary_search_by_key(&t, |e| e.id)
                 .ok()
-                .map(|i| &entries[i])
+                .map(|i| (i, &entries[i]))
         });
         // SIM-MOR-034: cavalry chasing a routing target runs.
         if soldier.category == il_data::UnitCategory::Cavalry
-            && let Some(e) = target
+            && let Some((_, e)) = target
             && self
                 .soldiers
                 .get(e.entity)
                 .ok()
-                .and_then(|s| self.ids.regiment_entity(s.regiment))
-                .and_then(|re| self.regiments.get(re).ok())
+                .and_then(|s| self.ids.regiment_index(s.regiment))
+                .and_then(|ri| self.regiments.get(ri).copied().flatten())
                 .is_some_and(|(_, _, _, _, m, _)| {
                     matches!(m.state, MoraleState::Routing | MoraleState::Shattered)
                 })
@@ -225,8 +240,8 @@ impl Steer<'_, '_, '_> {
         let mut wanted = None;
         let mut v_max = mode_speed(unit, mode) * speed_mult;
         let v_des = match target {
-            Some(e) if e.pos != p => {
-                let r_j = self.bodies.get(e.entity).map_or(self.max_radius, |b| b.r);
+            Some((i, e)) if e.pos != p => {
+                let r_j = self.bodies.get(i).map_or(self.max_radius, |b| b.r);
                 let to = e.pos - p;
                 let dist = to.length();
                 let dir = to * (S::ONE / dist);
@@ -268,7 +283,7 @@ impl Steer<'_, '_, '_> {
         mode: SpeedMode,
         vel: &mut Vel,
         facing: &mut Facing,
-        scratch: &mut Vec<usize>,
+        scratch: &mut Vec<(S, usize)>,
     ) {
         let rules = &self.regs.rules.movement;
         let unit = self.regs.units.get(soldier.unit);
@@ -303,7 +318,7 @@ impl Steer<'_, '_, '_> {
         vel: &mut Vel,
         facing: &mut Facing,
         fsm: &mut Fsm,
-        scratch: &mut Vec<usize>,
+        scratch: &mut Vec<(S, usize)>,
     ) {
         let rules = &self.regs.rules.movement;
         let p = pos.p;
@@ -405,7 +420,7 @@ impl Steer<'_, '_, '_> {
 pub fn soldier_steer(
     mut soldiers: SteerQuery,
     regiments: RegimentRead,
-    bodies: Query<&'static Body>,
+    bodies: Res<SoldierBodies>,
     soldier_regiments: Query<&'static Soldier>,
     ids: Res<Ids>,
     regs: Res<Regs>,
@@ -421,14 +436,27 @@ pub fn soldier_steer(
         .iter()
         .map(|(_, u)| u.soldier_radius)
         .fold(S::ZERO, |a, b| a.max(b));
+    // The body table follows the grid steering reads (T3-022; the same
+    // rebuilds keep both). A short table (never in practice) reads as the
+    // largest radius, as a missing `Body` did.
+    debug_assert_eq!(
+        bodies.discs.len(),
+        grid.0.len(),
+        "body table aligned with the grid"
+    );
+    let regiment_table: Vec<Option<RegimentItem<'_>>> = ids
+        .regiment_entities
+        .iter()
+        .map(|(_, e)| regiments.get(*e).ok())
+        .collect();
     let steer = Steer {
         regs: &regs.0,
         map: &map.0,
         nav: &nav.0,
         grid: &grid.0,
-        bodies: &bodies,
+        bodies: &bodies.discs,
         soldiers: &soldier_regiments,
-        regiments: &regiments,
+        regiments: &regiment_table,
         ids: &ids,
         flow: &flow,
         tick: clock.tick,
@@ -437,14 +465,13 @@ pub fn soldier_steer(
     };
     let steer = &steer;
     let ids = &ids;
-    let regiments = &regiments;
-    let run = |scratch: &mut Vec<usize>,
+    let run = |scratch: &mut Vec<(S, usize)>,
                (soldier, pos, body, slot, rank, melee, fatigue, mut vel, mut facing, mut fsm): SteerItem<
         '_,
     >| {
         let regiment = ids
-            .regiment_entity(soldier.regiment)
-            .and_then(|e| regiments.get(e).ok());
+            .regiment_index(soldier.regiment)
+            .and_then(|ri| steer.regiments.get(ri).copied().flatten());
         steer.soldier(
             soldier,
             pos,

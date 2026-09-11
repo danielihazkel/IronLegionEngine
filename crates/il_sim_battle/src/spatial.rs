@@ -12,32 +12,63 @@ use bevy_ecs::entity::Entity;
 use bevy_ecs::prelude::*;
 use il_core::{RegimentId, S, Scalar, SoldierId, V2};
 
-use crate::components::{Anchor, Pos, Regiment, Soldier};
+use crate::components::{Anchor, Body, Pos, Regiment, Soldier};
+use crate::movement::collision::Disc;
 use crate::resources::{AnchorGridRes, MapRes, Regs, SpatialGridRes};
 
 const NONE: u32 = u32::MAX;
+
+/// The `Body` of every soldier grid entry, in entry order (T3-022): filled
+/// with the grid at Stage 6, kept aligned by Stage 7's rebuild (the same
+/// ids in the same order) and by the death pass (filtered with the grid).
+/// Steering reads the radii, collision the radii and masses, without an
+/// ECS lookup per neighbour. Derived scratch: never hashed or snapshotted.
+#[derive(Resource, Clone, Debug, Default)]
+pub struct SoldierBodies {
+    pub discs: Vec<Disc>,
+    /// Rebuild scratch: entries and bodies sorted together.
+    scratch: Vec<(Entry<SoldierId>, Disc)>,
+}
 
 /// Stage 6 (`SpatialGrid`): rebuilds the soldier grid at
 /// `movement.spatial_cell` and the anchor grid at `movement.anchor_cell`
 /// from this tick's positions. Also run by `rebuild_derived` so the first
 /// step after `new` or `restore` sees a grid of the starting positions.
 pub fn rebuild_spatial_grids(
-    soldiers: Query<(Entity, &Soldier, &Pos)>,
+    soldiers: Query<(Entity, &Soldier, &Pos, &Body)>,
     regiments: Query<(Entity, &Regiment, &Anchor)>,
     map: Res<MapRes>,
     regs: Res<Regs>,
     mut grid: ResMut<SpatialGridRes>,
+    mut bodies: ResMut<SoldierBodies>,
     mut anchors: ResMut<AnchorGridRes>,
 ) {
     let (w, h) = (map.0.width, map.0.height);
     let rules = &regs.0.rules.movement;
     grid.0.ensure(w, h, rules.spatial_cell);
-    grid.0
-        .rebuild(soldiers.iter().map(|(entity, s, pos)| Entry {
-            id: s.id,
-            entity,
-            pos: pos.p,
+    // Sort entries and bodies together so the table follows the grid's
+    // ascending-id order (T3-022).
+    let bodies = &mut *bodies;
+    bodies.scratch.clear();
+    bodies
+        .scratch
+        .extend(soldiers.iter().map(|(entity, s, pos, body)| {
+            (
+                Entry {
+                    id: s.id,
+                    entity,
+                    pos: pos.p,
+                },
+                Disc {
+                    r: body.r,
+                    m: body.m,
+                },
+            )
         }));
+    bodies.scratch.sort_unstable_by_key(|(e, _)| e.id);
+    grid.0.rebuild(bodies.scratch.iter().map(|(e, _)| *e));
+    bodies.discs.clear();
+    bodies.discs.extend(bodies.scratch.iter().map(|(_, d)| *d));
     anchors.0.ensure(w, h, rules.anchor_cell);
     anchors
         .0
@@ -153,6 +184,26 @@ impl<Id: Copy + Ord> SpatialGrid<Id> {
         cy as usize * self.cols as usize + cx as usize
     }
 
+    /// Number of cells.
+    pub fn cell_count(&self) -> usize {
+        self.heads.len()
+    }
+
+    /// The cell slot of `(cx, cy)` (row-major).
+    pub fn cell_index_of(&self, cx: u32, cy: u32) -> usize {
+        self.cell_index(cx, cy)
+    }
+
+    /// `(cx, cy)` of a cell slot.
+    pub fn cell_coords(&self, slot: u32) -> (u32, u32) {
+        (slot % self.cols, slot / self.cols)
+    }
+
+    /// The cell slot entry `i` was bucketed into by the last `rebuild`.
+    pub fn entry_cell(&self, i: usize) -> u32 {
+        self.slots[i]
+    }
+
     /// Replaces every entry. The input may arrive in any order; it is sorted
     /// by id and inserted back to front so each cell's chain ascends.
     pub fn rebuild(&mut self, iter: impl IntoIterator<Item = Entry<Id>>) {
@@ -211,6 +262,25 @@ impl<Id: Copy + Ord> SpatialGrid<Id> {
             }
         }
         out.sort_unstable();
+    }
+
+    /// Calls `f` with the index of every entry within `r` of `c`, in cell
+    /// order (not sorted): for callers that order the hits themselves
+    /// (T3-022 steering).
+    pub fn for_each_in_circle(&self, c: V2, r: S, mut f: impl FnMut(usize)) {
+        let r = r.max(S::ZERO);
+        let (x0, y0) = self.cell_of(V2::new(c.x - r, c.y - r));
+        let (x1, y1) = self.cell_of(V2::new(c.x + r, c.y + r));
+        let r_sq = r * r;
+        for cy in y0..=y1 {
+            for cx in x0..=x1 {
+                for i in self.cell_entries(cx, cy) {
+                    if self.entries[i].pos.distance_sq(c) <= r_sq {
+                        f(i);
+                    }
+                }
+            }
+        }
     }
 
     /// Every entry within `r` of `c`, ascending id (TDD §5 `query_circle`).

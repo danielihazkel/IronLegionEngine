@@ -121,6 +121,8 @@ impl BattleWorld {
         // Dimensioned by the Stage 6 system once the map and rules are known.
         let flat = S::from_i32(FLAT_MAP_SIZE);
         world.insert_resource(SpatialGridRes(SpatialGrid::new(flat, flat, S::ZERO)));
+        world.insert_resource(crate::spatial::SoldierBodies::default());
+        world.insert_resource(crate::movement::collision::CollisionScratch::default());
         world.insert_resource(AnchorGridRes(SpatialGrid::new(flat, flat, S::ZERO)));
         let view_queries = ViewQueries::new(&mut world);
         let mut w = Self {

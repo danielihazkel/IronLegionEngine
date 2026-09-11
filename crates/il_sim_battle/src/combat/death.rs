@@ -194,15 +194,26 @@ pub(crate) fn remove_soldiers(world: &mut World, gone: &[SoldierId]) {
     for e in entities {
         world.despawn(e);
     }
-    let mut grid = world.resource_mut::<SpatialGridRes>();
-    let alive: Vec<Entry<SoldierId>> = grid
-        .0
-        .entries()
-        .iter()
-        .filter(|e| gone.binary_search(&e.id).is_err())
-        .copied()
-        .collect();
-    grid.0.rebuild(alive);
+    // The body table is filtered with the grid so both stay aligned
+    // (T3-022).
+    world.resource_scope(|world, mut bodies: Mut<crate::spatial::SoldierBodies>| {
+        let mut grid = world.resource_mut::<SpatialGridRes>();
+        debug_assert_eq!(
+            bodies.discs.len(),
+            grid.0.len(),
+            "body table aligned with the grid"
+        );
+        let (alive, discs): (Vec<Entry<SoldierId>>, Vec<_>) = grid
+            .0
+            .entries()
+            .iter()
+            .zip(&bodies.discs)
+            .filter(|(e, _)| gone.binary_search(&e.id).is_err())
+            .map(|(e, d)| (*e, *d))
+            .unzip();
+        grid.0.rebuild(alive);
+        bodies.discs = discs;
+    });
 }
 
 /// Stage 15 `resolve_fled` (T2-042; SIM-FLOW-002, SIM-MOR-032), after

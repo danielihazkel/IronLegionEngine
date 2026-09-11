@@ -44,6 +44,34 @@ run-to-run variance: two unrecorded 20k runs straight after gave 25.3 and 26.9 m
 Steering 6.0 / 6.7), so this machine swings about ±10 % between sittings on the same code; the T3-001 morning
 numbers were at the fast end of that band. `--strict` comparisons on this machine should allow for it.
 
+## T3-022: the collision and steering pass (2026-09-11)
+
+Same machine and pins. The four `il_cli run` hash logs (`idle_1000` and `move_reform_2000` at 10,000 ticks
+every 1,000, `perf_10k` at 1,500 every 100, `ai_skirmish_300` at 10,000 every 1,000, all on 8 threads) were
+byte-identical before and after every step, so no position, velocity or facing moved (TDD §6.2 says why each
+step is exact). Mean ms per tick of `bench --soldiers 20000 --threads 8`, three sittings each, the middle one
+first; the T3-021 recording for reference:
+
+| Stage | T3-021 record | after steps 1-4 (scratch, body table, pre-check, idle exit; steering S1-S3) | after step 5 (narrowed pairs, guarded) |
+|---|---|---|---|
+| 4 SoldierSteering | 6.68 | 4.86 (4.43 / 5.55) | 4.77 (4.71 / 5.84) |
+| 7 Collision | 11.34 | 10.02 (9.53 / 10.75) | 3.11 (3.05 / 3.55) |
+| tick | 27.62 | 24.13 (22.67 / 26.46) | 17.01 (17.00 / 20.20) |
+
+Steps 1 to 4 took the enumeration and the per-pair square root out but left the serial fold over about a
+million candidate pairs, of which a few percent overlap at 4 m cells; narrowing the enumeration to pairs
+within `2 r_max + 1 m` at the start of the tick removed it. The guard that keeps the narrowing exact widened a
+row's pair set in 17,005 of 900,000 row lists (1.9 %, over 4,498 of the 6,000 ticks) in the 10k fight and
+never in the idle 20k bench. The two reserve steps of the plan (a two-phase parallel fold; the per-row
+steering gather) were not needed and were not built.
+
+The same day, from late morning, the machine throttled: the `% Processor Performance` counter read 47 % under
+the bench and 53 % idle (it should sit near or above 100 %), and every stage, touched or not, ran 1.6 to 2
+times slower for the same binary (20k tick 30 to 33 ms; Targeting 4.9 against 2.5 in the morning). A stray
+`python -` process from 2026-09-10 had also burned one core for 13 hours until it was killed. The numbers above
+are the morning's; the throttled sittings were discarded and the baseline was re-recorded only once the counter
+was healthy again (see the re-record note below).
+
 ## Exit checklist evidence
 
 - `bench_perf_20k.md`, `profiler_20k.png`: the 20k fight (T3-024).
