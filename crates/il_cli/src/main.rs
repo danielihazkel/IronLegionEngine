@@ -189,6 +189,13 @@ struct GenmapArgs {
     id: String,
     #[arg(long, default_value_t = 7)]
     seed: u64,
+    /// `test_field` (the Phase 1 map, fixed at 800 x 600 m) or `plains`
+    /// (flat with gentle rises, any size; T3-024).
+    #[arg(long, default_value = "test_field")]
+    preset: String,
+    /// Map size in metres, `W H`; default per preset (plains 1600 x 1200).
+    #[arg(long, num_args = 2, value_names = ["W", "H"])]
+    size: Option<Vec<f32>>,
 }
 
 #[derive(Args)]
@@ -280,6 +287,8 @@ fn main() -> anyhow::Result<()> {
                 mod_root: a.mod_root,
                 id: a.id,
                 seed: a.seed,
+                preset: il_cli::genmap::Preset::parse(&a.preset)?,
+                size: a.size.map(|v| [v[0], v[1]]),
             };
             let stdout = std::io::stdout();
             let mut lock = stdout.lock();

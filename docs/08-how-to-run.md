@@ -196,11 +196,13 @@ cargo run -p il_cli -- run tests/scenarios/move_reform_2000.json5 --ticks 10000 
 cargo run -p il_cli -- validate game/ --deny-warnings --verbose
 cargo run --release -p il_cli -- bench --soldiers 2000 --baseline benches/baseline.json
 cargo run --release -p il_cli -- bench --scenario tests/scenarios/perf_10k.json5 --baseline benches/baseline.json
+cargo run --release -p il_cli -- bench --scenario tests/scenarios/large/perf_20k.json5 --ticks 6000 --threads 8 --baseline benches/baseline.json
 cargo run --release -p il_cli -- bands tests/scenarios/bands --seeds 50 --jobs 8
 cargo run -p il_cli -- autoresolve tests/scenarios/phases_all_four.json5
 cargo run --release -p il_cli -- autoresolve tests/scenarios/ai_skirmish_300.json5 --record-replay target/skirmish.ilrp
 cargo run --release -p il_cli -- replay target/skirmish.ilrp --verify --threads 8
 cargo run -p il_cli -- genmap
+cargo run -p il_cli -- genmap --preset plains --size 1600 1200 --id rome:wide_field --seed 20
 cargo run -p il_cli -- genart
 cargo run -p il_cli -- gensound
 ```
@@ -211,7 +213,8 @@ cargo run -p il_cli -- gensound
 - `bands` runs the Simulation Spec §15.3 outcome bands (`tests/scenarios/bands/*.json5`) over many seeds and prints one row per assertion (`held/seeds`, the required fraction, `pass`/`FAIL`/`skip`); `--seeds` and `--max-ticks` shrink a run, `--json` writes the full report, exit code 1 when an active assertion fails. Run it in release; the `casualties` and `routed_before_loss` clauses count the dead only; soldiers that fled the field (T2-042) are neither survivors nor casualties. A band file may load its own rules override through `bands.mods` (`volley_statistical.json5` runs with `projectile_cap: 0`), hold the morale of whole sides at 100 through `bands.pin_morale` (the volley rows: their hastati would otherwise break and run north, T2-042), kill a side's general at a tick through `bands.harness: [{ tick, kill_general }]` (row 7, T2-043), and a `mean_loss_matches` or `mean_loss_below` row compares two files' mean losses after both have run (`volley_testudo.json5` must lose at most 60 % of `volley_velites_vs_hastati.json5`, T2-050).
 - `autoresolve <scenario.json5>` runs the scenario to its end (or `--max-ticks`) with the engine AI commanding every side (`--ai all`, the default; the file's scripted commands are dropped with a note) and prints the `BattleResult` as JSON (`--json F` writes it to a file); `--ai none` replays the scripted commands instead, `--ai 1` hands over player 1 only; exit code 2 when the battle did not end (T2-082). The AI band rows `ai_vs_passive` and `ai_vs_charge` (50 seeds each since T3-011; the passive row is the Phase 2 exit criterion, at least 70 % of seeds since the owner's decision of 2026-09-10) run with the others under `bands`. The summary line counts the rejected commands; a file with an engine-owned side may reject a few (the one-tick race of SIM-CMD-005), a file whose commands are all scripted must reject none, and the nightly checks both.
 - `autoresolve --record-replay <file>` also writes the battle's replay; `replay <file> --verify` re-simulates a replay (from the app or from `autoresolve`) with the loaded content and prints `verified N ticks`, or the first divergent tick with both hashes and exit code 1 (T2-101). Without `--verify` it prints the file's header (engine and schema versions, mods, content hash, time written, tick count). A replay written by different content is refused unless `--force`; `--threads 8` proves the recording on the parallel executor. The nightly workflow records `ai_skirmish_300` to its end and verifies it.
-- `genmap`, `genart` and `gensound` regenerate the test map, the placeholder sprite sheets and the placeholder battle sounds with their sound set (T2-100); commit the output.
+- `genmap`, `genart` and `gensound` regenerate the test map, the placeholder sprite sheets and the placeholder battle sounds with their sound set (T2-100); commit the output. `genmap --preset plains --size W H` (T3-024) writes a flat field with gentle rises and no river or zones at any size, one deployment band per side along the south and north edges; `rome:wide_field` (1600 × 1200 m, seed 20) is the committed one for the 20k and 32k runs. The default preset `test_field` is fixed at 800 × 600 m and regenerates the Phase 1 map byte for byte (a test checks it).
+- The large scenarios live under `tests/scenarios/large/` (`perf_20k.json5`, the 20,000-soldier fight of two engine armies on `rome:wide_field`, and `cap_32768.json5`, T3-025): the push-time corpora that walk `tests/scenarios/` do not descend into it (the result and determinism tests would take an hour on them in debug), the schema test does, and the 20k determinism test names its file (T3-026). `bench --scenario tests/scenarios/large/perf_20k.json5 --ticks 6000 --threads 8` times the whole battle to its end (the baseline key `perf_20k`); `docs/evidence/phase3/bench_perf_20k.md` holds the table.
 
 Criterion micro-benches:
 
@@ -244,7 +247,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all --check
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of `idle_1000`, `move_reform_2000` and the 10k fight `perf_10k` (T2-112) and the bench comparisons at 2k and on the fight; `nightly.yml` runs the outcome bands every night and on demand.
+CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of `idle_1000`, `move_reform_2000` and the 10k fight `perf_10k` (T2-112) and the bench comparisons at 2k, on the 10k fight and on the 20k fight; `nightly.yml` runs the outcome bands every night and on demand.
 
 ## 9. Where things are
 

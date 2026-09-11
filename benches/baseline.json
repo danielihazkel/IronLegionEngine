@@ -1,6 +1,6 @@
 {
   "machine": "Intel Core i9-7900X (10 cores / 20 threads, 3.3 GHz base), 32 GB DDR4-2400, NVIDIA GeForce GTX 1080 Ti, Windows 11 Pro 10.0.26200, rustc 1.98.1, Balanced power plan",
-  "recorded": "2026-09-10",
+  "recorded": "2026-09-11",
   "runs": {
     "10000": {
       "soldiers": 10000,
@@ -566,6 +566,148 @@
         "max_ms": 23.1326
       },
       "phase1_stages_mean_ms": 9.750692416666658
+    },
+    "perf_20k": {
+      "scenario": "perf_20k",
+      "soldiers": 20042,
+      "regiments": 102,
+      "ticks": 6000,
+      "threads": 8,
+      "profile": "release",
+      "stages": [
+        {
+          "index": 0,
+          "name": "ApplyCommands",
+          "mean_ms": 0.011921533333333324,
+          "p95_ms": 0.0192,
+          "max_ms": 0.2208
+        },
+        {
+          "index": 1,
+          "name": "Ai",
+          "mean_ms": 0.8578051166666669,
+          "p95_ms": 1.1061,
+          "max_ms": 1.7626
+        },
+        {
+          "index": 2,
+          "name": "Formation",
+          "mean_ms": 1.065225850000001,
+          "p95_ms": 2.1790999999999996,
+          "max_ms": 6.3882
+        },
+        {
+          "index": 3,
+          "name": "RegimentMovement",
+          "mean_ms": 1.1308574833333305,
+          "p95_ms": 1.6742000000000001,
+          "max_ms": 3.0192
+        },
+        {
+          "index": 4,
+          "name": "SoldierSteering",
+          "mean_ms": 8.830015783333327,
+          "p95_ms": 9.9998,
+          "max_ms": 10.8968
+        },
+        {
+          "index": 5,
+          "name": "Integrate",
+          "mean_ms": 0.5963379000000011,
+          "p95_ms": 0.6809999999999999,
+          "max_ms": 1.2627000000000002
+        },
+        {
+          "index": 6,
+          "name": "SpatialGrid",
+          "mean_ms": 2.495145783333335,
+          "p95_ms": 2.8641,
+          "max_ms": 4.6099
+        },
+        {
+          "index": 7,
+          "name": "Collision",
+          "mean_ms": 7.7409730499999965,
+          "p95_ms": 11.055,
+          "max_ms": 14.695400000000001
+        },
+        {
+          "index": 8,
+          "name": "Visibility",
+          "mean_ms": 0.1129126833333331,
+          "p95_ms": 0.5474,
+          "max_ms": 1.0472000000000001
+        },
+        {
+          "index": 9,
+          "name": "Targeting",
+          "mean_ms": 3.7855951333333313,
+          "p95_ms": 5.8027,
+          "max_ms": 8.936599999999999
+        },
+        {
+          "index": 10,
+          "name": "Combat",
+          "mean_ms": 7.597832766666676,
+          "p95_ms": 20.3381,
+          "max_ms": 31.1869
+        },
+        {
+          "index": 11,
+          "name": "Projectiles",
+          "mean_ms": 0.04161219999999992,
+          "p95_ms": 0.0942,
+          "max_ms": 0.43150000000000005
+        },
+        {
+          "index": 12,
+          "name": "Abilities",
+          "mean_ms": 0.02383046666666656,
+          "p95_ms": 0.031099999999999996,
+          "max_ms": 0.3025
+        },
+        {
+          "index": 13,
+          "name": "Fatigue",
+          "mean_ms": 1.2465211499999995,
+          "p95_ms": 4.4356,
+          "max_ms": 6.0588
+        },
+        {
+          "index": 14,
+          "name": "Morale",
+          "mean_ms": 2.92525683333334,
+          "p95_ms": 3.6894,
+          "max_ms": 5.632
+        },
+        {
+          "index": 15,
+          "name": "Death",
+          "mean_ms": 1.4898262833333344,
+          "p95_ms": 3.5370000000000004,
+          "max_ms": 6.8316
+        },
+        {
+          "index": 16,
+          "name": "BattleFlow",
+          "mean_ms": 0.04320338333333343,
+          "p95_ms": 0.0543,
+          "max_ms": 2.327
+        },
+        {
+          "index": 17,
+          "name": "EventsAndHash",
+          "mean_ms": 3.4798620500000057,
+          "p95_ms": 4.0592,
+          "max_ms": 6.9924
+        }
+      ],
+      "tick": {
+        "mean_ms": 43.484406700000086,
+        "p95_ms": 60.280100000000004,
+        "max_ms": 72.6932
+      },
+      "phase1_stages_mean_ms": 21.85855584999999
     }
   }
 }

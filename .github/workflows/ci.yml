@@ -64,3 +64,7 @@ jobs:
       # T2-111: the 10k fight, keyed `perf_10k` in the baseline; warn-only here too.
       - name: Benchmark the 10k fight against the baseline
         run: cargo run --release -p il_cli -- bench --scenario tests/scenarios/perf_10k.json5 --ticks 300 --baseline benches/baseline.json
+
+      # T3-024: the 20k fight, keyed `perf_20k`; warn-only, 300 ticks.
+      - name: Benchmark the 20k fight against the baseline
+        run: cargo run --release -p il_cli -- bench --scenario tests/scenarios/large/perf_20k.json5 --ticks 300 --baseline benches/baseline.json

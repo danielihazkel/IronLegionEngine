@@ -1,13 +1,20 @@
-//! `il_cli genmap`: the deterministic Phase 1 test map (T1-030).
+//! `il_cli genmap`: deterministic generated maps (T1-030, T3-024).
 //!
 //! Writes one map definition (`content/maps/<item>.json5`) and its 16-bit
 //! heightmap sidecar (`assets/maps/<item>.hgt`) into a mod root. Everything
-//! is a pure function of the seed, so the committed files can be regenerated
-//! bit for bit. The map is 800 × 600 m: a value-noise ground with a hill in
-//! the south-east carrying a rock outcrop, a west–east river with an 8 m
-//! bridge (the narrowest corridor the 4 m nav grid can represent) and a
-//! 30 m ford, a forest, a marsh, a north–south road over the bridge, and one
-//! deployment rectangle per side.
+//! is a pure function of the preset, the size and the seed, so the committed
+//! files can be regenerated bit for bit.
+//!
+//! [`Preset::TestField`] (the default) is the Phase 1 test map, fixed at
+//! 800 × 600 m: a value-noise ground with a hill in the south-east carrying a
+//! rock outcrop, a west–east river with an 8 m bridge (the narrowest corridor
+//! the 4 m nav grid can represent) and a 30 m ford, a forest, a marsh, a
+//! north–south road over the bridge, and one deployment rectangle per side.
+//!
+//! [`Preset::Plains`] (T3-024) is a flat field with gentle rises at any size
+//! (`--size W H`, default 1600 × 1200 m): no river, no zones, one deployment
+//! band per side along the south and north edges. `rome:wide_field` is the
+//! committed instance for the 20k and 32k runs.
 
 // A generator, not the sim: plain f32 math is fine here.
 #![allow(clippy::float_arithmetic)]
@@ -15,13 +22,53 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 
+/// Size of the test field, the only size [`Preset::TestField`] accepts.
 pub const WIDTH: f32 = 800.0;
 pub const HEIGHT: f32 = 600.0;
+/// Default size of [`Preset::Plains`].
+pub const PLAINS_WIDTH: f32 = 1600.0;
+pub const PLAINS_HEIGHT: f32 = 1200.0;
 pub const HEIGHT_CELL: f32 = 4.0;
 /// Metres per raw 16-bit unit.
 pub const SCALE: f32 = 0.01;
+/// Margin of the plains deployment bands from the map edge and their depth.
+const BAND_MARGIN: f32 = 40.0;
+const BAND_DEPTH: f32 = 160.0;
+
+/// What the generator draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Preset {
+    TestField,
+    Plains,
+}
+
+impl Preset {
+    /// `test_field` or `plains`.
+    pub fn parse(text: &str) -> anyhow::Result<Self> {
+        match text.trim() {
+            "test_field" => Ok(Preset::TestField),
+            "plains" => Ok(Preset::Plains),
+            other => bail!("unknown preset {other:?}; expected test_field or plains"),
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Preset::TestField => "test_field",
+            Preset::Plains => "plains",
+        }
+    }
+
+    /// The size the preset takes when none is given.
+    pub fn default_size(self) -> [f32; 2] {
+        match self {
+            Preset::TestField => [WIDTH, HEIGHT],
+            Preset::Plains => [PLAINS_WIDTH, PLAINS_HEIGHT],
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct GenmapOptions {
@@ -30,6 +77,10 @@ pub struct GenmapOptions {
     /// ContentId of the map, e.g. `rome:test_field`.
     pub id: String,
     pub seed: u64,
+    pub preset: Preset,
+    /// `[w, h]` in metres; `None` takes the preset's default. The test field
+    /// accepts only its own size.
+    pub size: Option<[f32; 2]>,
 }
 
 /// A polygon zone of the generated map.
@@ -173,31 +224,42 @@ fn dist_to_river(x: f32, y: f32) -> f32 {
 }
 
 /// Ground height in metres at `(x, y)`.
-pub fn height_at(seed: u64, x: f32, y: f32) -> f32 {
-    let rolling = 4.0 * value_noise(seed, x, y, 160.0) + 2.0 * value_noise(seed ^ 0x55, x, y, 50.0);
-    let ([hx, hy], radius, peak) = HILL;
-    let d2 = (x - hx) * (x - hx) + (y - hy) * (y - hy);
-    let hill = peak * (-d2 / (2.0 * radius * radius)).exp();
-    // A valley: the river bed is at zero and the banks rise over 40 m.
-    let valley = smoothstep((dist_to_river(x, y) / 40.0).clamp(0.0, 1.0));
-    (rolling + hill) * valley
+pub fn height_at(preset: Preset, seed: u64, x: f32, y: f32) -> f32 {
+    match preset {
+        Preset::TestField => {
+            let rolling =
+                4.0 * value_noise(seed, x, y, 160.0) + 2.0 * value_noise(seed ^ 0x55, x, y, 50.0);
+            let ([hx, hy], radius, peak) = HILL;
+            let d2 = (x - hx) * (x - hx) + (y - hy) * (y - hy);
+            let hill = peak * (-d2 / (2.0 * radius * radius)).exp();
+            // A valley: the river bed is at zero and the banks rise over 40 m.
+            let valley = smoothstep((dist_to_river(x, y) / 40.0).clamp(0.0, 1.0));
+            (rolling + hill) * valley
+        }
+        // Gentle rises: a few metres over a few hundred metres, so slopes
+        // barely touch `slope_mult` and every part of the field is level
+        // enough for a battle line.
+        Preset::Plains => {
+            3.0 * value_noise(seed, x, y, 240.0) + 1.0 * value_noise(seed ^ 0x55, x, y, 60.0)
+        }
+    }
 }
 
 /// `(cols, rows)` of the sidecar: `ceil(w / cell) + 1` by `ceil(h / cell) + 1`.
-pub fn dims() -> (u32, u32) {
+pub fn dims(size: [f32; 2]) -> (u32, u32) {
     (
-        (WIDTH / HEIGHT_CELL).ceil() as u32 + 1,
-        (HEIGHT / HEIGHT_CELL).ceil() as u32 + 1,
+        (size[0] / HEIGHT_CELL).ceil() as u32 + 1,
+        (size[1] / HEIGHT_CELL).ceil() as u32 + 1,
     )
 }
 
 /// The raw samples, row-major from `y = 0`.
-pub fn samples(seed: u64) -> Vec<u16> {
-    let (cols, rows) = dims();
+pub fn samples(preset: Preset, seed: u64, size: [f32; 2]) -> Vec<u16> {
+    let (cols, rows) = dims(size);
     let mut out = Vec::with_capacity((cols * rows) as usize);
     for j in 0..rows {
         for i in 0..cols {
-            let h = height_at(seed, i as f32 * HEIGHT_CELL, j as f32 * HEIGHT_CELL);
+            let h = height_at(preset, seed, i as f32 * HEIGHT_CELL, j as f32 * HEIGHT_CELL);
             out.push((h / SCALE).round().clamp(0.0, 65_535.0) as u16);
         }
     }
@@ -213,42 +275,86 @@ fn fmt_points(points: &[[f32; 2]]) -> String {
 }
 
 /// The map definition as JSON5 text.
-pub fn map_json5(id: &str, item: &str, seed: u64) -> String {
+pub fn map_json5(preset: Preset, id: &str, item: &str, seed: u64, size: [f32; 2]) -> String {
+    let [w, h] = size;
     let mut s = String::new();
-    s.push_str(&format!(
-        "// Generated by `il_cli genmap --id {id} --seed {seed}`; do not edit by hand.\n\
-         // 800 x 600 m: value-noise ground, a hill with a rock outcrop in the\n\
-         // south-east, a west-east river with an 8 m bridge and a 30 m ford, a\n\
-         // forest, a marsh, a north-south road, one deployment rectangle per side.\n\
-         {{\n  id: \"{id}\",\n  name_key: \"rome.maps.{item}.name\",\n  size: {{ w: {WIDTH}, h: {HEIGHT} }},\n\
-         \x20 campaign_terrain_tags: [\"plains\", \"river\"],\n  weather_allowed: [\"clear\", \"rain\", \"fog\"],\n\
-         \x20 heightmap: {{ cell: {HEIGHT_CELL}, path: \"maps/{item}.hgt\", scale: {SCALE} }},\n\
-         \x20 base_zone: \"rome:open\",\n  zones: [\n"
-    ));
-    for z in &ZONES {
-        s.push_str(&format!(
-            "    {{ type: \"{}\", polygon: [{}] }},\n",
-            z.kind,
-            fmt_points(z.polygon)
-        ));
-    }
-    s.push_str("  ],\n  rivers: [\n");
-    s.push_str(&format!(
-        "    {{ width: {RIVER_WIDTH}, points: [{}] }},\n",
-        fmt_points(&RIVER)
-    ));
-    s.push_str("  ],\n  deployment: [\n");
-    for (side, poly) in &DEPLOYMENT {
-        s.push_str(&format!(
-            "    {{ side: {side}, polygon: [{}] }},\n",
-            fmt_points(poly)
-        ));
+    match preset {
+        Preset::TestField => {
+            s.push_str(&format!(
+                "// Generated by `il_cli genmap --id {id} --seed {seed}`; do not edit by hand.\n\
+                 // 800 x 600 m: value-noise ground, a hill with a rock outcrop in the\n\
+                 // south-east, a west-east river with an 8 m bridge and a 30 m ford, a\n\
+                 // forest, a marsh, a north-south road, one deployment rectangle per side.\n\
+                 {{\n  id: \"{id}\",\n  name_key: \"rome.maps.{item}.name\",\n  size: {{ w: {w}, h: {h} }},\n\
+                 \x20 campaign_terrain_tags: [\"plains\", \"river\"],\n  weather_allowed: [\"clear\", \"rain\", \"fog\"],\n\
+                 \x20 heightmap: {{ cell: {HEIGHT_CELL}, path: \"maps/{item}.hgt\", scale: {SCALE} }},\n\
+                 \x20 base_zone: \"rome:open\",\n  zones: [\n"
+            ));
+            for z in &ZONES {
+                s.push_str(&format!(
+                    "    {{ type: \"{}\", polygon: [{}] }},\n",
+                    z.kind,
+                    fmt_points(z.polygon)
+                ));
+            }
+            s.push_str("  ],\n  rivers: [\n");
+            s.push_str(&format!(
+                "    {{ width: {RIVER_WIDTH}, points: [{}] }},\n",
+                fmt_points(&RIVER)
+            ));
+            s.push_str("  ],\n  deployment: [\n");
+            for (side, poly) in &DEPLOYMENT {
+                s.push_str(&format!(
+                    "    {{ side: {side}, polygon: [{}] }},\n",
+                    fmt_points(poly)
+                ));
+            }
+        }
+        Preset::Plains => {
+            s.push_str(&format!(
+                "// Generated by `il_cli genmap --preset plains --size {w} {h} --id {id} --seed {seed}`; do not edit by hand.\n\
+                 // {w} x {h} m plains (T3-024): value-noise ground with gentle rises, no\n\
+                 // river and no zones; one deployment band per side along the south and\n\
+                 // north edges.\n\
+                 {{\n  id: \"{id}\",\n  name_key: \"rome.maps.{item}.name\",\n  size: {{ w: {w}, h: {h} }},\n\
+                 \x20 campaign_terrain_tags: [\"plains\"],\n  weather_allowed: [\"clear\", \"rain\", \"fog\"],\n\
+                 \x20 heightmap: {{ cell: {HEIGHT_CELL}, path: \"maps/{item}.hgt\", scale: {SCALE} }},\n\
+                 \x20 base_zone: \"rome:open\",\n  zones: [],\n  rivers: [],\n  deployment: [\n"
+            ));
+            let (m, d) = (BAND_MARGIN, BAND_DEPTH);
+            let south = [[m, m], [w - m, m], [w - m, m + d], [m, m + d]];
+            let north = [
+                [m, h - m - d],
+                [w - m, h - m - d],
+                [w - m, h - m],
+                [m, h - m],
+            ];
+            for (side, poly) in [(0, south), (1, north)] {
+                s.push_str(&format!(
+                    "    {{ side: {side}, polygon: [{}] }},\n",
+                    fmt_points(&poly)
+                ));
+            }
+        }
     }
     s.push_str(
         "  ],\n  reinforcement_edges: [\n    { side: 0, edge: \"south\" },\n    { side: 1, edge: \"north\" },\n  ],\n\
          \x20 // Reserved for sieges (REQ-SIM-045).\n  structures: [],\n  siege_points: [],\n}\n",
     );
     s
+}
+
+/// The size a run uses: the option, else the preset's default; the test
+/// field refuses any other size.
+pub fn resolve_size(preset: Preset, size: Option<[f32; 2]>) -> anyhow::Result<[f32; 2]> {
+    let size = size.unwrap_or_else(|| preset.default_size());
+    if preset == Preset::TestField && size != preset.default_size() {
+        bail!("the test_field preset is fixed at {WIDTH} x {HEIGHT} m");
+    }
+    if !(size[0] > 0.0 && size[1] > 0.0) {
+        bail!("--size must be positive, got {} x {}", size[0], size[1]);
+    }
+    Ok(size)
 }
 
 /// Writes the map and its sidecar; prints the two paths.
@@ -258,13 +364,14 @@ pub fn generate(opts: &GenmapOptions, out: &mut dyn Write) -> anyhow::Result<()>
         .split_once(':')
         .map(|(_, item)| item)
         .ok_or_else(|| anyhow::anyhow!("map id {:?} is not <namespace>:<item>", opts.id))?;
+    let size = resolve_size(opts.preset, opts.size)?;
     let content = opts.mod_root.join("content/maps");
     let assets = opts.mod_root.join("assets/maps");
     std::fs::create_dir_all(&content).with_context(|| format!("creating {}", content.display()))?;
     std::fs::create_dir_all(&assets).with_context(|| format!("creating {}", assets.display()))?;
 
     let hgt: PathBuf = assets.join(format!("{item}.hgt"));
-    let bytes: Vec<u8> = samples(opts.seed)
+    let bytes: Vec<u8> = samples(opts.preset, opts.seed, size)
         .iter()
         .flat_map(|s| s.to_le_bytes())
         .collect();
@@ -272,8 +379,11 @@ pub fn generate(opts: &GenmapOptions, out: &mut dyn Write) -> anyhow::Result<()>
     writeln!(out, "{}", display(&hgt))?;
 
     let json = content.join(format!("{item}.json5"));
-    std::fs::write(&json, map_json5(&opts.id, item, opts.seed))
-        .with_context(|| format!("writing {}", json.display()))?;
+    std::fs::write(
+        &json,
+        map_json5(opts.preset, &opts.id, item, opts.seed, size),
+    )
+    .with_context(|| format!("writing {}", json.display()))?;
     writeln!(out, "{}", display(&json))?;
     Ok(())
 }
@@ -286,26 +396,34 @@ fn display(p: &Path) -> String {
 mod tests {
     use super::*;
 
+    const TEST_FIELD: [f32; 2] = [WIDTH, HEIGHT];
+
     #[test]
     fn heights_are_deterministic_and_bounded() {
-        let a = samples(7);
-        let b = samples(7);
+        let a = samples(Preset::TestField, 7, TEST_FIELD);
+        let b = samples(Preset::TestField, 7, TEST_FIELD);
         assert_eq!(a, b);
-        assert_ne!(a, samples(8));
-        let (cols, rows) = dims();
+        assert_ne!(a, samples(Preset::TestField, 8, TEST_FIELD));
+        let (cols, rows) = dims(TEST_FIELD);
         assert_eq!((cols, rows), (201, 151));
         assert_eq!(a.len(), 201 * 151);
         let max = a.iter().copied().max().unwrap();
         assert!(max as f32 * SCALE < 40.0, "peak {max}");
         // The river bed is flat at zero.
-        assert_eq!(height_at(7, 400.0, 310.0), 0.0);
+        assert_eq!(height_at(Preset::TestField, 7, 400.0, 310.0), 0.0);
         // The hill is the highest point.
-        assert!(height_at(7, 600.0, 460.0) > 15.0);
+        assert!(height_at(Preset::TestField, 7, 600.0, 460.0) > 15.0);
     }
 
     #[test]
     fn json5_is_a_valid_map_definition() {
-        let text = map_json5("rome:test_field", "test_field", 7);
+        let text = map_json5(
+            Preset::TestField,
+            "rome:test_field",
+            "test_field",
+            7,
+            TEST_FIELD,
+        );
         let v: serde_json::Value = il_data::json5::parse_json5(&text, il_data::json5::FileId(0))
             .unwrap()
             .to_json();
@@ -313,5 +431,69 @@ mod tests {
         assert_eq!(v["zones"].as_array().unwrap().len(), ZONES.len());
         assert_eq!(v["deployment"].as_array().unwrap().len(), 2);
         assert_eq!(v["base_zone"], "rome:open");
+    }
+
+    /// The preset split (T3-024) must not move the committed test field.
+    #[test]
+    fn the_committed_test_field_regenerates_byte_for_byte() {
+        let game = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
+        let json = std::fs::read_to_string(game.join("content/maps/test_field.json5")).unwrap();
+        assert_eq!(
+            map_json5(
+                Preset::TestField,
+                "rome:test_field",
+                "test_field",
+                7,
+                TEST_FIELD
+            ),
+            json
+        );
+        let hgt = std::fs::read(game.join("assets/maps/test_field.hgt")).unwrap();
+        let bytes: Vec<u8> = samples(Preset::TestField, 7, TEST_FIELD)
+            .iter()
+            .flat_map(|s| s.to_le_bytes())
+            .collect();
+        assert_eq!(hgt, bytes);
+    }
+
+    #[test]
+    fn plains_is_flat_sized_and_valid() {
+        let size = [1600.0, 1200.0];
+        assert_eq!(dims(size), (401, 301));
+        let s = samples(Preset::Plains, 20, size);
+        assert_eq!(s.len(), 401 * 301);
+        let max = s.iter().copied().max().unwrap();
+        assert!(max as f32 * SCALE <= 4.0, "peak {max}");
+        let text = map_json5(Preset::Plains, "rome:wide_field", "wide_field", 20, size);
+        let v: serde_json::Value = il_data::json5::parse_json5(&text, il_data::json5::FileId(0))
+            .unwrap()
+            .to_json();
+        assert_eq!(v["size"]["w"], 1600.0);
+        assert_eq!(v["size"]["h"], 1200.0);
+        assert_eq!(v["campaign_terrain_tags"].as_array().unwrap().len(), 1);
+        assert!(v["zones"].as_array().unwrap().is_empty());
+        assert!(v["rivers"].as_array().unwrap().is_empty());
+        let deployment = v["deployment"].as_array().unwrap();
+        assert_eq!(deployment.len(), 2);
+        // The north band ends 40 m short of the top edge.
+        assert_eq!(deployment[1]["polygon"][2][1], 1160.0);
+        assert_eq!(v["reinforcement_edges"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn sizes_resolve_per_preset() {
+        assert_eq!(resolve_size(Preset::TestField, None).unwrap(), TEST_FIELD);
+        assert!(resolve_size(Preset::TestField, Some([1000.0, 600.0])).is_err());
+        assert_eq!(
+            resolve_size(Preset::Plains, None).unwrap(),
+            [PLAINS_WIDTH, PLAINS_HEIGHT]
+        );
+        assert_eq!(
+            resolve_size(Preset::Plains, Some([400.0, 300.0])).unwrap(),
+            [400.0, 300.0]
+        );
+        assert!(resolve_size(Preset::Plains, Some([0.0, 300.0])).is_err());
+        assert_eq!(Preset::parse("plains").unwrap(), Preset::Plains);
+        assert!(Preset::parse("hills").is_err());
     }
 }
