@@ -437,7 +437,10 @@ mod tests {
     #[test]
     fn the_committed_test_field_regenerates_byte_for_byte() {
         let game = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
-        let json = std::fs::read_to_string(game.join("content/maps/test_field.json5")).unwrap();
+        // A checkout may carry CRLF (CI's does); the generator writes LF.
+        let json = std::fs::read_to_string(game.join("content/maps/test_field.json5"))
+            .unwrap()
+            .replace("\r\n", "\n");
         assert_eq!(
             map_json5(
                 Preset::TestField,
