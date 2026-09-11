@@ -195,10 +195,10 @@ Phase 2's exit checklist in [07](07-tasks-phase-0-2.md#phase-2-exit-checklist) h
 
 ### TEST — replay proof
 
-- [ ] **T3-070 Replay at scale** · S · Refs REQ-SAVE-005, TDD §14, Phase 3 exit criterion · Depends T3-024
+- [x] **T3-070 Replay at scale** · S · Refs REQ-SAVE-005, TDD §14, Phase 3 exit criterion · Depends T3-024
   The recorder and verifier exist (T2-101). The nightly records `perf_20k.json5` with `autoresolve --record-replay` to its end, verifies it on eight threads, and compares the recorded final hash with a second `il_cli run` of the same file to the same tick; `il_app --replay` of that file is the docs/08 check (`replay OK` at the end). `Replay.checkpoints` stays empty (the viewer is deferred; T3-080 records it).
   **Done when** the nightly line is green and the manual check is recorded in docs/08.
-  Built 2026-09-11 (the box waits for the dispatched nightly): `nightly.yml` records `large/perf_20k.json5` with `autoresolve --ai none --threads 8 --record-replay` to its end (`--ai none` keeps the file's scripted attacker; two engine armies never meet on the wide field, SAD T-15), verifies it on eight threads, and compares the recording's final hash, which `il_cli replay --verify` now prints as `final hash H`, with the last line of a fresh `il_cli run --ticks N --hash-every N --threads 8` of the same file. docs/08 §4g step 4 records the manual check (`il_app --replay`, `replay OK`); TDD §14 and §17 describe the line. `Replay.checkpoints` stays empty.
+  Done 2026-09-11 (dispatched nightly run 34599720371 green: `verified 6000 ticks`, `final hash bf2d581171488a47`, the fresh run's last line equal; the same final hash on the target machine): `nightly.yml` records `large/perf_20k.json5` with `autoresolve --ai none --threads 8 --record-replay` to its end (`--ai none` keeps the file's scripted attacker; two engine armies never meet on the wide field, SAD T-15), verifies it on eight threads, and compares the recording's final hash, which `il_cli replay --verify` now prints as `final hash H`, with the last line of a fresh `il_cli run --ticks N --hash-every N --threads 8` of the same file. docs/08 §4g step 4 records the manual check (`il_app --replay`, `replay OK`); TDD §14 and §17 describe the line. `Replay.checkpoints` stays empty.
 
 ### Docs
 
