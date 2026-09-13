@@ -162,6 +162,10 @@
     profiler: {
       title: "Profiler",
       frame: "frame {ms} ms ({fps} FPS) · tick {last} ms last / {mean} mean / {max} max over {ticks} ticks",
+      // T3-030: the main thread's build and the render side.
+      render: "main: build {build} ms · {where}: {render} ms, {fps} FPS presented, {dropped} dropped",
+      render_thread: "render thread",
+      render_main: "render on the main thread",
       counts: "{soldiers} soldiers ({drawn} drawn) · {regiments} regiments · {ticks} ticks this frame · alpha {alpha}",
       stage: "stage",
       last: "last ms",

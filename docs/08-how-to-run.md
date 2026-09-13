@@ -27,6 +27,7 @@ cargo run --release -p il_app -- tests/scenarios/move_reform_2000.json5 --thread
 - `--replay <file.ilrp>` watches a recorded battle instead of playing one (T2-101): no orders are taken, the camera, pause and speed still work, and the title shows `replay 120/600`, then `replay OK` or `replay MISMATCH at tick N`.
 - `--replays-dir <folder>` (default `replays`) is where every battle's replay lands, `--saves-dir <folder>` (default `saves`) where the quick save lives (§4g).
 - `--mute` starts with the master volume at 0 (T2-100); the settings file is untouched. Without an audio device the terminal prints `audio disabled: …` once and everything else works.
+- `--single-thread-render` keeps the renderer on the main thread (T3-030). By default the GPU work runs on a render thread: the main thread builds the frame and hands it over, then waits until it was picked up, at most one display period; if the GPU falls behind, the newest frame replaces the waiting one (the profiler counts it as dropped). The flag exists for debugging and for a machine whose surface must stay on the main thread; nothing but the profiler's render row changes.
 
 A regiment with a `position` in the file starts deployed there; a side whose every regiment has one skips the deployment phase, and when every side does the battle opens in the Battle phase (that is every file under `tests/scenarios/` except `phases_all_four.json5`). Leave the positions out and the battle opens in Deployment: the regiments stand in a battle line at their zone centre, right-click or right-drag moves the selection inside the zone (a red `OutsideDeploymentZone` in the event panel otherwise), the command card's "Deploy the army as…" picker re-lays the whole army in a group formation, `Enter` or the Confirm button next to the phase label starts the battle. A battle ends in a result window (winner, duration, per side survivors, killed, fled, the general's fate, loot) with a button back to the menu; the sim stops stepping then (T2-070).
 
@@ -81,7 +82,7 @@ Developer keys (`dev` feature, on by default):
 
 | Key | Overlay |
 |---|---|
-| `F12` | profiler window and the event panel |
+| `F12` | profiler window and the event panel. The second line of the profiler (T3-030) is the two threads: `main: build X ms` is the main thread's frame build up to the hand-over, then the render side (`render thread`, or `render on the main thread` with `--single-thread-render`) with its frame time, the presented FPS and the dropped jobs |
 | `F5` | nav grid (impassable cells) |
 | `F6` | formation slots |
 | `F7` | regiment paths |
@@ -264,6 +265,7 @@ CI (`.github/workflows/ci.yml`) runs the same plus a release double-run of `idle
 - `docs/07-tasks-phase-0-2.md`: the task list and exit checklists.
 - `docs/evidence/phase1/`: the target machine spec and the profiler screenshot.
 - `docs/evidence/phase2/`: the machine delta, the 10k fight's stage table before and after T2-111, the band table at the close-out and the owner's 10k profiler screenshot.
+- `docs/evidence/phase3/`: the machine notes and bench deltas, the 20k fight's stage table, the 32k memory figure, the mixed-regiment band, and the owner's screenshots: `profiler_20k.png` (the 20k fight), `profiler_10k_threaded.png` (the 10k fight with the render thread, T3-030).
 - `benches/baseline.json`: stage timings on the target machine.
 - `replays/` and `saves/` under the working directory (ignored by git): every battle's replay and the quick save (T2-101).
 - `settings.json5` in the user's config directory (§2): the UI scale, video and audio values, the rebound keys (T2-091).

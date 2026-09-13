@@ -6,21 +6,25 @@
 //! `Bindings` loaded from `content/input/bindings.json5`; nothing here names
 //! a key code (REQ-INP-005). The frame: poll input → intents → commands
 //! queued on the session → `advance` (accumulator, capped catch-up) →
-//! snapshot with `alpha` → render → egui → apply the state transition.
+//! snapshot with `alpha` → scene → egui → one `FrameJob` to the render
+//! host (the render thread of T3-030, or the renderer inline with
+//! `--single-thread-render`) → apply the state transition. The main thread
+//! then waits until the job was picked up, at most one display period.
 
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::anyhow;
 use glam::Vec2;
 use il_core::{PlayerId, RegimentId, Scalar, V2};
 use il_data::Registries;
 use il_render::{
-    AtlasId, Camera, ClearColour, DebugFlags, EguiPaint, FrameScene, LineScene, RenderSnapshot,
-    Renderer, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, build_debug_lines, build_snapshot,
-    deployment_outlines, ground_height, scene_from_snapshot,
+    AtlasId, AtlasUpload, Camera, ClearColour, DebugFlags, FrameJob, LineScene, RenderHost,
+    RenderSnapshot, Rgba8Image, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, UiFrame,
+    atlas_path, build_debug_lines, build_snapshot, deployment_outlines, ground_height,
+    scene_from_snapshot,
 };
 use il_sim_battle::{
     BattlePhase, BattleSetup, BattleView, BattleWorld, ScriptedCommands, SpeedMode,
@@ -70,6 +74,10 @@ const PREVIEW_ARROW_MIN_M: f32 = 6.0;
 const FORMATION_HOTKEYS: u8 = 9;
 /// Developer tooling compiled in (`dev` feature): profiler and debug overlays.
 const DEV: bool = cfg!(feature = "dev");
+/// The pacing deadline when the monitor's refresh rate is unknown (T3-030).
+const DEFAULT_FRAME_PERIOD: Duration = Duration::from_micros(16_667);
+/// Frame jobs kept ready so no frame allocates its scene buffers.
+const JOB_POOL: usize = 2;
 
 /// What the app needs to start battles from the menu.
 pub struct Launch {
@@ -94,6 +102,8 @@ pub struct Launch {
     pub settings_path: PathBuf,
     /// `--mute`: the master volume starts at 0 (T2-100).
     pub mute: bool,
+    /// `--single-thread-render`: the renderer on the main thread (T3-030).
+    pub single_thread_render: bool,
 }
 
 pub struct App {
@@ -103,7 +113,25 @@ pub struct App {
     #[allow(dead_code, reason = "unused without the dev feature")]
     pub(crate) hot_reload: HotReloadHandle,
     pub(crate) window: Option<Arc<Window>>,
-    pub(crate) renderer: Option<Renderer>,
+    /// The render thread, or the renderer inline (T3-030).
+    pub(crate) renderer: Option<RenderHost>,
+    /// The window's inner size in physical pixels (the surface follows it
+    /// through the next job's `resize`).
+    pub(crate) surface_size: (u32, u32),
+    pub(crate) pending_resize: Option<(u32, u32)>,
+    pub(crate) pending_vsync: Option<bool>,
+    pub(crate) pending_terrain: Option<Arc<TerrainMesh>>,
+    pub(crate) pending_clear_terrain: bool,
+    pub(crate) pending_atlases: Vec<AtlasUpload>,
+    /// Spare jobs with their buffers allocated.
+    pub(crate) job_pool: Vec<FrameJob>,
+    /// When the last job was handed over: the pacing deadline's origin.
+    pub(crate) last_submit: Option<Instant>,
+    /// One display period, from the monitor's refresh rate.
+    pub(crate) frame_period: Duration,
+    /// Smoothed main-thread frame build time, milliseconds (frame start to
+    /// the hand-over).
+    pub(crate) build_ms: f32,
     pub(crate) ui: Option<UiContext>,
     pub(crate) input: InputState,
     pub(crate) bindings: Bindings,
@@ -205,6 +233,16 @@ impl App {
             hot_reload,
             window: None,
             renderer: None,
+            surface_size: (1, 1),
+            pending_resize: None,
+            pending_vsync: None,
+            pending_terrain: None,
+            pending_clear_terrain: false,
+            pending_atlases: Vec::new(),
+            job_pool: (0..JOB_POOL).map(|_| FrameJob::default()).collect(),
+            last_submit: None,
+            frame_period: DEFAULT_FRAME_PERIOD,
+            build_ms: 0.0,
             ui: None,
             input: InputState::new(),
             bindings,
@@ -241,26 +279,32 @@ impl App {
         MenuState::scan(&self.launch.scenarios_dir, mods)
     }
 
-    /// Uploads every sprite set of the registry, in registry order, so the
-    /// snapshot's sprite-set index maps straight onto `atlases`.
+    /// Decodes every sprite set of the registry, in registry order, so the
+    /// snapshot's sprite-set index maps straight onto `atlases`; the upload
+    /// travels with the next frame job (T3-030).
     fn load_atlases(&mut self) -> anyhow::Result<()> {
-        let renderer = self.renderer.as_mut().expect("renderer exists");
         let assets_root = self.launch.content_root.join("assets");
         for (_, set) in self.regs.sprite_sets.iter() {
-            self.atlases.push(renderer.load_atlas(set, &assets_root)?);
+            let image = Rgba8Image::load_png(&atlas_path(set, &assets_root))?;
+            self.pending_atlases.push(AtlasUpload {
+                set: set.clone(),
+                image,
+            });
+            self.atlases.push(AtlasId(self.atlases.len() as u32));
         }
         Ok(())
     }
 
-    /// Builds and uploads the battle's terrain mesh (T1-053).
+    /// Builds the battle's terrain mesh (T1-053); the next job uploads it.
     fn load_terrain(&mut self) {
         let Some(session) = self.state.session() else {
+            self.pending_terrain = None;
+            self.pending_clear_terrain = true;
             return;
         };
         let mesh = TerrainMesh::build(session.world.map(), &self.regs);
-        if let Some(renderer) = self.renderer.as_mut() {
-            renderer.set_terrain(&mesh);
-        }
+        self.pending_terrain = Some(Arc::new(mesh));
+        self.pending_clear_terrain = false;
     }
 
     /// Per-battle state reset when a battle starts or ends.
@@ -377,8 +421,8 @@ impl App {
     }
 
     fn screen(&self) -> Vec2 {
-        let (w, h) = self.renderer.as_ref().map_or((1, 1), Renderer::size);
-        Vec2::new(w as f32, h as f32)
+        let (w, h) = self.surface_size;
+        Vec2::new(w.max(1) as f32, h.max(1) as f32)
     }
 
     /// Camera framing every regiment anchor the first time it is needed:
@@ -970,20 +1014,59 @@ impl App {
                 &mut self.lines,
             );
         }
-        if let Some(renderer) = self.renderer.as_ref() {
-            let sets: Vec<SetAtlas<'_>> = self
-                .atlases
-                .iter()
-                .map(|id| SetAtlas {
-                    atlas: *id,
-                    set: &renderer.atlas(*id).expect("loaded atlas").set,
-                })
-                .collect();
-            scene_from_snapshot(&self.snapshot, screen, time, &sets, &mut self.scene);
+        // One atlas per sprite set, in registry order (`load_atlases`).
+        let sets: Vec<SetAtlas<'_>> = self
+            .atlases
+            .iter()
+            .zip(self.regs.sprite_sets.iter())
+            .map(|(id, (_, set))| SetAtlas { atlas: *id, set })
+            .collect();
+        scene_from_snapshot(&self.snapshot, screen, time, &sets, &mut self.scene);
+    }
+
+    /// Assembles this frame's job from the scenes, the UI and whatever is
+    /// pending (resize, vsync, terrain, sheets) and hands it to the render
+    /// host (T3-030). The scene buffers swap into the job and a recycled
+    /// job's buffers swap back, so no frame allocates.
+    fn submit_frame(&mut self, ui: Option<UiFrame>) {
+        let Some(host) = self.renderer.as_mut() else {
+            return;
+        };
+        let mut job = host
+            .recycle()
+            .or_else(|| self.job_pool.pop())
+            .unwrap_or_default();
+        match (&self.bench, self.state.is_battle()) {
+            // The bench draws the same 32k instances every frame.
+            (Some(bench), _) => job.sprites = bench.scene.clone(),
+            (None, true) => {
+                std::mem::swap(&mut job.sprites, &mut self.scene);
+                job.camera = self.camera;
+            }
+            (None, false) => {}
+        }
+        std::mem::swap(&mut job.lines, &mut self.lines);
+        job.ui = ui;
+        job.clear = ClearColour::FIELD;
+        job.resize = self.pending_resize.take();
+        job.vsync = self.pending_vsync.take();
+        job.terrain = self.pending_terrain.take();
+        job.clear_terrain = std::mem::take(&mut self.pending_clear_terrain);
+        job.atlases.append(&mut self.pending_atlases);
+        host.submit(job);
+        self.last_submit = Some(Instant::now());
+        if let Some(e) = host.stats().error {
+            eprintln!("fatal render error: {e}");
+            std::process::exit(1);
         }
     }
 
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
+        // T3-030 pacing: the previous job must have been picked up, or one
+        // display period must have passed (then it is replaced and counted).
+        if let (Some(host), Some(t)) = (self.renderer.as_ref(), self.last_submit) {
+            host.wait_taken(t + self.frame_period);
+        }
         let now = Instant::now();
         let dt = self
             .last_frame
@@ -1041,6 +1124,14 @@ impl App {
             match &self.state {
                 AppState::Battle(session) => {
                     let mut stats = self.profiler.stats();
+                    stats.build_ms = self.build_ms;
+                    if let Some(host) = self.renderer.as_ref() {
+                        let rs = host.stats();
+                        stats.render_ms = rs.render_ms;
+                        stats.render_fps = rs.fps;
+                        stats.frames_dropped = rs.dropped;
+                        stats.render_thread = host.is_threaded();
+                    }
                     stats.soldiers = self.snapshot.counts.soldiers;
                     stats.regiments = self.snapshot.counts.regiments;
                     stats.visible_soldiers = self.snapshot.counts.visible_soldiers;
@@ -1215,29 +1306,18 @@ impl App {
                 }
             }
         }
-        let mut paint = ui_out.as_mut().map(|o| EguiPaint {
-            textures_delta: &mut o.textures_delta,
-            primitives: &o.primitives,
+        let ui_frame = ui_out.map(|o| UiFrame {
+            textures_delta: o.textures_delta,
+            primitives: o.primitives,
             pixels_per_point: o.pixels_per_point,
         });
-        let empty = SpriteScene::default();
-        let (sprites, camera) = match (&self.bench, self.state.is_battle()) {
-            (Some(bench), _) => (&bench.scene, None),
-            (None, true) => (&self.scene, self.camera),
-            (None, false) => (&empty, None),
+        let build_ms = now.elapsed().as_secs_f32() * 1000.0;
+        self.build_ms = if self.frames == 0 {
+            build_ms
+        } else {
+            self.build_ms * 0.9 + build_ms * 0.1
         };
-        let frame_scene = FrameScene {
-            clear: ClearColour::FIELD,
-            camera,
-            sprites,
-            lines: &self.lines,
-        };
-        if let Some(renderer) = self.renderer.as_mut()
-            && let Err(e) = renderer.render(&frame_scene, paint.as_mut())
-        {
-            eprintln!("fatal render error: {e}");
-            std::process::exit(1);
-        }
+        self.submit_frame(ui_frame);
 
         self.input.end_frame();
         self.frames += 1;
@@ -1468,7 +1548,20 @@ impl ApplicationHandler for App {
             }
         };
         let size = window.inner_size();
-        match Renderer::new(window.clone(), size.width, size.height) {
+        self.surface_size = (size.width.max(1), size.height.max(1));
+        if let Some(mhz) = window
+            .current_monitor()
+            .and_then(|m| m.refresh_rate_millihertz())
+            .filter(|mhz| *mhz > 0)
+        {
+            self.frame_period = Duration::from_secs_f64(1000.0 / f64::from(mhz));
+        }
+        match RenderHost::new(
+            window.clone(),
+            size.width,
+            size.height,
+            self.launch.single_thread_render,
+        ) {
             Ok(r) => self.renderer = Some(r),
             Err(e) => {
                 eprintln!("cannot initialise the renderer: {e}");
@@ -1487,9 +1580,8 @@ impl ApplicationHandler for App {
         // T2-091: vsync and fullscreen from the settings file.
         self.apply_window_settings();
         if self.launch.bench_sprites {
-            let renderer = self.renderer.as_mut().expect("renderer exists");
-            renderer.set_vsync(false);
-            let (w, h) = renderer.size();
+            self.pending_vsync = Some(false);
+            let (w, h) = self.surface_size;
             self.bench = Some(SpriteBench::new(&self.atlases, w as f32, h as f32));
         }
         event_loop.set_control_flow(ControlFlow::Poll);
@@ -1507,9 +1599,8 @@ impl ApplicationHandler for App {
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {
-                if let Some(r) = self.renderer.as_mut() {
-                    r.resize(size.width, size.height);
-                }
+                self.surface_size = (size.width.max(1), size.height.max(1));
+                self.pending_resize = Some(self.surface_size);
             }
             WindowEvent::RedrawRequested => self.frame(event_loop),
             _ => {}
@@ -1520,5 +1611,10 @@ impl ApplicationHandler for App {
         if let Some(w) = self.window.as_ref() {
             w.request_redraw();
         }
+    }
+
+    /// The render thread joins while the window still exists (T3-030).
+    fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
+        self.renderer = None;
     }
 }

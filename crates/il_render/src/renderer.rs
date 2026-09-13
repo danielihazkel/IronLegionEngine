@@ -12,6 +12,7 @@ use crate::egui_pass::{EguiPaint, EguiPass};
 use crate::lines::{LinePipeline, LineScene};
 use crate::sprite::{SpritePipeline, SpriteScene};
 use crate::terrain::{TerrainGlobals, TerrainGpu, TerrainMesh, TerrainPipeline};
+use crate::thread::FrameJob;
 use il_data::SpriteSet;
 
 /// Depth attachment format shared by every pipeline.
@@ -36,6 +37,8 @@ pub enum RenderError {
     SurfaceConfig,
     #[error(transparent)]
     Atlas(#[from] AtlasError),
+    #[error("the render thread could not be spawned")]
+    ThreadStopped,
 }
 
 /// Linear-space clear colour.
@@ -247,13 +250,23 @@ impl Renderer {
     ) -> Result<AtlasId, RenderError> {
         let path = atlas_path(set, assets_root);
         let image = Rgba8Image::load_png(&path)?;
+        self.upload_atlas(set, &image)
+    }
+
+    /// Uploads an already decoded sheet (T3-030: the decode happens on the
+    /// main thread, the upload where the device lives).
+    pub fn upload_atlas(
+        &mut self,
+        set: &SpriteSet,
+        image: &Rgba8Image,
+    ) -> Result<AtlasId, RenderError> {
         let atlas = Atlas::upload(
             &self.device,
             &self.queue,
             &self.sprites.atlas_layout,
             set,
-            &image,
-            &path,
+            image,
+            Path::new(&set.atlas),
         )?;
         self.atlases.push(atlas);
         Ok(AtlasId(self.atlases.len() as u32 - 1))
@@ -274,6 +287,36 @@ impl Renderer {
 
     pub fn has_terrain(&self) -> bool {
         self.terrain.is_some()
+    }
+
+    /// Applies what a job carries (resize, vsync, terrain, sheets) and draws
+    /// its frame (T3-030): the one path both the render thread and the
+    /// single-thread mode take.
+    pub fn render_job(&mut self, job: &mut FrameJob) -> Result<(), RenderError> {
+        if let Some((w, h)) = job.resize.take() {
+            self.resize(w, h);
+        }
+        if let Some(on) = job.vsync.take() {
+            self.set_vsync(on);
+        }
+        if job.clear_terrain {
+            self.clear_terrain();
+            job.clear_terrain = false;
+        }
+        if let Some(mesh) = job.terrain.take() {
+            self.set_terrain(&mesh);
+        }
+        for upload in job.atlases.drain(..) {
+            self.upload_atlas(&upload.set, &upload.image)?;
+        }
+        let scene = FrameScene {
+            clear: job.clear,
+            camera: job.camera,
+            sprites: &job.sprites,
+            lines: &job.lines,
+        };
+        let mut paint = job.ui.as_mut().map(EguiPaint::from);
+        self.render(&scene, paint.as_mut())
     }
 
     /// Clears to `frame.clear`, draws the terrain, the sprite scene and the

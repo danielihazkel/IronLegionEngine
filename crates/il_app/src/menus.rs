@@ -256,10 +256,11 @@ impl App {
         self.apply_window_settings();
     }
 
-    /// Vsync and fullscreen from the settings, once the window exists.
+    /// Vsync and fullscreen from the settings, once the window exists
+    /// (vsync travels with the next frame job, T3-030).
     pub(crate) fn apply_window_settings(&mut self) {
-        if let Some(r) = self.renderer.as_mut() {
-            r.set_vsync(self.launch.settings.vsync && !self.launch.bench_sprites);
+        if self.renderer.is_some() {
+            self.pending_vsync = Some(self.launch.settings.vsync && !self.launch.bench_sprites);
         }
         if let Some(w) = self.window.as_ref() {
             let want = self.launch.settings.fullscreen;

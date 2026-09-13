@@ -136,5 +136,8 @@ mod tests {
         p.frame(0.016, 1);
         assert!((p.stats().frame_ms - 16.0).abs() < 0.01);
         assert_eq!(p.stats().ticks_last_frame, 1);
+        // T3-030: the render rows are the app's to fill from the host.
+        let s = p.stats();
+        assert!(!s.render_thread && s.build_ms == 0.0 && s.frames_dropped == 0);
     }
 }

@@ -2,8 +2,9 @@
 //!
 //! Phase 1 scope: window surface and device (T1-050), instanced sprites
 //! (T1-051), isometric camera and interpolation (T1-052), terrain (T1-053),
-//! debug overlays (T1-054), and the egui paint pass (T1-060). The renderer
-//! only ever reads simulation state through `BattleView` (SAD §5.2).
+//! debug overlays (T1-054), and the egui paint pass (T1-060). Phase 3: the
+//! render thread (T3-030). The renderer only ever reads simulation state
+//! through `BattleView` (SAD §5.2).
 
 pub mod atlas;
 pub mod camera;
@@ -15,8 +16,9 @@ pub mod scene;
 pub mod snapshot;
 pub mod sprite;
 pub mod terrain;
+pub mod thread;
 
-pub use atlas::{Atlas, AtlasError, AtlasId, anim_column, atlas_path};
+pub use atlas::{Atlas, AtlasError, AtlasId, Rgba8Image, anim_column, atlas_path};
 pub use camera::Camera;
 pub use debug::{DebugFlags, build_debug_lines};
 pub use egui_pass::EguiPaint;
@@ -28,3 +30,6 @@ pub use snapshot::{
 };
 pub use sprite::{SpriteBatch, SpriteInstance, SpriteScene};
 pub use terrain::{TerrainMesh, TerrainVertex, deployment_outlines, ghost_markers, ground_height};
+pub use thread::{
+    AtlasUpload, DirectHost, FrameJob, RenderHost, RenderStats, RenderThread, UiFrame,
+};

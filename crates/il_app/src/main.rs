@@ -75,6 +75,10 @@ struct Args {
     /// the settings file's `saves_dir` (default `saves`) when absent.
     #[arg(long)]
     saves_dir: Option<PathBuf>,
+    /// Keep the renderer on the main thread instead of the render thread
+    /// (T3-030): for debugging, or a machine whose surface must stay there.
+    #[arg(long)]
+    single_thread_render: bool,
 }
 
 /// With the `dev` feature the app watches the mod folders and swaps
@@ -140,6 +144,7 @@ fn main() -> anyhow::Result<()> {
         settings: user_settings,
         settings_path,
         mute: args.mute,
+        single_thread_render: args.single_thread_render,
     };
     let state = match (&args.replay, &args.scenario) {
         (Some(replay), _) => AppState::Battle(Box::new(replay_io::load_replay(

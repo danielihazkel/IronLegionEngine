@@ -1,5 +1,5 @@
 //! Profiler overlay (T1-060, REQ-TOOL-003, SAD §9.3): per-stage tick time,
-//! frame time, entity counts. The numbers come from the app, which owns the
+//! frame time, the two threads' frame rows (T3-030), entity counts. The numbers come from the app, which owns the
 //! clock; this module only draws them.
 
 use std::fmt::Display;
@@ -33,6 +33,14 @@ pub struct ProfilerStats {
     pub ticks_last_frame: u32,
     /// Wall seconds the accumulator is behind, as a fraction of a tick.
     pub accumulator_alpha: f32,
+    /// T3-030: the main thread's frame build (to the hand-over) and the
+    /// render side's frame time, presented rate and dropped jobs.
+    pub build_ms: f32,
+    pub render_ms: f32,
+    pub render_fps: f32,
+    pub frames_dropped: u64,
+    /// The renderer runs on its own thread (else inline on the main thread).
+    pub render_thread: bool,
 }
 
 /// Draws the overlay window. Returns nothing; the caller decides visibility.
@@ -52,6 +60,23 @@ pub fn profiler_overlay(ctx: &egui::Context, locale: &Locale, stats: &ProfilerSt
                     ("mean", &format!("{:.2}", stats.tick_mean_ms)),
                     ("max", &format!("{:.2}", stats.tick_max_ms)),
                     ("ticks", &stats.ticks_sampled),
+                ],
+            ));
+            ui.label(locale.fmt(
+                "il.profiler.render",
+                &[
+                    ("build", &format!("{:.2}", stats.build_ms) as &dyn Display),
+                    (
+                        "where",
+                        &locale.get(if stats.render_thread {
+                            "il.profiler.render_thread"
+                        } else {
+                            "il.profiler.render_main"
+                        }),
+                    ),
+                    ("render", &format!("{:.2}", stats.render_ms)),
+                    ("fps", &format!("{:.0}", stats.render_fps)),
+                    ("dropped", &stats.frames_dropped),
                 ],
             ));
             ui.label(locale.fmt(
