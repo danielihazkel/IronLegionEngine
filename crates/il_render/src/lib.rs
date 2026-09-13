@@ -3,8 +3,8 @@
 //! Phase 1 scope: window surface and device (T1-050), instanced sprites
 //! (T1-051), isometric camera and interpolation (T1-052), terrain (T1-053),
 //! debug overlays (T1-054), and the egui paint pass (T1-060). Phase 3: the
-//! render thread (T3-030). The renderer only ever reads simulation state
-//! through `BattleView` (SAD §5.2).
+//! render thread (T3-030) and the level-of-detail tiers (T3-031). The
+//! renderer only ever reads simulation state through `BattleView` (SAD §5.2).
 
 pub mod atlas;
 pub mod camera;
@@ -24,9 +24,11 @@ pub use debug::{DebugFlags, build_debug_lines};
 pub use egui_pass::EguiPaint;
 pub use lines::{LineScene, LineVertex};
 pub use renderer::{ClearColour, FrameScene, RenderError, Renderer};
-pub use scene::{SetAtlas, scene_from_snapshot, side_tint};
+pub use scene::{SetAtlas, block_axes, block_tint, scene_from_snapshot, side_tint};
 pub use snapshot::{
-    Corpse, EntityCounts, RegimentBlock, RenderSnapshot, SnapshotInput, SoldierInst, build_snapshot,
+    BLOCK_SET_NAME, BlockInst, Corpse, DETAIL_Z1, DETAIL_Z2, DetailTier, EntityCounts,
+    RegimentBlock, RenderSnapshot, SnapshotInput, SoldierInst, block_set_index, build_snapshot,
+    detail_tier,
 };
 pub use sprite::{SpriteBatch, SpriteInstance, SpriteScene};
 pub use terrain::{TerrainMesh, TerrainVertex, deployment_outlines, ghost_markers, ground_height};

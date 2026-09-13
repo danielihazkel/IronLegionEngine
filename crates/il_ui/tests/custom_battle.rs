@@ -218,6 +218,8 @@ fn the_menu_screens_draw_headless() {
             keys: vec!["H".into(), "J".into()],
             default_keys: vec!["H".into()],
         }],
+        detail_z1: 24.0,
+        detail_z2: 8.0,
     });
     settings.tab = il_ui::Tab::Bindings;
     settings.capturing = Some(il_ui::Capture { row: 0, slot: 1 });

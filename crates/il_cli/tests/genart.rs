@@ -13,7 +13,8 @@ fn game_root() -> std::path::PathBuf {
 #[test]
 fn committed_sheets_match_the_generator() {
     let artifacts = il_cli::genart::artifacts().expect("generation succeeds");
-    assert_eq!(artifacts.len(), il_cli::genart::CATEGORIES.len() * 2);
+    // One PNG and one table per category, plus the block sheet (T3-031).
+    assert_eq!(artifacts.len(), il_cli::genart::CATEGORIES.len() * 2 + 2);
     for (rel, bytes) in artifacts {
         let path = game_root().join(&rel);
         let mut on_disk = std::fs::read(&path)
@@ -46,4 +47,22 @@ fn sheets_have_opaque_bodies_and_transparent_corners() {
     let body = at(ox, oy - 12);
     assert_eq!(body[3], 255, "body centre is opaque");
     assert!(body[0] < 120, "the category mark is dark on the body");
+}
+
+/// T3-031: the block sheet is one frame with a transparent margin, a dark
+/// outline, a lighter front band along the top and a flat body.
+#[test]
+fn block_sheet_has_a_front_band_and_an_outline() {
+    let n = il_cli::genart::BLOCK_FRAME;
+    let rgba = il_cli::genart::render_block_sheet();
+    assert_eq!(rgba.len(), (n * n * 4) as usize);
+    let at = |x: u32, y: u32| {
+        let i = ((y * n + x) * 4) as usize;
+        [rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]]
+    };
+    assert_eq!(at(0, 0)[3], 0, "margin is transparent");
+    assert_eq!(at(2, 2), [28, 28, 28, 255], "outline");
+    assert_eq!(at(n / 2, 6), [240, 240, 240, 235], "front band");
+    assert_eq!(at(n / 2, n / 2), [200, 200, 200, 235], "body");
+    assert!(il_cli::genart::block_frame_table().contains("rome:sprites_blocks"));
 }

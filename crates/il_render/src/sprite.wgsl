@@ -1,7 +1,10 @@
 // Instanced sprite pipeline (T1-051, TDD §10.1).
 // One quad per instance; position is already projected to screen pixels on
 // the CPU, depth comes from the projected y so the depth buffer gives
-// painter's order without a CPU sort.
+// painter's order without a CPU sort. T3-031: with flag bit 2 the instance
+// is a block quad (always frame 0 of its sheet) whose two screen-space axes
+// arrive packed as i16 quarter-pixels in the frame and reserved words, so a
+// regiment's rank block draws as the parallelogram its rectangle projects to.
 
 struct Globals {
     screen: vec2<f32>,
@@ -23,10 +26,13 @@ struct AtlasInfo {
 struct Instance {
     @location(0) pos: vec2<f32>,
     @location(1) depth: f32,
+    // Sprite: the atlas column and facing row. Block: the x axis (two i16).
     @location(2) frame_facing: u32,
     @location(3) tint: vec4<f32>,
     @location(4) scale: f32,
     @location(5) flags: u32,
+    // Block: the y axis (two i16); unused for sprites.
+    @location(6) axis_y: u32,
 };
 
 struct VsOut {
@@ -48,20 +54,35 @@ fn corner(i: u32) -> vec2<f32> {
     }
 }
 
+// An axis packed by `SpriteInstance::pack_axis`: quarter pixels as i16.
+fn unpack_axis(bits: u32) -> vec2<f32> {
+    return unpack2x16snorm(bits) * (32767.0 / 4.0);
+}
+
 @vertex
 fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     let c = corner(vi);
-    let frame = f32(inst.frame_facing & 0xffffu);
-    let facing = f32((inst.frame_facing >> 16u) & 0xffu);
+    let block = (inst.flags & 4u) != 0u;
 
-    let offset = (c * atlas.frame - atlas.origin) * inst.scale;
-    let screen = inst.pos + offset;
+    var screen: vec2<f32>;
+    var cell: vec2<f32>;
+    if (block) {
+        // The quad centre plus the axes spanning the whole quad; frame 0.
+        let ax = unpack_axis(inst.frame_facing);
+        let ay = unpack_axis(inst.axis_y);
+        screen = inst.pos + (c.x - 0.5) * ax + (c.y - 0.5) * ay;
+        cell = vec2<f32>(0.0, 0.0);
+    } else {
+        screen = inst.pos + (c * atlas.frame - atlas.origin) * inst.scale;
+        cell = vec2<f32>(f32(inst.frame_facing & 0xffffu),
+                         f32((inst.frame_facing >> 16u) & 0xffu));
+    }
     let ndc = vec2<f32>(screen.x / globals.screen.x * 2.0 - 1.0,
                         1.0 - screen.y / globals.screen.y * 2.0);
 
     var out: VsOut;
     out.clip = vec4<f32>(ndc, inst.depth, 1.0);
-    out.uv = (vec2<f32>(frame, facing) + c) * atlas.frame * atlas.inv_size;
+    out.uv = (cell + c) * atlas.frame * atlas.inv_size;
     out.tint = inst.tint;
     out.flags = inst.flags;
     return out;

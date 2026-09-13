@@ -123,6 +123,10 @@
       fullscreen: "Fullscreen (borderless)",
       threads: "Simulation threads",
       threads_note: "The thread count applies to the next battle.",
+      // T3-031: the level-of-detail thresholds (camera pixels per metre).
+      detail_z1: "Detailed soldiers from zoom",
+      detail_z2: "Regiment blocks below zoom",
+      detail_note: "Zoom is camera pixels per metre (2 to 96). Above the first value every soldier is drawn and animated; between them soldiers are drawn without animation; below the second each regiment is one block and projectiles and corpses are not drawn.",
       master: "Master volume",
       effects: "Effects volume",
       music: "Music volume",
@@ -159,6 +163,8 @@
       title: "Events",
       none: "no events yet",
     },
+    // The level-of-detail tiers (T3-031), shown by the profiler.
+    lod: { detailed: "detailed", reduced: "reduced", aggregation: "aggregation" },
     profiler: {
       title: "Profiler",
       frame: "frame {ms} ms ({fps} FPS) · tick {last} ms last / {mean} mean / {max} max over {ticks} ticks",
@@ -166,7 +172,7 @@
       render: "main: build {build} ms · {where}: {render} ms, {fps} FPS presented, {dropped} dropped",
       render_thread: "render thread",
       render_main: "render on the main thread",
-      counts: "{soldiers} soldiers ({drawn} drawn) · {regiments} regiments · {ticks} ticks this frame · alpha {alpha}",
+      counts: "{soldiers} soldiers ({drawn} drawn) · {regiments} regiments · {ticks} ticks this frame · alpha {alpha} · {tier} tier, {blocks} blocks",
       stage: "stage",
       last: "last ms",
       mean: "mean ms",

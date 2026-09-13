@@ -1,5 +1,6 @@
 //! The settings screen (T2-091, REQ-UI-007, REQ-INP-005; plan decision 13,
-//! I10): Video (UI scale, vsync, fullscreen, sim threads), Audio (the
+//! I10): Video (UI scale, vsync, fullscreen, sim threads, the two
+//! level-of-detail thresholds of T3-031), Audio (the
 //! volumes T2-100 will read) and Bindings (every action with its chords;
 //! click a chord to capture the next key or mouse chord, Reset restores the
 //! mods' default, a chord bound twice is flagged). Apply takes effect at
@@ -38,7 +39,14 @@ pub struct SettingsDraft {
     pub effects: f32,
     pub music: f32,
     pub bindings: Vec<BindingRow>,
+    /// The LOD thresholds, camera pixels per metre (T3-031; the app keeps
+    /// `detail_z1 > detail_z2` when it applies them).
+    pub detail_z1: f32,
+    pub detail_z2: f32,
 }
+
+/// The slider range of the LOD thresholds: the camera's zoom range.
+pub const DETAIL_RANGE: (f32, f32) = (2.0, 96.0);
 
 /// A chord slot being captured: the row and the slot (`keys.len()` = a new
 /// chord).
@@ -210,8 +218,26 @@ fn video_tab(ui: &mut egui::Ui, state: &mut SettingsState, l: &Locale) {
                 state.dirty = true;
             }
             ui.end_row();
+            for (key, v) in [
+                ("il.settings.detail_z1", &mut d.detail_z1),
+                ("il.settings.detail_z2", &mut d.detail_z2),
+            ] {
+                ui.label(l.get(key));
+                if ui
+                    .add(
+                        egui::Slider::new(v, DETAIL_RANGE.0..=DETAIL_RANGE.1)
+                            .logarithmic(true)
+                            .step_by(0.5),
+                    )
+                    .changed()
+                {
+                    state.dirty = true;
+                }
+                ui.end_row();
+            }
         });
     ui.weak(l.get("il.settings.threads_note"));
+    ui.weak(l.get("il.settings.detail_note"));
 }
 
 fn audio_tab(ui: &mut egui::Ui, state: &mut SettingsState, l: &Locale) {

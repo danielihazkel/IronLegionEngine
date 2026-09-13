@@ -1,14 +1,18 @@
 //! `build_snapshot` (T1-052): interpolation, culling and side lookup against
-//! a real `BattleWorld` built from the flagship content.
+//! a real `BattleWorld` built from the flagship content; the LOD tiers and
+//! the aggregation blocks (T3-031).
 
 use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::Arc;
 
 use glam::Vec2;
-use il_core::{S, Scalar, V2};
+use il_core::{S, Scalar, SoldierId, Tick, V2};
 use il_data::Registries;
-use il_render::{Camera, RenderSnapshot, SnapshotInput, build_snapshot};
+use il_render::{
+    Camera, Corpse, DETAIL_Z1, DETAIL_Z2, DetailTier, RenderSnapshot, SnapshotInput, build_snapshot,
+};
+use il_sim_battle::components::{Fsm, SoldierState};
 use il_sim_battle::{BattleSetup, BattleWorld};
 
 const SCREEN: Vec2 = Vec2::new(1280.0, 800.0);
@@ -46,7 +50,132 @@ fn input(
         selected,
         corpses: &[],
         observer_side: None,
+        detail_z1: DETAIL_Z1,
+        detail_z2: DETAIL_Z2,
+        block_set: None,
     }
+}
+
+/// The block sheet's registry index (`rome:sprites_blocks`, T3-031).
+fn block_set(world: &BattleWorld) -> Option<u16> {
+    il_render::block_set_index(world.registries())
+}
+
+fn corpses(n: u32) -> Vec<Corpse> {
+    (0..n)
+        .map(|i| Corpse {
+            id: SoldierId(i),
+            pos: [320.0, 150.0],
+            side: 0,
+            sprite_set: 0,
+            facing8: 0,
+            died: Tick(0),
+        })
+        .collect()
+}
+
+/// T3-031: at the aggregation tier every regiment in formation is one block
+/// with its living count, no soldier draws, and a routing soldier still
+/// draws as a sprite while its block counts one fewer.
+#[test]
+fn far_zoom_aggregates_regiments_into_blocks_and_keeps_stragglers() {
+    let mut world = world();
+    let blocks = block_set(&world).expect("the flagship content has a block sheet");
+    let rows: Vec<_> = world.view().regiments().collect();
+    let selected = BTreeSet::from([rows[0].id]);
+    let mut camera = Camera::new(Vec2::new(320.0, 150.0));
+    camera.zoom = 4.0;
+    let mut far = RenderSnapshot::default();
+    let mut inp = input(camera, 0.0, &selected);
+    inp.block_set = Some(blocks);
+    build_snapshot(&world.view(), &inp, &mut far);
+    assert_eq!(far.tier, DetailTier::Aggregation);
+    assert!(far.soldiers.is_empty(), "nobody draws as a sprite");
+    assert_eq!(far.blocks.len(), 2);
+    assert_eq!(far.counts.blocks, 2);
+    assert_eq!(far.counts.visible_soldiers, 0);
+    assert_eq!(far.counts.soldiers, 14);
+    for (b, r) in far.blocks.iter().zip(&rows) {
+        assert_eq!(b.count, 7, "six soldiers and the general");
+        assert_eq!(b.ranks, r.ranks);
+        assert_eq!(b.files, r.files);
+        assert_eq!(b.capacity, u16::from(r.ranks) * r.files);
+        assert!(b.spacing[0] > 0.0 && b.spacing[1] > 0.0);
+        assert_eq!(b.side, r.side);
+    }
+    assert!(far.blocks[0].selected && !far.blocks[1].selected);
+
+    // Without a block sheet the far tier falls back to reduced sprites.
+    inp.block_set = None;
+    build_snapshot(&world.view(), &inp, &mut far);
+    assert_eq!(far.tier, DetailTier::Aggregation);
+    assert_eq!(far.soldiers.len(), 14);
+    assert!(far.blocks.is_empty());
+
+    // One soldier routs: it draws, its block counts six.
+    let routed = {
+        let ecs = world.ecs_mut();
+        let mut q = ecs.query::<(&il_sim_battle::components::Soldier, &mut Fsm)>();
+        let (s, mut fsm) = q.iter_mut(ecs).next().expect("a soldier");
+        fsm.state = SoldierState::Routing;
+        s.regiment
+    };
+    world.recompute_hash();
+    inp.block_set = Some(blocks);
+    build_snapshot(&world.view(), &inp, &mut far);
+    assert_eq!(far.soldiers.len(), 1, "the router draws as a sprite");
+    let regiments = &far.regiments;
+    let i = regiments.iter().position(|r| r.id == routed).unwrap();
+    let block = far
+        .blocks
+        .iter()
+        .find(|b| b.anchor == regiments[i].anchor)
+        .expect("the router's regiment still has a block");
+    assert_eq!(block.count, 6);
+    assert_eq!(
+        far.blocks.iter().map(|b| u32::from(b.count)).sum::<u32>(),
+        13
+    );
+}
+
+/// T3-031 (REQ-RNDR-009): corpses thin to every fourth at the reduced tier
+/// and vanish at the aggregation tier; the detailed tier draws them all.
+#[test]
+fn corpses_thin_with_the_tier() {
+    let world = world();
+    let blocks = block_set(&world);
+    let view = world.view();
+    let selected = BTreeSet::new();
+    let corpses = corpses(8);
+    let mut snap = RenderSnapshot::default();
+    let mut camera = Camera::new(Vec2::new(320.0, 150.0));
+
+    camera.zoom = Camera::MAX_ZOOM;
+    let mut inp = input(camera, 0.0, &selected);
+    inp.corpses = &corpses;
+    build_snapshot(&view, &inp, &mut snap);
+    assert_eq!(snap.tier, DetailTier::Detailed);
+    assert_eq!(snap.soldiers.iter().filter(|s| s.corpse).count(), 8);
+
+    camera.zoom = Camera::DEFAULT_ZOOM;
+    let mut inp = input(camera, 0.0, &selected);
+    inp.corpses = &corpses;
+    build_snapshot(&view, &inp, &mut snap);
+    assert_eq!(snap.tier, DetailTier::Reduced);
+    assert_eq!(
+        snap.soldiers.iter().filter(|s| s.corpse).count(),
+        2,
+        "ids 0 and 4"
+    );
+    assert_eq!(snap.soldiers.iter().filter(|s| !s.corpse).count(), 14);
+
+    camera.zoom = 4.0;
+    let mut inp = input(camera, 0.0, &selected);
+    inp.corpses = &corpses;
+    inp.block_set = blocks;
+    build_snapshot(&view, &inp, &mut snap);
+    assert_eq!(snap.tier, DetailTier::Aggregation);
+    assert!(snap.soldiers.is_empty());
 }
 
 #[test]

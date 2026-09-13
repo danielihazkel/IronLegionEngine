@@ -107,13 +107,15 @@ pub fn draft_from(settings: &Settings, regs: &Registries) -> SettingsDraft {
         effects: settings.volume.effects,
         music: settings.volume.music,
         bindings,
+        detail_z1: settings.detail_z1,
+        detail_z2: settings.detail_z2,
     }
 }
 
 /// The settings a draft means: overrides only for rows that differ from the
 /// mods' defaults.
 pub fn settings_from(draft: &SettingsDraft, base: &Settings) -> Settings {
-    Settings {
+    let mut settings = Settings {
         ui_scale: draft
             .ui_scale
             .clamp(settings::UI_SCALE_RANGE.0, settings::UI_SCALE_RANGE.1),
@@ -136,7 +138,11 @@ pub fn settings_from(draft: &SettingsDraft, base: &Settings) -> Settings {
             .collect(),
         replays_dir: base.replays_dir.clone(),
         saves_dir: base.saves_dir.clone(),
-    }
+        detail_z1: draft.detail_z1,
+        detail_z2: draft.detail_z2,
+    };
+    settings.clamp_detail();
+    settings
 }
 
 /// The chord the frame's input means, if any: the first key press, else the

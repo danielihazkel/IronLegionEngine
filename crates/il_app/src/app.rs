@@ -144,6 +144,9 @@ pub struct App {
     pub(crate) debug: DebugFlags,
     /// One atlas per sprite set, in registry order.
     pub(crate) atlases: Vec<AtlasId>,
+    /// Registry index of the aggregation block sheet, if the content has
+    /// one (T3-031; looked up when a battle starts).
+    pub(crate) block_set: Option<u16>,
     pub(crate) camera: Option<Camera>,
     pub(crate) snapshot: RenderSnapshot,
     pub(crate) scene: SpriteScene,
@@ -252,6 +255,7 @@ impl App {
             show_profiler: DEV,
             debug: DebugFlags::default(),
             atlases: Vec::new(),
+            block_set: None,
             camera: None,
             snapshot: RenderSnapshot::default(),
             scene: SpriteScene::default(),
@@ -319,6 +323,7 @@ impl App {
         self.battle_ui = BattleUi::default();
         self.replay_written = false;
         self.audio.stop_battle();
+        self.block_set = il_render::block_set_index(&self.regs);
         self.load_terrain();
     }
 
@@ -979,6 +984,10 @@ impl App {
             corpses: session.corpses(),
             // SIM-VIS-004 (T2-060): the local player's fog of war.
             observer_side: session.observer_side(),
+            // REQ-RNDR-004 (T3-031): the tier from the Video settings.
+            detail_z1: self.launch.settings.detail_z1,
+            detail_z2: self.launch.settings.detail_z2,
+            block_set: self.block_set,
         };
         build_snapshot(&session.world.view(), &input, &mut self.snapshot);
         self.lines.clear();
@@ -1021,7 +1030,17 @@ impl App {
             .zip(self.regs.sprite_sets.iter())
             .map(|(id, (_, set))| SetAtlas { atlas: *id, set })
             .collect();
-        scene_from_snapshot(&self.snapshot, screen, time, &sets, &mut self.scene);
+        let block_atlas = self
+            .block_set
+            .and_then(|i| self.atlases.get(usize::from(i)).copied());
+        scene_from_snapshot(
+            &self.snapshot,
+            screen,
+            time,
+            &sets,
+            block_atlas,
+            &mut self.scene,
+        );
     }
 
     /// Assembles this frame's job from the scenes, the UI and whatever is
@@ -1135,6 +1154,16 @@ impl App {
                     stats.soldiers = self.snapshot.counts.soldiers;
                     stats.regiments = self.snapshot.counts.regiments;
                     stats.visible_soldiers = self.snapshot.counts.visible_soldiers;
+                    stats.blocks = self.snapshot.counts.blocks;
+                    stats.tier = self
+                        .regs
+                        .locale
+                        .get(match self.snapshot.tier {
+                            il_render::DetailTier::Detailed => "il.lod.detailed",
+                            il_render::DetailTier::Reduced => "il.lod.reduced",
+                            il_render::DetailTier::Aggregation => "il.lod.aggregation",
+                        })
+                        .to_string();
                     stats.accumulator_alpha = session.alpha();
                     let show_profiler = self.show_profiler;
                     let box_drag = self

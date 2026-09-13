@@ -6,13 +6,14 @@
 //! holds the UI scale, vsync, fullscreen, the sim thread count, the audio
 //! volumes (stored now, read by T2-100), the replay and save folders and a
 //! list of key-binding overrides applied on top of the mods' bindings by
-//! action. Every field has a default so an older file still loads. The sim
-//! never reads it.
+//! action, and the two level-of-detail thresholds (T3-031). Every field has
+//! a default so an older file still loads. The sim never reads it.
 
 use std::path::{Path, PathBuf};
 
 use il_data::json5::{FileId, parse_json5};
 use il_data::{Binding, InputBindings, Registries};
+use il_render::{Camera, DETAIL_Z1, DETAIL_Z2};
 use il_ui::{BindingError, Bindings};
 use serde::{Deserialize, Serialize};
 
@@ -58,6 +59,10 @@ pub struct Settings {
     pub bindings: Vec<BindingOverride>,
     pub replays_dir: String,
     pub saves_dir: String,
+    /// The LOD thresholds in camera pixels per metre (TDD §10.1, T3-031):
+    /// Detailed at or above `detail_z1`, Aggregation below `detail_z2`.
+    pub detail_z1: f32,
+    pub detail_z2: f32,
 }
 
 impl Default for Settings {
@@ -71,7 +76,24 @@ impl Default for Settings {
             bindings: Vec::new(),
             replays_dir: "replays".to_string(),
             saves_dir: "saves".to_string(),
+            detail_z1: DETAIL_Z1,
+            detail_z2: DETAIL_Z2,
         }
+    }
+}
+
+/// The smallest gap kept between the two thresholds.
+pub const DETAIL_GAP: f32 = 0.5;
+
+impl Settings {
+    /// Keeps the thresholds inside the zoom range with `z1 > z2` (TDD §10.1).
+    pub fn clamp_detail(&mut self) {
+        self.detail_z1 = self
+            .detail_z1
+            .clamp(Camera::MIN_ZOOM + DETAIL_GAP, Camera::MAX_ZOOM);
+        self.detail_z2 = self
+            .detail_z2
+            .clamp(Camera::MIN_ZOOM, self.detail_z1 - DETAIL_GAP);
     }
 }
 
@@ -126,6 +148,7 @@ pub fn parse(text: &str) -> anyhow::Result<Settings> {
     let mut s: Settings = serde_json::from_value(value.to_json())?;
     s.ui_scale = s.ui_scale.clamp(UI_SCALE_RANGE.0, UI_SCALE_RANGE.1);
     s.threads = s.threads.max(1);
+    s.clamp_detail();
     Ok(s)
 }
 
@@ -179,6 +202,15 @@ mod tests {
         assert!((old.ui_scale - 1.5).abs() < 1e-6);
         assert!(old.vsync);
         assert_eq!(old.bindings[0].action, "order_halt");
+        assert_eq!((old.detail_z1, old.detail_z2), (DETAIL_Z1, DETAIL_Z2));
+        // T3-031: the thresholds stay inside the zoom range with z1 > z2.
+        let lod = parse("{ detail_z1: 5, detail_z2: 9 }").unwrap();
+        assert_eq!((lod.detail_z1, lod.detail_z2), (5.0, 4.5));
+        let lod = parse("{ detail_z1: 500, detail_z2: 0 }").unwrap();
+        assert_eq!(
+            (lod.detail_z1, lod.detail_z2),
+            (Camera::MAX_ZOOM, Camera::MIN_ZOOM)
+        );
         // Out-of-range values are clamped, not refused.
         let clamped = parse("{ ui_scale: 9, threads: 0 }").unwrap();
         assert!((clamped.ui_scale - UI_SCALE_RANGE.1).abs() < 1e-6);

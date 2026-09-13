@@ -1,7 +1,10 @@
 //! Instanced sprite pipeline: 32-byte instances, a ring of three instance
-//! buffers, one draw per atlas (T1-051, TDD §10.1).
+//! buffers, one draw per atlas (T1-051, TDD §10.1). T3-031: a block quad
+//! (flag bit 2) reuses the frame and reserved words for its two screen axes.
 
 use std::ops::Range;
+
+use glam::Vec2;
 
 use crate::atlas::AtlasId;
 
@@ -9,7 +12,10 @@ use crate::atlas::AtlasId;
 ///
 /// `frame_facing` packs the atlas column in bits 0..16 and the facing row in
 /// bits 16..24. `depth` is the depth-buffer value in `[0, 1]` (smaller wins).
-/// `flags` bit 0 = selected, bit 1 = hovered; the rest are reserved.
+/// `flags` bit 0 = selected, bit 1 = hovered, bit 2 = a block quad (T3-031):
+/// then `pos` is the quad's centre, `frame_facing` its x axis and
+/// `_reserved` its y axis, each two `i16` quarter-pixels (`pack_axis`), the
+/// sheet's frame 0 stretched over the parallelogram they span.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SpriteInstance {
@@ -24,9 +30,42 @@ pub struct SpriteInstance {
 
 impl SpriteInstance {
     pub const SIZE: u64 = 32;
+    pub const FLAG_SELECTED: u32 = 1;
+    pub const FLAG_HOVERED: u32 = 2;
+    /// A block quad (T3-031).
+    pub const FLAG_BLOCK: u32 = 4;
+    /// The largest axis component `pack_axis` keeps, pixels.
+    pub const AXIS_MAX_PX: f32 = 32767.0 / 4.0;
 
     pub fn pack_frame_facing(frame: u32, facing: u8) -> u32 {
         (frame & 0xffff) | (u32::from(facing) << 16)
+    }
+
+    /// A screen-space axis as two `i16` quarter-pixels (`x` low, `y` high),
+    /// what the shader's `unpack2x16snorm` reads back; components clamp to
+    /// `±AXIS_MAX_PX`.
+    pub fn pack_axis(v: Vec2) -> u32 {
+        let q = |x: f32| ((x * 4.0).round().clamp(-32767.0, 32767.0) as i16) as u16 as u32;
+        q(v.x) | (q(v.y) << 16)
+    }
+
+    /// The inverse of `pack_axis` (tests and tools).
+    pub fn unpack_axis(bits: u32) -> Vec2 {
+        let c = |h: u32| f32::from((h & 0xffff) as u16 as i16) / 4.0;
+        Vec2::new(c(bits), c(bits >> 16))
+    }
+
+    /// A block quad centred on `pos` spanning `ax` by `ay` pixels (T3-031).
+    pub fn block(pos: Vec2, depth: f32, ax: Vec2, ay: Vec2, tint: [u8; 4], selected: bool) -> Self {
+        Self {
+            pos: pos.to_array(),
+            depth,
+            frame_facing: Self::pack_axis(ax),
+            tint,
+            scale: 0.0,
+            flags: Self::FLAG_BLOCK | u32::from(selected),
+            _reserved: Self::pack_axis(ay),
+        }
     }
 }
 
@@ -178,6 +217,11 @@ impl SpritePipeline {
                     offset: 24,
                     shader_location: 5,
                 },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Uint32,
+                    offset: 28,
+                    shader_location: 6,
+                },
             ],
         };
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -301,6 +345,43 @@ mod tests {
         let packed = SpriteInstance::pack_frame_facing(3, 7);
         assert_eq!(packed & 0xffff, 3);
         assert_eq!((packed >> 16) & 0xff, 7);
+    }
+
+    #[test]
+    fn axes_pack_to_quarter_pixels_and_clamp() {
+        for v in [
+            Vec2::new(0.0, 0.0),
+            Vec2::new(40.0, -16.0),
+            Vec2::new(1234.25, -0.75),
+            Vec2::new(-8000.0, 8000.0),
+        ] {
+            assert_eq!(SpriteInstance::unpack_axis(SpriteInstance::pack_axis(v)), v);
+        }
+        let rounded = SpriteInstance::unpack_axis(SpriteInstance::pack_axis(Vec2::new(0.1, 0.4)));
+        assert_eq!(rounded, Vec2::new(0.0, 0.5));
+        let clamped = SpriteInstance::unpack_axis(SpriteInstance::pack_axis(Vec2::new(1e6, -1e6)));
+        assert!((clamped.x - SpriteInstance::AXIS_MAX_PX).abs() < 0.01);
+        assert!((clamped.y + SpriteInstance::AXIS_MAX_PX).abs() < 0.01);
+        let b = SpriteInstance::block(
+            Vec2::new(1.0, 2.0),
+            0.5,
+            Vec2::new(40.0, 0.0),
+            Vec2::new(0.0, 16.0),
+            [1, 2, 3, 255],
+            true,
+        );
+        assert_eq!(
+            b.flags,
+            SpriteInstance::FLAG_BLOCK | SpriteInstance::FLAG_SELECTED
+        );
+        assert_eq!(
+            SpriteInstance::unpack_axis(b.frame_facing),
+            Vec2::new(40.0, 0.0)
+        );
+        assert_eq!(
+            SpriteInstance::unpack_axis(b._reserved),
+            Vec2::new(0.0, 16.0)
+        );
     }
 
     #[test]

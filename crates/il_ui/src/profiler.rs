@@ -41,6 +41,10 @@ pub struct ProfilerStats {
     pub frames_dropped: u64,
     /// The renderer runs on its own thread (else inline on the main thread).
     pub render_thread: bool,
+    /// T3-031: the level-of-detail tier this frame drew at (localised) and
+    /// the regiment blocks it drew.
+    pub tier: String,
+    pub blocks: u32,
 }
 
 /// Draws the overlay window. Returns nothing; the caller decides visibility.
@@ -87,6 +91,8 @@ pub fn profiler_overlay(ctx: &egui::Context, locale: &Locale, stats: &ProfilerSt
                     ("regiments", &stats.regiments),
                     ("ticks", &stats.ticks_last_frame),
                     ("alpha", &format!("{:.2}", stats.accumulator_alpha)),
+                    ("tier", &stats.tier),
+                    ("blocks", &stats.blocks),
                 ],
             ));
             ui.separator();

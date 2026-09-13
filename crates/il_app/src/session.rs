@@ -401,12 +401,15 @@ impl BattleSession {
             if let BattleEvent::Ended { result } = e {
                 self.result = Some((**result).clone());
             }
-            if let BattleEvent::SoldierDied { regiment, pos, .. } = e
+            if let BattleEvent::SoldierDied {
+                id, regiment, pos, ..
+            } = e
                 && corpse_ticks > 0
                 && let Some(row) = self.world.view().regiment(*regiment)
             {
                 let regs = self.world.registries();
                 self.corpses.push(Corpse {
+                    id: *id,
                     pos: [pos.x.to_f32_render(), pos.y.to_f32_render()],
                     side: row.side,
                     sprite_set: regs.units.get(row.unit).sprite_set().index() as u16,

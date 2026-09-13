@@ -63,5 +63,6 @@ pub use result::{
 };
 pub use selection::{GROUPS, Selection};
 pub use settings::{
-    BindingRow, Capture, SettingsAction, SettingsDraft, SettingsState, Tab, settings_screen,
+    BindingRow, Capture, DETAIL_RANGE, SettingsAction, SettingsDraft, SettingsState, Tab,
+    settings_screen,
 };
