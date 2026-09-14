@@ -81,9 +81,10 @@ Phase 2's exit checklist in [07](07-tasks-phase-0-2.md#phase-2-exit-checklist) h
   **Done when** the nightly workflow is green on two consecutive nights.
   Built 2026-09-10 (the box waits for the two nights): `SeedOutcome.rejected_by_tick` (ticks with none left out), `FileReport.ai_driven` and `BandReport.rejected_scripted` in `il_cli::bands`, with `ai_driven(&Scenario)` shared by the determinism test; `scenarios.rs` asserts `rejected_scripted == 0`, then runs each AI-driven file a second time under the same options and requires every seed's per-tick rejections, end tick and final hash to match, in the push-time smoke (one seed, 200 ticks) and in the nightly. The nightlies of 2026-09-07 to 2026-09-10 had failed on the old assert with 5 rejected commands over the two AI files (`ai_vs_charge` 1, `ai_vs_passive` 4), and on the passive row itself, which T3-010 left at 36/50 against `min_fraction` 1.0; the owner set the criterion to at least 70 % of 50 seeds the same day (rows 9 and 10 read alike, `ai_vs_charge` also at 50 seeds), recorded in Simulation Spec §15.3, docs/07's exit box and the band files. TDD §17, docs/08 and `nightly.yml` describe the new assert. Local release run of the nightly test on 2026-09-10: 15 pass, 0 fail, `ai_vs_passive` 36/50 and `ai_vs_charge` 41/50, 3 rejected commands (all in the passive file, the same on the second run), 382 s on the target machine. Ticked 2026-09-13: the scheduled nightlies of 2026-09-12 (run 34680907844) and 2026-09-13 (run 34746230209) were green.
 
-- [ ] **T3-012 Phase 2 close-out** · S · Depends T3-010, T3-011
+- [x] **T3-012 Phase 2 close-out** · S · Depends T3-010, T3-011
   The owner records `docs/evidence/phase2/profiler_10k.png` (`cargo run --release -p il_app -- tests/scenarios/perf_10k.json5 --threads 8`, F12 open during the melee); tick the three open boxes of 07's Phase 2 exit checklist with their measurements, tick T2-082 with a pointer to T3-010, mark REQ-AI-003 met in the audit paragraph, and add the "Phase 2 completed" line with the CI run id.
   **Done when** every box in 07's Phase 2 exit checklist is ticked and CI is green on that commit.
+  Done 2026-09-14: the owner's `docs/evidence/phase2/profiler_10k.png` (60 FPS, tick 14.78 ms mean, with `--single-thread-render` so it is the Phase 2 path); 07's three open boxes and its Must audit ticked with the T3-010 numbers and the green nightlies, T2-082 ticked with the pointer to T3-010, REQ-AI-003 marked met, the "Phase 2 completed" line written against CI run 34783604596.
 
 ### WS — workspace, dependencies, specs
 
@@ -214,7 +215,7 @@ Phase 2's exit checklist in [07](07-tasks-phase-0-2.md#phase-2-exit-checklist) h
 - [ ] 32,768 soldiers run without a crash and under 4 GB (T3-025: `memory_32k.md`).
 - [ ] A handcrafted map made in the editor loads in a custom battle (T3-064).
 - [ ] A replay reproduces a recorded battle's final hash at 20k (T3-070, nightly).
-- [ ] Phase 2's open boxes are closed (T3-012).
+- [x] Phase 2's open boxes are closed (T3-012, 2026-09-14).
 - [ ] Every Phase 3 Must requirement is satisfied: REQ-PATH-001 (T3-020/021), REQ-RNDR-004 (T3-031); and the Phase 2 Must carried over, REQ-AI-003 (T3-010). Should requirements delivered: REQ-PERF-003 (T3-024), REQ-PERF-007 (T3-025), REQ-SIM-042 (T3-042), REQ-FORM-008 (T3-040/041), REQ-FORM-009 (T3-043), REQ-RNDR-007 (T3-030), REQ-AUD-002 (T2-100), REQ-MOD-009's editor half and REQ-TOOL-004 (T3-060..064), REQ-SAVE-005 (T2-101, T3-070). Deferred: REQ-TOOL-006 (Could).
 
 ---

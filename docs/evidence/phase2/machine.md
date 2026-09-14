@@ -16,4 +16,4 @@ Numbers from other machines are not comparable with the baseline; record a new o
 
 - `bench_perf_10k.md`: the 10k fight per stage, before and after T2-111.
 - `bands.md`: the Simulation Spec §15.3 band table at the close-out (T2-113).
-- `profiler_10k.png`: the owner's screenshot of `cargo run --release -p il_app -- tests/scenarios/perf_10k.json5 --threads 8` with the profiler (F12) open during the melee (T2-113).
+- `profiler_10k.png`: the owner's screenshot of `cargo run --release -p il_app -- tests/scenarios/perf_10k.json5 --threads 8 --single-thread-render` with the profiler (F12) open (T2-113, taken 2026-09-14 for T3-012; the flag keeps the renderer on the main thread, the Phase 2 path, since T3-030 had landed). It shows 60 FPS at a 16.69 ms frame, the tick 13.55 ms last / 14.78 mean / 18.24 max over 60 ticks, the main thread's 4.58 ms build plus 11.69 ms render, at tick 7,163 in the Pursuit phase with 5,301 soldiers alive (4,492 drawn at zoom 2.0). The threaded counterpart is `../phase3/profiler_10k_threaded.png`.
