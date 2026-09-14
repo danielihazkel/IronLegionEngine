@@ -82,7 +82,7 @@ Developer keys (`dev` feature, on by default):
 
 | Key | Overlay |
 |---|---|
-| `F12` | profiler window and the event panel. The second line of the profiler (T3-030) is the two threads: `main: build X ms` is the main thread's frame build up to the hand-over, then the render side (`render thread`, or `render on the main thread` with `--single-thread-render`) with its frame time, the presented FPS and the dropped jobs. The counts line ends with the level-of-detail tier in use (`detailed`, `reduced`, `aggregation`; T3-031) and the number of regiment blocks drawn |
+| `F12` | profiler window and the event panel. The second line of the profiler (T3-030) is the two threads: `main: build X ms` is the main thread's frame build from the end of the sim step to the hand-over (the sim ticks themselves are the tick figures on the first line), then the render side (`render thread`, or `render on the main thread` with `--single-thread-render`) with its frame time, the presented FPS and the dropped jobs. The counts line ends with the level-of-detail tier in use (`detailed`, `reduced`, `aggregation`; T3-031) and the number of regiment blocks drawn |
 | `F5` | nav grid (impassable cells) |
 | `F6` | formation slots |
 | `F7` | regiment paths |

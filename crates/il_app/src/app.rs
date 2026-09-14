@@ -1098,6 +1098,8 @@ impl App {
         self.input.begin_frame(self.started.elapsed().as_secs_f64());
         let screen = self.screen();
         let time = self.started.elapsed().as_secs_f32();
+        // The profiler's build row starts after the sim step (T3-030).
+        let mut build_start = now;
 
         if let Some(bench) = self.bench.as_mut() {
             if self.frames > 0 {
@@ -1123,6 +1125,7 @@ impl App {
                 self.apply_order_input();
             }
             self.advance_battle(dt);
+            build_start = Instant::now();
             if self.state.session().is_some_and(|s| s.result().is_some()) {
                 self.write_replay_now();
             }
@@ -1344,7 +1347,7 @@ impl App {
             primitives: o.primitives,
             pixels_per_point: o.pixels_per_point,
         });
-        let build_ms = now.elapsed().as_secs_f32() * 1000.0;
+        let build_ms = build_start.elapsed().as_secs_f32() * 1000.0;
         self.build_ms = if self.frames == 0 {
             build_ms
         } else {
