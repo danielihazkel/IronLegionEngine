@@ -54,4 +54,9 @@ regiments of 200 no room to stand in their own formations (SAD §12 T-15). The s
 shape that fights; the AI side still runs Stage 1 for its 51 regiments (0.86 ms).
 
 `profiler_20k.png` (the app at `--threads 8`, F12 open in the melee) is the owner's screenshot for the FPS
-clause; its reading is added here when taken.
+clause, taken 2026-09-14 with the render thread of T3-030 and the LOD tiers of T3-031: tick 2,116, 19,938 alive,
+zoom 2.0 (the aggregation tier, 94 blocks and 318 soldiers drawn); the sim tick 41.1 ms per tick in the title,
+40.5 ms mean and 51.7 max over 60 ticks; the render thread 1.2 ms per frame; 26 frames presented per second
+with the main thread's frame at 60.3 ms holding two ticks. The tick is inside its 50 ms budget on a healthy
+clock; the frame rate is bounded by the sim step on the main thread, not by rendering (SAD §12 T-16,
+`lod_20k.md` for the zoom sweep).
