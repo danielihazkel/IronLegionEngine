@@ -229,6 +229,9 @@ impl App {
         let bindings = load_bindings(&regs, &launch.settings);
         let ui_scale_user = launch.settings.ui_scale;
         let audio = AppAudio::new(launch.mute, &launch.settings.volume);
+        // T3-031: the block sheet, looked up once here so a battle given on
+        // the command line (no transition) has it too.
+        let block_set = il_render::block_set_index(&regs);
         Self {
             state,
             launch,
@@ -255,7 +258,7 @@ impl App {
             show_profiler: DEV,
             debug: DebugFlags::default(),
             atlases: Vec::new(),
-            block_set: None,
+            block_set,
             camera: None,
             snapshot: RenderSnapshot::default(),
             scene: SpriteScene::default(),
@@ -920,6 +923,7 @@ impl App {
             if let Some(regs) = hr.poll() {
                 session.world.replace_registries(regs.clone());
                 self.bindings = load_bindings(&regs, &self.launch.settings);
+                self.block_set = il_render::block_set_index(&regs);
                 self.regs = regs;
             }
             for event in hr.take_events() {
