@@ -76,4 +76,4 @@ was healthy again (see the re-record note below).
 
 - `bench_perf_20k.md`, `profiler_20k.png`: the 20k fight (T3-024).
 - `memory_32k.md`: the 32,768 cap run (T3-025).
-- `profiler_10k_threaded.png`: the render thread (T3-030).
+- `profiler_10k_threaded.png`: the render thread (T3-030). Taken 2026-09-14 by the owner: `cargo run --release -p il_app -- tests/scenarios/perf_10k.json5 --threads 8` at tick 1,967 in the melee (9,884 alive, 9,409 drawn at zoom 2.5): 60 FPS; the render thread's frame 2.20 ms with 129 frames presented per second; the sim tick 28.51 ms mean (30.23 ms in the title's window). The single-thread shot of the same battle (`../phase2/profiler_10k.png`, tick 7,163 in the pursuit phase, 5,301 alive) reads 60 FPS, frame 16.69 ms, tick 14.78 ms mean, main-thread build 4.58 ms plus render 11.69 ms.
