@@ -89,6 +89,44 @@ fn shade_at(map: &LoadedMap, i: u32, j: u32) -> f32 {
     0.45 + 0.55 * diffuse / flat
 }
 
+/// The zone palette: one linear colour per `zone_handles` slot, water at
+/// `WATER_INDEX`.
+fn palette_for(map: &LoadedMap, regs: &Registries) -> [[f32; 4]; 256] {
+    let mut palette = [[0.0f32; 4]; 256];
+    for (k, h) in map.zone_handles.iter().enumerate() {
+        let rgb = regs.zones.get(*h).colour.0;
+        palette[k] = [
+            srgb_to_linear(rgb[0]),
+            srgb_to_linear(rgb[1]),
+            srgb_to_linear(rgb[2]),
+            1.0,
+        ];
+    }
+    palette[usize::from(WATER_INDEX)] = [
+        srgb_to_linear(0x3a),
+        srgb_to_linear(0x6e),
+        srgb_to_linear(0xa5),
+        1.0,
+    ];
+    palette
+}
+
+/// The texel of zone cell `(i, j)`: its zone index, or water where a river
+/// runs and no crossing lies.
+fn texel_at(map: &LoadedMap, regs: &Registries, i: u32, j: u32) -> u8 {
+    let slot = (j * map.zone_cols + i) as usize;
+    let zone = map.zones[slot];
+    let crossing = map
+        .zone_handles
+        .get(usize::from(zone))
+        .is_some_and(|h| regs.zones.get(*h).crossing);
+    if map.river[slot] && !crossing {
+        WATER_INDEX
+    } else {
+        zone
+    }
+}
+
 impl TerrainMesh {
     /// Builds the mesh, zone raster and palette for `map`.
     pub fn build(map: &LoadedMap, regs: &Registries) -> Self {
@@ -116,38 +154,13 @@ impl TerrainMesh {
             }
         }
 
-        let mut palette = [[0.0f32; 4]; 256];
-        for (k, h) in map.zone_handles.iter().enumerate() {
-            let rgb = regs.zones.get(*h).colour.0;
-            palette[k] = [
-                srgb_to_linear(rgb[0]),
-                srgb_to_linear(rgb[1]),
-                srgb_to_linear(rgb[2]),
-                1.0,
-            ];
-        }
-        palette[usize::from(WATER_INDEX)] = [
-            srgb_to_linear(0x3a),
-            srgb_to_linear(0x6e),
-            srgb_to_linear(0xa5),
-            1.0,
-        ];
+        let palette = palette_for(map, regs);
 
         let row_bytes = Self::padded_row_bytes(map.zone_cols);
         let mut zone_texels = vec![0u8; row_bytes as usize * map.zone_rows as usize];
-        for j in 0..map.zone_rows as usize {
-            for i in 0..map.zone_cols as usize {
-                let slot = j * map.zone_cols as usize + i;
-                let zone = map.zones[slot];
-                let crossing = map
-                    .zone_handles
-                    .get(usize::from(zone))
-                    .is_some_and(|h| regs.zones.get(*h).crossing);
-                zone_texels[j * row_bytes as usize + i] = if map.river[slot] && !crossing {
-                    WATER_INDEX
-                } else {
-                    zone
-                };
+        for j in 0..map.zone_rows {
+            for i in 0..map.zone_cols {
+                zone_texels[(j * row_bytes + i) as usize] = texel_at(map, regs, i, j);
             }
         }
 
@@ -162,6 +175,47 @@ impl TerrainMesh {
             zone_texels,
             palette,
         }
+    }
+
+    /// Re-reads the heights of samples `[i0, i1) × [j0, j1)` from `map` and
+    /// the shading of that block grown by one (the map editor's brush,
+    /// T3-061); the rest of the mesh is untouched.
+    pub fn patch_heights(&mut self, map: &LoadedMap, i0: u32, j0: u32, i1: u32, j1: u32) {
+        let cols = map.height_cols;
+        for j in j0..j1.min(map.height_rows) {
+            for i in i0..i1.min(cols) {
+                self.vertices[(j * cols + i) as usize].height =
+                    map.heights[(j * cols + i) as usize].to_f32_render();
+            }
+        }
+        for j in j0.saturating_sub(1)..(j1 + 1).min(map.height_rows) {
+            for i in i0.saturating_sub(1)..(i1 + 1).min(cols) {
+                self.vertices[(j * cols + i) as usize].shade = shade_at(map, i, j);
+            }
+        }
+    }
+
+    /// Re-reads the zone texels of cells `[i0, i1) × [j0, j1)` from `map`.
+    pub fn patch_zones(
+        &mut self,
+        map: &LoadedMap,
+        regs: &Registries,
+        i0: u32,
+        j0: u32,
+        i1: u32,
+        j1: u32,
+    ) {
+        let row_bytes = self.zone_row_bytes();
+        for j in j0..j1.min(map.zone_rows) {
+            for i in i0..i1.min(map.zone_cols) {
+                self.zone_texels[(j * row_bytes + i) as usize] = texel_at(map, regs, i, j);
+            }
+        }
+    }
+
+    /// Rebuilds the palette after `map.zone_handles` grew.
+    pub fn refresh_palette(&mut self, map: &LoadedMap, regs: &Registries) {
+        self.palette = palette_for(map, regs);
     }
 
     /// Texture rows are padded to wgpu's 256-byte alignment.

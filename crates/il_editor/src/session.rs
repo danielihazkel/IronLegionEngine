@@ -8,21 +8,53 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use glam::Vec2;
-use il_core::Scalar;
-use il_data::{Locale, Registries};
-use il_render::terrain::project;
+use il_core::{S, Scalar};
+use il_data::{ContentId, Locale, Registries};
+use il_render::terrain::{ground_height, project};
 use il_render::{Camera, LineScene, TerrainMesh, deployment_outlines, side_tint};
 use il_sim_battle::{LoadedMap, MapError};
-use il_ui::{Action, Bindings, InputState};
+use il_ui::{Action, Bindings, Gesture, InputState};
 
+use crate::brush::{Block, Falloff, HeightDab, HeightOp, height_dab, zone_dab};
 use crate::document::{History, MapDocument, Saved};
 use crate::panels::{self, PanelAction};
 
-/// The active tool (T3-060: select only; the brushes arrive with T3-061,
-/// the vector tools with T3-062).
+/// The active tool (T3-060 select, T3-061 the brushes; the vector tools
+/// arrive with T3-062). The brushes' parameters live in [`BrushSettings`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
     Select,
+    HeightBrush,
+    ZoneBrush,
+}
+
+/// The brushes' parameters, set in the tool panel (T3-061).
+#[derive(Clone, Debug, PartialEq)]
+pub struct BrushSettings {
+    pub op: HeightOp,
+    pub falloff: Falloff,
+    /// Height brush radius, metres.
+    pub radius: f32,
+    /// Metres per second (Raise, Lower) or approach rate per second.
+    pub strength: f32,
+    /// The zone type the zone brush paints.
+    pub zone: ContentId,
+    /// Zone brush radius, metres.
+    pub zone_radius: f32,
+}
+
+/// Brush radius limits, metres; `editor_brush_grow` / `shrink` step by 25 %.
+pub const BRUSH_MIN_M: f32 = 2.0;
+pub const BRUSH_MAX_M: f32 = 400.0;
+const BRUSH_STEP: f32 = 1.25;
+/// The time a single click's dab counts for, seconds.
+const CLICK_DT: f32 = 0.1;
+const CURSOR: [u8; 4] = [255, 255, 255, 200];
+
+/// A stroke in progress: Flatten's target height.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Stroke {
+    target: f32,
 }
 
 /// What the app hands the session each frame.
@@ -82,6 +114,10 @@ pub struct EditorSession {
     pub quit_armed: bool,
     /// The nav preview overlay (drawn from T3-063).
     pub show_nav: bool,
+    pub brush: BrushSettings,
+    /// The ground point under the cursor this frame.
+    pub cursor_world: Option<Vec2>,
+    stroke: Option<Stroke>,
     camera_framed: bool,
 }
 
@@ -96,6 +132,21 @@ impl EditorSession {
         doc.resolve_zones(&regs);
         let loaded = doc.to_loaded(&regs)?;
         let terrain = TerrainMesh::build(&loaded, &regs);
+        let mut zones: Vec<&ContentId> = regs.zones.all_ids().collect();
+        zones.sort();
+        let zone = zones
+            .iter()
+            .find(|z| z.as_str().ends_with(":forest"))
+            .or(zones.first())
+            .map_or_else(|| doc.def.base_zone.clone(), |z| (*z).clone());
+        let brush = BrushSettings {
+            op: HeightOp::Raise,
+            falloff: Falloff::Smooth,
+            radius: 40.0,
+            strength: 4.0,
+            zone,
+            zone_radius: 16.0,
+        };
         let centre = Vec2::new(
             loaded.width.to_f32_render() * 0.5,
             loaded.height.to_f32_render() * 0.5,
@@ -116,6 +167,9 @@ impl EditorSession {
             menu_open: false,
             quit_armed: false,
             show_nav: false,
+            brush,
+            cursor_world: None,
+            stroke: None,
             camera_framed: false,
         })
     }
@@ -197,7 +251,13 @@ impl EditorSession {
             return None;
         }
         let root = PathBuf::from(self.target.trim());
-        match self.doc.save(&root) {
+        let painted = !self.doc.zone_raster.is_empty();
+        let result = self.doc.save(&root);
+        if painted {
+            // The paint became polygons: resolve them and redraw.
+            self.rebuild_view();
+        }
+        match result {
             Ok(saved) => {
                 self.set_note(
                     l.fmt(
@@ -248,10 +308,194 @@ impl EditorSession {
         if i.pressed(b, Action::DebugNavGrid) {
             self.show_nav = !self.show_nav;
         }
+        let grow = i.pressed(b, Action::EditorBrushGrow);
+        let shrink = i.pressed(b, Action::EditorBrushShrink);
+        if grow || shrink {
+            let f = if grow { BRUSH_STEP } else { 1.0 / BRUSH_STEP };
+            let r = match self.tool {
+                Tool::ZoneBrush => &mut self.brush.zone_radius,
+                _ => &mut self.brush.radius,
+            };
+            *r = (*r * f).clamp(BRUSH_MIN_M, BRUSH_MAX_M);
+        }
+        self.cursor_world = i.cursor().map(|c| self.ground_point(c, input.screen));
+        self.brush_input(input);
         if std::mem::take(&mut self.terrain_dirty) {
             effects.push(EditorEffect::TerrainChanged);
         }
         effects
+    }
+
+    /// The ground point under screen pixel `s`: the height-zero pick
+    /// refined against the terrain so a hill is hit where it is drawn.
+    pub fn ground_point(&self, s: Vec2, screen: Vec2) -> Vec2 {
+        let cam = &self.camera;
+        let mut p = cam.screen_to_world(s, screen);
+        for _ in 0..3 {
+            let h = ground_height(&self.loaded, p);
+            p = cam.screen_to_world(s + Vec2::new(0.0, h * cam.zoom * cam.elevation), screen);
+        }
+        p
+    }
+
+    /// The brushes' gestures: a click is one dab, a drag a stroke of one
+    /// dab per frame; one history step per gesture.
+    fn brush_input(&mut self, input: &EditorInput<'_>) {
+        if !matches!(self.tool, Tool::HeightBrush | Tool::ZoneBrush) {
+            return;
+        }
+        let (b, i) = (input.bindings, input.input);
+        if let Some(drag) = i.drag(b, Action::EditorPaint) {
+            if self.stroke.is_none() && input.pointer_over_ui {
+                return;
+            }
+            let at = self.ground_point(drag.to, input.screen);
+            if self.stroke.is_none() {
+                self.begin_stroke(at);
+            }
+            self.dab(at, input.dt);
+            return;
+        }
+        if self.stroke.is_some() {
+            self.end_stroke();
+        }
+        if input.pointer_over_ui {
+            return;
+        }
+        if let Some(Gesture::Click { pos, .. }) = i.gesture(b, Action::EditorPaint) {
+            let at = self.ground_point(pos, input.screen);
+            self.begin_stroke(at);
+            self.dab(at, CLICK_DT);
+            self.end_stroke();
+        }
+    }
+
+    /// Starts a brush stroke at `at`: one history step, Flatten's target.
+    pub fn begin_stroke(&mut self, at: Vec2) {
+        self.begin_edit();
+        self.stroke = Some(Stroke {
+            target: ground_height(&self.loaded, at),
+        });
+    }
+
+    /// Ends the stroke: the map's mean height follows the new ground.
+    pub fn end_stroke(&mut self) {
+        if self.stroke.take().is_some() {
+            self.loaded.refresh_mean_height();
+            self.doc.dirty = true;
+            self.quit_armed = false;
+        }
+    }
+
+    /// One dab of the active brush at `at` over `dt` seconds; patches the
+    /// sim view and the terrain of the touched block only.
+    pub fn dab(&mut self, at: Vec2, dt: f32) {
+        let Some(stroke) = self.stroke else {
+            return;
+        };
+        match self.tool {
+            Tool::HeightBrush => {
+                let (cols, rows) = self.doc.height_dims();
+                let scale = self.doc.def.heightmap.scale.to_f32_render();
+                let block = height_dab(
+                    &mut self.doc.heights,
+                    cols,
+                    rows,
+                    self.loaded.height_cell.to_f32_render(),
+                    65_535.0 * scale,
+                    &HeightDab {
+                        op: self.brush.op,
+                        falloff: self.brush.falloff,
+                        centre: at,
+                        radius: self.brush.radius,
+                        strength: self.brush.strength,
+                        dt,
+                        target: stroke.target,
+                    },
+                );
+                self.patch_heights(block);
+            }
+            Tool::ZoneBrush => {
+                let (cols, rows) = (self.loaded.zone_cols, self.loaded.zone_rows);
+                let cell = self.loaded.zone_cell.to_f32_render();
+                self.doc.ensure_raster(cols, rows, cell);
+                let known = self.doc.raster_zones.len();
+                let Some(k) = self.doc.raster_value(&self.brush.zone) else {
+                    let regs = self.regs.clone();
+                    self.set_note(
+                        regs.locale.get("il.editor.too_many_zones").to_string(),
+                        true,
+                    );
+                    return;
+                };
+                if self.doc.raster_zones.len() > known {
+                    let Some(h) = self.regs.zones.lookup(&self.brush.zone) else {
+                        return;
+                    };
+                    self.loaded.zone_handles.push(h);
+                    self.terrain.refresh_palette(&self.loaded, &self.regs);
+                }
+                let block = zone_dab(
+                    &mut self.doc.zone_raster,
+                    cols,
+                    rows,
+                    cell,
+                    at,
+                    self.brush.zone_radius,
+                    k,
+                );
+                self.patch_zones(block);
+            }
+            Tool::Select => {}
+        }
+    }
+
+    /// Copies the quantised heights of `block` into the sim view and the
+    /// terrain mesh.
+    fn patch_heights(&mut self, block: Block) {
+        if block.is_empty() {
+            return;
+        }
+        let cols = self.loaded.height_cols;
+        let scale = self.doc.def.heightmap.scale;
+        let scale_f = scale.to_f32_render();
+        for j in block.j0..block.j1 {
+            for i in block.i0..block.i1 {
+                let k = (j * cols + i) as usize;
+                let raw = (self.doc.heights[k] / scale_f).round().clamp(0.0, 65_535.0) as u16;
+                self.loaded.heights[k] = S::from_i32(i32::from(raw)) * scale;
+            }
+        }
+        self.terrain
+            .patch_heights(&self.loaded, block.i0, block.j0, block.i1, block.j1);
+        self.terrain_dirty = true;
+    }
+
+    /// Copies the painted cells of `block` into the sim view and the
+    /// terrain's zone texels.
+    fn patch_zones(&mut self, block: Block) {
+        if block.is_empty() {
+            return;
+        }
+        let cols = self.loaded.zone_cols;
+        for j in block.j0..block.j1 {
+            for i in block.i0..block.i1 {
+                let slot = (j * cols + i) as usize;
+                let k = self.doc.zone_raster[slot];
+                if k != 0 {
+                    self.loaded.zones[slot] = self.doc.loaded_index(k);
+                }
+            }
+        }
+        self.terrain.patch_zones(
+            &self.loaded,
+            &self.regs,
+            block.i0,
+            block.j0,
+            block.i1,
+            block.j1,
+        );
+        self.terrain_dirty = true;
     }
 
     /// Draws the panels and applies their clicks.
@@ -286,7 +530,11 @@ impl EditorSession {
                         effects.push(EditorEffect::QuitToMenu);
                     }
                 }
-                PanelAction::Tool(tool) => self.tool = tool,
+                PanelAction::Tool(tool) => {
+                    self.end_stroke();
+                    self.tool = tool;
+                }
+                PanelAction::Brush(settings) => self.brush = settings,
             }
         }
         if std::mem::take(&mut self.terrain_dirty) {
@@ -351,6 +599,20 @@ impl EditorSession {
             }
         }
         deployment_outlines(map, cam, screen, lines);
+        let radius = match self.tool {
+            Tool::HeightBrush => Some(self.brush.radius),
+            Tool::ZoneBrush => Some(self.brush.zone_radius),
+            Tool::Select => None,
+        };
+        if let (Some(r), Some(c)) = (radius, self.cursor_world) {
+            let ring: Vec<Vec2> = (0..48)
+                .map(|k| {
+                    let a = k as f32 / 48.0 * std::f32::consts::TAU;
+                    c + Vec2::new(a.cos(), a.sin()) * r
+                })
+                .collect();
+            ground_polyline(map, cam, screen, &ring, true, CURSOR, lines);
+        }
         for e in &self.doc.def.reinforcement_edges {
             let tint = side_tint(e.side);
             let b = EDGE_BAND_M;

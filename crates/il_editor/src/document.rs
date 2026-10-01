@@ -12,9 +12,11 @@ use il_core::{S, Scalar, V2};
 use il_data::json5::{FileId, parse_json5};
 use il_data::{
     ContentId, ContentKind, DeploymentZone, HeightmapRef, MapDef, MapEdge, MapSize, Registries,
-    ReinforcementEdge, heightmap_path_for, read_manifest, write_map,
+    ReinforcementEdge, ZonePolygon, heightmap_path_for, read_manifest, write_map,
 };
 use il_sim_battle::{LoadedMap, MapError};
+
+use crate::raster::trace_polygons;
 
 /// The header a map written by the editor carries when its source had none.
 pub const EDITOR_HEADER: &str = "// Written by the Iron Legion map editor.";
@@ -52,7 +54,13 @@ pub enum EditorError {
     },
     #[error("{0}")]
     Map(#[from] MapError),
+    #[error("{count} zone polygons exceed the limit of 254; paint fewer separate patches")]
+    TooManyZones { count: usize },
 }
+
+/// Zone polygons a map may hold (`LoadedMap` indexes them in a `u8` after
+/// the base zone).
+pub const MAX_ZONES: usize = 254;
 
 /// The two files a save wrote.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -70,6 +78,15 @@ pub struct MapDocument {
     pub heights: Vec<f32>,
     /// The source file's leading `//` lines, written back verbatim.
     pub header: Vec<String>,
+    /// The zone brush's raster (T3-061): `raster_cols × raster_rows` cells
+    /// of `raster_cell` metres (`movement.zone_cell`), empty until the first
+    /// dab; 0 is unpainted, `k ≥ 1` paints `raster_zones[k − 1]`. Save bakes
+    /// it into polygons after `def.zones` and clears it.
+    pub zone_raster: Vec<u8>,
+    pub raster_zones: Vec<ContentId>,
+    pub raster_cols: u32,
+    pub raster_rows: u32,
+    pub raster_cell: f32,
     /// Edited since the last save (or since it was created).
     pub dirty: bool,
 }
@@ -149,6 +166,11 @@ impl MapDocument {
             def,
             heights,
             header,
+            zone_raster: Vec::new(),
+            raster_zones: Vec::new(),
+            raster_cols: 0,
+            raster_rows: 0,
+            raster_cell: 0.0,
             dirty: false,
         })
     }
@@ -217,6 +239,11 @@ impl MapDocument {
             def,
             heights: vec![0.0; cols as usize * rows as usize],
             header: vec![EDITOR_HEADER.to_string()],
+            zone_raster: Vec::new(),
+            raster_zones: Vec::new(),
+            raster_cols: 0,
+            raster_rows: 0,
+            raster_cell: 0.0,
             dirty: true,
         };
         if let Some(unknown) = doc.resolve_zones(regs).into_iter().next() {
@@ -274,16 +301,111 @@ impl MapDocument {
         def
     }
 
-    /// The document as the sim reads it (the terrain view and the nav
-    /// preview); the zone handles must be resolved.
-    pub fn to_loaded(&self, regs: &Registries) -> Result<LoadedMap, MapError> {
+    /// The zone raster cell the rules give (`movement.zone_cell`, 2 m when
+    /// unset).
+    pub fn zone_cell(regs: &Registries) -> S {
         let zone_cell = regs.rules.movement.zone_cell;
-        let zone_cell = if zone_cell > S::ZERO {
+        if zone_cell > S::ZERO {
             zone_cell
         } else {
             S::from_i32(2)
-        };
-        LoadedMap::from_def(&self.def_with_samples(), zone_cell)
+        }
+    }
+
+    /// The document as the sim reads it (the terrain view and the nav
+    /// preview); the zone handles must be resolved. Painted cells read as
+    /// the polygons the save will bake: their zone types follow the map's
+    /// polygons in `zone_handles` and override them, as SIM-MOVE-031 orders
+    /// later polygons.
+    pub fn to_loaded(&self, regs: &Registries) -> Result<LoadedMap, MapError> {
+        let mut map = LoadedMap::from_def(&self.def_with_samples(), Self::zone_cell(regs))?;
+        if self.zone_raster.is_empty() {
+            return Ok(map);
+        }
+        let first = map.zone_handles.len();
+        if first + self.raster_zones.len() > MAX_ZONES + 1 {
+            return Err(MapError::TooManyZones {
+                id: self.def.id.clone(),
+                count: first - 1 + self.raster_zones.len(),
+            });
+        }
+        for id in &self.raster_zones {
+            map.zone_handles.push(regs.zones.lookup(id).ok_or_else(|| {
+                MapError::UnresolvedZone {
+                    id: self.def.id.clone(),
+                }
+            })?);
+        }
+        if (self.raster_cols, self.raster_rows) == (map.zone_cols, map.zone_rows) {
+            for (slot, &k) in self.zone_raster.iter().enumerate() {
+                if k != 0 {
+                    map.zones[slot] = (first - 1) as u8 + k;
+                }
+            }
+        }
+        Ok(map)
+    }
+
+    /// The `zone_handles` index painted cells of raster value `k` take in
+    /// [`to_loaded`](Self::to_loaded)'s map.
+    pub fn loaded_index(&self, k: u8) -> u8 {
+        self.def.zones.len() as u8 + k
+    }
+
+    /// Allocates the raster for `cols × rows` cells of `cell` metres
+    /// (cleared if its shape changed).
+    pub fn ensure_raster(&mut self, cols: u32, rows: u32, cell: f32) {
+        if (self.raster_cols, self.raster_rows) != (cols, rows) || self.zone_raster.is_empty() {
+            self.zone_raster = vec![0; cols as usize * rows as usize];
+            self.raster_zones.clear();
+            self.raster_cols = cols;
+            self.raster_rows = rows;
+        }
+        self.raster_cell = cell;
+    }
+
+    /// The raster value that paints `zone`, a new one on first use; `None`
+    /// when the map would exceed [`MAX_ZONES`].
+    pub fn raster_value(&mut self, zone: &ContentId) -> Option<u8> {
+        if let Some(k) = self.raster_zones.iter().position(|z| z == zone) {
+            return Some(k as u8 + 1);
+        }
+        if self.def.zones.len() + self.raster_zones.len() + 1 > MAX_ZONES {
+            return None;
+        }
+        self.raster_zones.push(zone.clone());
+        Some(self.raster_zones.len() as u8)
+    }
+
+    /// Turns the painted raster into zone polygons appended to `def.zones`
+    /// (exact cell outlines, `crate::raster`) and clears it; returns how
+    /// many polygons it added. Their handles are unresolved until
+    /// [`resolve_zones`](Self::resolve_zones).
+    pub fn bake(&mut self) -> Result<usize, EditorError> {
+        if self.zone_raster.is_empty() {
+            return Ok(0);
+        }
+        let traced = trace_polygons(&self.zone_raster, self.raster_cols, self.raster_rows);
+        let count = self.def.zones.len() + traced.len();
+        if count > MAX_ZONES {
+            return Err(EditorError::TooManyZones { count });
+        }
+        let cell = self.raster_cell;
+        let n = traced.len();
+        for t in traced {
+            self.def.zones.push(ZonePolygon {
+                type_id: self.raster_zones[usize::from(t.value) - 1].clone(),
+                zone: None,
+                polygon: t
+                    .points
+                    .iter()
+                    .map(|&(x, y)| V2::from_f32_data(x as f32 * cell, y as f32 * cell))
+                    .collect(),
+            });
+        }
+        self.zone_raster.clear();
+        self.raster_zones.clear();
+        Ok(n)
     }
 
     /// The JSON5 text a save writes.
@@ -299,6 +421,7 @@ impl MapDocument {
             root: mod_root.to_path_buf(),
             reason: d.to_string().trim().to_string(),
         })?;
+        self.bake()?;
         let item = self.item().to_string();
         self.def.heightmap.path = heightmap_path_for(&item);
         let assets = mod_root

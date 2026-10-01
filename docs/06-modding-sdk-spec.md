@@ -848,7 +848,7 @@ Tools:
 
 | Tool | Writes |
 |---|---|
-| Terrain zone brush | `zones` polygons with a `type` from `open`, `forest`, `marsh`, `rock`, `road` (REQ-SIM-041) |
+| Terrain zone brush | `zones` polygons with a `type` from `open`, `forest`, `marsh`, `rock`, `road` or any mod zone type (REQ-SIM-041); a painted patch is saved as one polygon following the 2 m raster's cell edges exactly, a hole cut in by a zero-width slit, appended after the map's existing polygons |
 | Height brush (raise, lower, smooth, flatten) | `heightmap` |
 | River tool (polyline with width) plus ford and bridge polygons | `rivers[]`, `zones[]` of a `crossing: true` type such as `ford` or `bridge` (REQ-SIM-042) |
 | Road tool | zones of type `road` |

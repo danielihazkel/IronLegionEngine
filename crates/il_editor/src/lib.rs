@@ -10,9 +10,11 @@
 //! for `LoadedMap` and `NavGrid`, draws through `il_render` and `il_ui`, and
 //! is the one presentation crate that writes files.
 
+pub mod brush;
 pub mod document;
 pub mod panels;
 pub mod picker;
+pub mod raster;
 pub mod session;
 
 pub use document::{BlankMap, EditorError, History, MapDocument, Saved};

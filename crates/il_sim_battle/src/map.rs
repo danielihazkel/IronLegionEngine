@@ -173,7 +173,18 @@ fn rasterise_polyline(
     }
 }
 
+/// The mean of `heights`, a fixed-order sum (SIM-VIS-001 `h_mean_map`).
+fn mean_of(heights: &[S]) -> S {
+    heights.iter().fold(S::ZERO, |acc, h| acc + *h) / S::from_i32(heights.len().max(1) as i32)
+}
+
 impl LoadedMap {
+    /// Recomputes `mean_height` after `heights` were edited in place (the
+    /// map editor's brush, T3-061); the same sum the load takes.
+    pub fn refresh_mean_height(&mut self) {
+        self.mean_height = mean_of(&self.heights);
+    }
+
     /// Builds the sim view of a map definition. `zone_cell` is
     /// `movement.zone_cell`; the height cell comes from the map.
     pub fn from_def(def: &MapDef, zone_cell: S) -> Result<Self, MapError> {
@@ -199,8 +210,7 @@ impl LoadedMap {
             .iter()
             .map(|&raw| S::from_i32(i32::from(raw)) * scale)
             .collect();
-        let mean_height = heights.iter().fold(S::ZERO, |acc, h| acc + *h)
-            / S::from_i32(heights.len().max(1) as i32);
+        let mean_height = mean_of(&heights);
 
         let mut zone_handles = Vec::with_capacity(def.zones.len() + 1);
         zone_handles.push(

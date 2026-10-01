@@ -1827,6 +1827,7 @@ version = "0.1.0"
 name = "il_tests"
 version = "0.1.0"
 dependencies = [
+ "glam 0.33.7",
  "il_cli",
  "il_core",
  "il_data",

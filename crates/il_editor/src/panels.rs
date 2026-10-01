@@ -6,9 +6,10 @@
 
 use std::fmt::Display;
 
-use il_data::Locale;
+use il_data::{ContentId, Locale};
 
-use crate::session::{EditorSession, Tool};
+use crate::brush::{Falloff, HeightOp};
+use crate::session::{BRUSH_MAX_M, BRUSH_MIN_M, BrushSettings, EditorSession, Tool};
 
 /// What a panel click asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -21,13 +22,84 @@ pub enum PanelAction {
     CloseMenu,
     Quit,
     Tool(Tool),
+    /// The brush parameters changed (T3-061).
+    Brush(BrushSettings),
 }
 
 /// Where the tool window sits, below the top bar (logical points).
 const TOOLS_TOP: f32 = 72.0;
 
 /// The tools the panel lists with their locale keys.
-const TOOLS: &[(Tool, &str)] = &[(Tool::Select, "il.editor.tool_select")];
+const TOOLS: &[(Tool, &str)] = &[
+    (Tool::Select, "il.editor.tool_select"),
+    (Tool::HeightBrush, "il.editor.tool_height"),
+    (Tool::ZoneBrush, "il.editor.tool_zone"),
+];
+
+const OPS: &[(HeightOp, &str)] = &[
+    (HeightOp::Raise, "il.editor.op_raise"),
+    (HeightOp::Lower, "il.editor.op_lower"),
+    (HeightOp::Smooth, "il.editor.op_smooth"),
+    (HeightOp::Flatten, "il.editor.op_flatten"),
+];
+
+const FALLOFFS: &[(Falloff, &str)] = &[
+    (Falloff::Smooth, "il.editor.falloff_smooth"),
+    (Falloff::Linear, "il.editor.falloff_linear"),
+    (Falloff::Constant, "il.editor.falloff_constant"),
+];
+
+/// The brush controls of the active tool; pushes `Brush` when one changed.
+fn brush_controls(ui: &mut egui::Ui, s: &EditorSession, l: &Locale, out: &mut Vec<PanelAction>) {
+    let mut b = s.brush.clone();
+    match s.tool {
+        Tool::HeightBrush => {
+            ui.label(l.get("il.editor.op"));
+            ui.horizontal_wrapped(|ui| {
+                for (op, key) in OPS {
+                    ui.selectable_value(&mut b.op, *op, l.get(key));
+                }
+            });
+            ui.label(l.get("il.editor.falloff"));
+            ui.horizontal_wrapped(|ui| {
+                for (f, key) in FALLOFFS {
+                    ui.selectable_value(&mut b.falloff, *f, l.get(key));
+                }
+            });
+            ui.add(
+                egui::Slider::new(&mut b.radius, BRUSH_MIN_M..=BRUSH_MAX_M)
+                    .logarithmic(true)
+                    .text(l.get("il.editor.radius")),
+            );
+            ui.add(
+                egui::Slider::new(&mut b.strength, 0.1..=40.0)
+                    .logarithmic(true)
+                    .text(l.get("il.editor.strength")),
+            );
+        }
+        Tool::ZoneBrush => {
+            let mut ids: Vec<&ContentId> = s.regs.zones.all_ids().collect();
+            ids.sort();
+            egui::ComboBox::from_id_salt("il_editor_zone")
+                .selected_text(b.zone.as_str())
+                .show_ui(ui, |ui| {
+                    for id in ids {
+                        ui.selectable_value(&mut b.zone, id.clone(), id.as_str());
+                    }
+                });
+            ui.add(
+                egui::Slider::new(&mut b.zone_radius, BRUSH_MIN_M..=BRUSH_MAX_M)
+                    .logarithmic(true)
+                    .text(l.get("il.editor.radius")),
+            );
+            ui.weak(l.get("il.editor.zone_hint"));
+        }
+        Tool::Select => {}
+    }
+    if b != s.brush {
+        out.push(PanelAction::Brush(b));
+    }
+}
 
 /// Draws every panel; returns the clicks in order.
 pub fn draw(ctx: &egui::Context, s: &EditorSession) -> Vec<PanelAction> {
@@ -138,6 +210,7 @@ fn tool_panel(ctx: &egui::Context, s: &EditorSession, l: &Locale, out: &mut Vec<
                     out.push(PanelAction::Tool(*tool));
                 }
             }
+            brush_controls(ui, s, l, out);
             ui.separator();
             ui.heading(l.get("il.editor.map_title"));
             let def = &s.doc.def;

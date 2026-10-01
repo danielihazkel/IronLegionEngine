@@ -13,6 +13,7 @@ il_data = { workspace = true, features = ["hot-reload"] }
 il_sim_battle.workspace = true
 il_cli.workspace = true
 il_editor.workspace = true
+glam.workspace = true
 
 [dev-dependencies]
 toml.workspace = true
