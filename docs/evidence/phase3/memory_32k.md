@@ -24,4 +24,4 @@ drop stays a guard for a cap crossed by anything the setup check did not see. Th
 is recorded as unmet by construction in docs/09.
 
 The app run (`cargo run --release -p il_app -- tests/scenarios/large/cap_32768.json5 --threads 8`) is the owner's
-check; its outcome is written here when taken.
+check. Taken by the owner and reported on 2026-10-01: no crash and no panic (no peak figure was recorded for the app).
