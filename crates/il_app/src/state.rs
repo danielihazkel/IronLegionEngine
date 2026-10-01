@@ -1,11 +1,14 @@
-//! The app state machine (T1-070, SAD §6.1, TDD §15): `MainMenu` and
-//! `Battle` in Phase 1 (`Campaign` and `Editor` arrive with their phases).
+//! The app state machine (T1-070, SAD §6.1, TDD §15): `MainMenu`, `Battle`
+//! and, from T3-060, `Editor` (`Campaign` arrives with its phase).
 //! Transitions are pure so they can be tested without a window: the caller
-//! supplies the function that turns a scenario path into a session.
+//! supplies the functions that turn a scenario path, a setup, a save or a
+//! map id into a session.
 
 use std::path::{Path, PathBuf};
 
 use il_core::PlayerId;
+use il_data::ContentId;
+use il_editor::{BlankMap, EditorSession, PickerState};
 use il_sim_battle::BattleSetup;
 use il_ui::{BuilderState, SaveEntry, SettingsState};
 
@@ -14,6 +17,8 @@ use crate::session::BattleSession;
 pub enum AppState {
     MainMenu(MenuState),
     Battle(Box<BattleSession>),
+    /// The map editor (T3-060, TDD §16).
+    Editor(Box<EditorSession>),
 }
 
 /// Which menu screen is up (T2-091, REQ-UI-007).
@@ -25,6 +30,8 @@ pub enum MenuScreen {
     CustomBattle(Box<BuilderState>),
     Settings(Box<SettingsState>),
     Load(Vec<SaveEntry>),
+    /// The map editor's picker: open a registry map or a blank one (T3-060).
+    Editor(Box<PickerState>),
 }
 
 /// What the main menu shows: the scenario files it found, the mod roots in
@@ -73,7 +80,13 @@ pub enum Transition {
     /// Continue the battle save at this path (quick load or the load
     /// screen, T2-101); from a battle the session is replaced.
     LoadSave(PathBuf),
-    /// Battle: back to the main menu (the session is dropped).
+    /// Main menu: open the map editor on a registry map, or on the blank
+    /// map the picker's form described (T3-060).
+    OpenEditor {
+        map: Option<ContentId>,
+        blank: Option<BlankMap>,
+    },
+    /// Battle or editor: back to the main menu (the session is dropped).
     QuitToMenu,
 }
 
@@ -82,30 +95,50 @@ impl AppState {
         matches!(self, AppState::Battle(_))
     }
 
+    pub fn is_editor(&self) -> bool {
+        matches!(self, AppState::Editor(_))
+    }
+
     pub fn session(&self) -> Option<&BattleSession> {
         match self {
             AppState::Battle(s) => Some(s),
-            AppState::MainMenu(_) => None,
+            _ => None,
         }
     }
 
     pub fn session_mut(&mut self) -> Option<&mut BattleSession> {
         match self {
             AppState::Battle(s) => Some(s),
-            AppState::MainMenu(_) => None,
+            _ => None,
+        }
+    }
+
+    pub fn editor(&self) -> Option<&EditorSession> {
+        match self {
+            AppState::Editor(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn editor_mut(&mut self) -> Option<&mut EditorSession> {
+        match self {
+            AppState::Editor(s) => Some(s),
+            _ => None,
         }
     }
 
     /// Applies a transition. `start` builds the session for a scenario,
-    /// `build` one for a setup in memory and `load` one for a battle save;
-    /// on failure the menu comes up with the error. `menu` rebuilds the menu
-    /// when a battle quits.
+    /// `build` one for a setup in memory, `load` one for a battle save and
+    /// `open_editor` the editor session for a map or a blank; on failure the
+    /// menu comes up with the error. `menu` rebuilds the menu when a battle
+    /// or the editor quits.
     pub fn apply(
         self,
         transition: Transition,
         start: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
         build: impl FnOnce(BattleSetup, String, Vec<PlayerId>) -> anyhow::Result<BattleSession>,
         load: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
+        open_editor: impl FnOnce(Option<ContentId>, Option<BlankMap>) -> anyhow::Result<EditorSession>,
         menu: impl FnOnce() -> MenuState,
     ) -> Self {
         match (self, transition) {
@@ -116,32 +149,50 @@ impl AppState {
                     AppState::MainMenu(m)
                 }
             },
-            (state, Transition::StartSetup { setup, stem, ai }) => {
-                match build(*setup, stem.clone(), ai) {
-                    Ok(session) => AppState::Battle(Box::new(session)),
-                    Err(e) => {
-                        let mut m = match state {
-                            AppState::MainMenu(m) => m,
-                            AppState::Battle(_) => menu(),
-                        };
-                        m.error = Some(format!("{stem}: {e:#}"));
-                        AppState::MainMenu(m)
-                    }
-                }
-            }
-            (state, Transition::LoadSave(path)) => match load(&path) {
+            (
+                state @ (AppState::MainMenu(_) | AppState::Battle(_)),
+                Transition::StartSetup { setup, stem, ai },
+            ) => match build(*setup, stem.clone(), ai) {
                 Ok(session) => AppState::Battle(Box::new(session)),
                 Err(e) => {
                     let mut m = match state {
                         AppState::MainMenu(m) => m,
-                        AppState::Battle(_) => menu(),
+                        _ => menu(),
                     };
-                    m.error = Some(format!("{}: {e:#}", path.display()));
+                    m.error = Some(format!("{stem}: {e:#}"));
                     AppState::MainMenu(m)
                 }
             },
-            (AppState::Battle(_), Transition::QuitToMenu) => AppState::MainMenu(menu()),
-            // Starting from a battle or quitting from the menu is a no-op.
+            (state @ (AppState::MainMenu(_) | AppState::Battle(_)), Transition::LoadSave(path)) => {
+                match load(&path) {
+                    Ok(session) => AppState::Battle(Box::new(session)),
+                    Err(e) => {
+                        let mut m = match state {
+                            AppState::MainMenu(m) => m,
+                            _ => menu(),
+                        };
+                        m.error = Some(format!("{}: {e:#}", path.display()));
+                        AppState::MainMenu(m)
+                    }
+                }
+            }
+            (AppState::MainMenu(mut m), Transition::OpenEditor { map, blank }) => {
+                let what = map
+                    .as_ref()
+                    .map_or_else(|| "new map".to_string(), |id| id.as_str().to_string());
+                match open_editor(map, blank) {
+                    Ok(session) => AppState::Editor(Box::new(session)),
+                    Err(e) => {
+                        m.error = Some(format!("editor {what}: {e:#}"));
+                        AppState::MainMenu(m)
+                    }
+                }
+            }
+            (AppState::Battle(_) | AppState::Editor(_), Transition::QuitToMenu) => {
+                AppState::MainMenu(menu())
+            }
+            // Starting from a battle, quitting from the menu, or anything
+            // but Quit from the editor is a no-op.
             (state, _) => state,
         }
     }
@@ -169,6 +220,10 @@ mod tests {
         anyhow::bail!("no builder for {stem}")
     }
 
+    fn no_editor(_: Option<ContentId>, _: Option<BlankMap>) -> anyhow::Result<EditorSession> {
+        anyhow::bail!("no editor")
+    }
+
     fn failing(p: &Path) -> anyhow::Result<BattleSession> {
         anyhow::bail!("no such scenario {}", p.display())
     }
@@ -180,6 +235,11 @@ mod tests {
         }
     }
 
+    fn game_regs() -> Arc<Registries> {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../game");
+        Arc::new(il_data::load_roots(&[root]).unwrap_or_else(|d| panic!("{d}")))
+    }
+
     #[test]
     fn menu_starts_a_battle_and_a_battle_quits_to_the_menu() {
         let state = AppState::MainMenu(menu());
@@ -188,15 +248,23 @@ mod tests {
             session,
             no_build,
             failing,
+            no_editor,
             menu,
         );
         assert!(state.is_battle());
         assert!(state.session().is_some());
-        let state = state.apply(Transition::QuitToMenu, session, no_build, session, menu);
+        let state = state.apply(
+            Transition::QuitToMenu,
+            session,
+            no_build,
+            session,
+            no_editor,
+            menu,
+        );
         assert!(!state.is_battle());
         match state {
             AppState::MainMenu(m) => assert_eq!(m, menu()),
-            AppState::Battle(_) => unreachable!(),
+            _ => unreachable!(),
         }
     }
 
@@ -207,6 +275,7 @@ mod tests {
             failing,
             no_build,
             failing,
+            no_editor,
             menu,
         );
         match state {
@@ -218,7 +287,7 @@ mod tests {
                 );
                 assert_eq!(m.scenarios, menu().scenarios, "the list survives");
             }
-            AppState::Battle(_) => panic!("must not enter a battle"),
+            _ => panic!("must not enter a battle"),
         }
     }
 
@@ -229,6 +298,7 @@ mod tests {
             session,
             no_build,
             session,
+            no_editor,
             menu,
         );
         assert!(!state.is_battle());
@@ -239,6 +309,7 @@ mod tests {
             failing,
             no_build,
             failing,
+            no_editor,
             menu,
         );
         assert!(battle.is_battle());
@@ -254,6 +325,7 @@ mod tests {
             failing,
             no_build,
             session,
+            no_editor,
             menu,
         );
         assert!(from_menu.is_battle());
@@ -263,6 +335,7 @@ mod tests {
             failing,
             no_build,
             session,
+            no_editor,
             menu,
         );
         assert!(replaced.is_battle());
@@ -271,11 +344,100 @@ mod tests {
             failing,
             no_build,
             failing,
+            no_editor,
             menu,
         );
         match failed {
             AppState::MainMenu(m) => assert!(m.error.unwrap().contains("gone.ilsv")),
-            AppState::Battle(_) => panic!("a failed load must not keep a battle"),
+            _ => panic!("a failed load must not keep a battle"),
+        }
+    }
+
+    /// T3-060: the menu opens the editor on a registry map or a blank; a
+    /// failure reports in the menu; the editor's Quit returns to the menu
+    /// and a load or a setup start is ignored while it is up.
+    #[test]
+    fn the_menu_opens_the_editor_and_the_editor_quits_to_the_menu() {
+        let regs = game_regs();
+        let open = |map: Option<ContentId>, blank: Option<BlankMap>| {
+            let doc = match (map, blank) {
+                (Some(id), _) => il_editor::MapDocument::from_registry(&regs, &id, &[])?,
+                (None, Some(b)) => il_editor::MapDocument::blank(&b, &regs)?,
+                (None, None) => anyhow::bail!("nothing"),
+            };
+            Ok(EditorSession::open(doc, regs.clone(), Vec::new(), None)?)
+        };
+        let state = AppState::MainMenu(menu()).apply(
+            Transition::OpenEditor {
+                map: Some(ContentId::new("rome:test_field").unwrap()),
+                blank: None,
+            },
+            failing,
+            no_build,
+            failing,
+            open,
+            menu,
+        );
+        assert!(state.is_editor());
+        assert_eq!(
+            state.editor().unwrap().doc.def.id.as_str(),
+            "rome:test_field"
+        );
+        let still = state.apply(
+            Transition::LoadSave(PathBuf::from("quick.ilsv")),
+            failing,
+            no_build,
+            session,
+            no_editor,
+            menu,
+        );
+        assert!(still.is_editor(), "a load is ignored in the editor");
+        let back = still.apply(
+            Transition::QuitToMenu,
+            failing,
+            no_build,
+            failing,
+            no_editor,
+            menu,
+        );
+        assert!(matches!(back, AppState::MainMenu(_)));
+
+        let blank = BlankMap {
+            id: ContentId::new("mymod:fresh").unwrap(),
+            size: [200.0, 100.0],
+            height_cell: 4.0,
+            base_zone: ContentId::new("rome:open").unwrap(),
+        };
+        let fresh = AppState::MainMenu(menu()).apply(
+            Transition::OpenEditor {
+                map: None,
+                blank: Some(blank),
+            },
+            failing,
+            no_build,
+            failing,
+            open,
+            menu,
+        );
+        assert!(fresh.editor().unwrap().doc.dirty);
+
+        let failed = AppState::MainMenu(menu()).apply(
+            Transition::OpenEditor {
+                map: Some(ContentId::new("rome:nowhere").unwrap()),
+                blank: None,
+            },
+            failing,
+            no_build,
+            failing,
+            open,
+            menu,
+        );
+        match failed {
+            AppState::MainMenu(m) => {
+                let e = m.error.unwrap();
+                assert!(e.contains("rome:nowhere"), "{e}");
+            }
+            _ => panic!("an unknown map must not open the editor"),
         }
     }
 

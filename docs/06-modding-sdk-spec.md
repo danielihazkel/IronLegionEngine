@@ -856,6 +856,8 @@ Tools:
 | Deployment zones (one polygon per side, plus reinforcement edges) | `deployment[]`, `reinforcement_edges[]` |
 | Metadata panel | `id`, `name_key`, `size`, `campaign_terrain_tags`, `weather_allowed` |
 
+The editor saves through the same writer `il_cli genmap` uses (`il_data::map_def::write_map`, T3-060): `content/maps/<item>.json5` plus `assets/maps/<item>.hgt` in the chosen mod folder, the source file's leading `//` comment lines kept, so a map opened and saved unchanged is byte-identical. A folder without `mod.json5` is refused.
+
 Map JSON5 summary (full schema in TDD §6):
 
 ```json5

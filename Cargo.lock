@@ -1685,6 +1685,7 @@ dependencies = [
  "il_cli",
  "il_core",
  "il_data",
+ "il_editor",
  "il_render",
  "il_save",
  "il_sim_battle",
@@ -1757,6 +1758,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "il_editor"
+version = "0.1.0"
+dependencies = [
+ "egui",
+ "glam 0.33.7",
+ "il_core",
+ "il_data",
+ "il_render",
+ "il_sim_battle",
+ "il_ui",
+ "serde_json",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "il_render"
 version = "0.1.0"
 dependencies = [
@@ -1814,6 +1830,7 @@ dependencies = [
  "il_cli",
  "il_core",
  "il_data",
+ "il_editor",
  "il_sim_battle",
  "serde_json",
  "toml",

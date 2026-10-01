@@ -16,10 +16,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::anyhow;
+use anyhow::{anyhow, bail};
 use glam::Vec2;
 use il_core::{PlayerId, RegimentId, Scalar, V2};
-use il_data::Registries;
+use il_data::{ContentId, Registries};
+use il_editor::{BlankMap, EditorEffect, EditorInput, EditorSession, MapDocument};
 use il_render::{
     AtlasId, AtlasUpload, Camera, ClearColour, DebugFlags, FrameJob, LineScene, RenderHost,
     RenderSnapshot, Rgba8Image, SetAtlas, SnapshotInput, SpriteScene, TerrainMesh, UiFrame,
@@ -215,6 +216,25 @@ pub fn start_battle(
     Ok(BattleSession::new(world, PlayerId(0), scenario.script(), ai).with_stem(stem))
 }
 
+/// Builds the editor session for a registry map or a blank one (T3-060);
+/// `mod_roots` are the loaded mod folders in load order (the source of the
+/// map's header comment and the save quick picks), `target` prefills the
+/// save folder.
+pub fn open_editor(
+    map: Option<ContentId>,
+    blank: Option<BlankMap>,
+    regs: Arc<Registries>,
+    mod_roots: Vec<PathBuf>,
+    target: Option<PathBuf>,
+) -> anyhow::Result<EditorSession> {
+    let doc = match (map, blank) {
+        (Some(id), _) => MapDocument::from_registry(&regs, &id, &mod_roots)?,
+        (None, Some(b)) => MapDocument::blank(&b, &regs)?,
+        (None, None) => bail!("nothing to open"),
+    };
+    Ok(EditorSession::open(doc, regs, mod_roots, target)?)
+}
+
 fn speed_mode(run: bool) -> SpeedMode {
     if run { SpeedMode::Run } else { SpeedMode::Walk }
 }
@@ -304,12 +324,16 @@ impl App {
 
     /// Builds the battle's terrain mesh (T1-053); the next job uploads it.
     fn load_terrain(&mut self) {
-        let Some(session) = self.state.session() else {
-            self.pending_terrain = None;
-            self.pending_clear_terrain = true;
-            return;
+        let mesh = match &self.state {
+            AppState::Battle(session) => TerrainMesh::build(session.world.map(), &self.regs),
+            // T3-060: the editor's document, rebuilt by the session on edits.
+            AppState::Editor(session) => session.terrain.clone(),
+            AppState::MainMenu(_) => {
+                self.pending_terrain = None;
+                self.pending_clear_terrain = true;
+                return;
+            }
         };
-        let mesh = TerrainMesh::build(session.world.map(), &self.regs);
         self.pending_terrain = Some(Arc::new(mesh));
         self.pending_clear_terrain = false;
     }
@@ -470,6 +494,19 @@ impl App {
         self.camera.as_mut().expect("camera set above")
     }
 
+    /// The camera the keys drive: the editor's own in the editor state
+    /// (T3-060), else the battle camera.
+    fn current_camera_mut(&mut self) -> &mut Camera {
+        if self.state.is_editor() {
+            match &mut self.state {
+                AppState::Editor(s) => &mut s.camera,
+                _ => unreachable!("checked above"),
+            }
+        } else {
+            self.camera_mut()
+        }
+    }
+
     /// Camera bindings (REQ-INP-004): key pan, edge scroll, snap rotation,
     /// wheel and key zoom about the cursor, drag pan.
     fn apply_camera_input(&mut self, dt: f32) {
@@ -521,13 +558,13 @@ impl App {
         let anchor = input.cursor().unwrap_or(screen * 0.5);
 
         if pan != Vec2::ZERO {
-            self.camera_mut().pan_screen(pan);
+            self.current_camera_mut().pan_screen(pan);
         }
         if rotate != 0 {
-            self.camera_mut().rotate(rotate);
+            self.current_camera_mut().rotate(rotate);
         }
         if zoom_lines != 0.0 {
-            self.camera_mut()
+            self.current_camera_mut()
                 .zoom_at(WHEEL_ZOOM_STEP.powf(zoom_lines), anchor, screen);
         }
     }
@@ -913,19 +950,14 @@ impl App {
         Some((drag.from, drag.to, camera.world_to_screen(tip, 0.0, screen)))
     }
 
-    /// Steps the sim for this frame's wall time (hot reload first).
-    fn advance_battle(&mut self, dt: f64) {
-        let Some(session) = self.state.session_mut() else {
-            return;
-        };
+    /// Polls the hot reload (`dev` builds): swaps the app's registries,
+    /// bindings and block sheet and returns the new registries for the
+    /// state to take (the battle's world, the editor's document).
+    fn poll_hot_reload(&mut self) -> Option<Arc<Registries>> {
         #[cfg(feature = "dev")]
-        if let Some(hr) = self.hot_reload.as_mut() {
-            if let Some(regs) = hr.poll() {
-                session.world.replace_registries(regs.clone());
-                self.bindings = load_bindings(&regs, &self.launch.settings);
-                self.block_set = il_render::block_set_index(&regs);
-                self.regs = regs;
-            }
+        {
+            let hr = self.hot_reload.as_mut()?;
+            let swapped = hr.poll();
             for event in hr.take_events() {
                 match event {
                     il_data::hot_reload::ReloadEvent::Failed(diags) => {
@@ -934,6 +966,26 @@ impl App {
                     other => eprintln!("hot reload: {other:?}"),
                 }
             }
+            let regs = swapped?;
+            self.bindings = load_bindings(&regs, &self.launch.settings);
+            self.block_set = il_render::block_set_index(&regs);
+            self.regs = regs.clone();
+            Some(regs)
+        }
+        #[cfg(not(feature = "dev"))]
+        {
+            None
+        }
+    }
+
+    /// Steps the sim for this frame's wall time (hot reload first).
+    fn advance_battle(&mut self, dt: f64) {
+        let reloaded = self.poll_hot_reload();
+        let Some(session) = self.state.session_mut() else {
+            return;
+        };
+        if let Some(regs) = reloaded {
+            session.world.replace_registries(regs);
         }
         let before = Instant::now();
         let outputs = session.advance_with(dt, &mut self.profiler);
@@ -942,6 +994,54 @@ impl App {
         self.audio.collect(&outputs);
         self.ticks_since_title += stepped;
         self.profiler.frame(dt, stepped);
+    }
+
+    /// The editor's frame (T3-060): hot reload, the frame's keys and
+    /// gestures, then the line overlays (the panels run with egui below).
+    fn editor_frame(&mut self, dt: f32, screen: Vec2) {
+        let reloaded = self.poll_hot_reload();
+        let (pointer_over_ui, keyboard_in_ui) = self.ui.as_ref().map_or((false, false), |ui| {
+            (ui.wants_pointer(), ui.wants_keyboard())
+        });
+        let Some(session) = self.state.editor_mut() else {
+            return;
+        };
+        if let Some(regs) = reloaded {
+            session.set_registries(regs);
+        }
+        let effects = session.handle_input(&EditorInput {
+            bindings: &self.bindings,
+            input: &self.input,
+            screen,
+            dt,
+            pointer_over_ui,
+            keyboard_in_ui,
+        });
+        self.lines.clear();
+        session.build_lines(screen, &mut self.lines);
+        self.apply_editor_effects(effects);
+    }
+
+    /// What the editor asked the app for.
+    fn apply_editor_effects(&mut self, effects: Vec<EditorEffect>) {
+        for effect in effects {
+            match effect {
+                EditorEffect::TerrainChanged => {
+                    if let Some(session) = self.state.editor() {
+                        self.pending_terrain = Some(Arc::new(session.terrain.clone()));
+                        self.pending_clear_terrain = false;
+                    }
+                }
+                EditorEffect::Saved(saved) => {
+                    eprintln!(
+                        "map saved: {} and {}",
+                        saved.json5.display(),
+                        saved.hgt.display()
+                    );
+                }
+                EditorEffect::QuitToMenu => self.transition = Some(Transition::QuitToMenu),
+            }
+        }
     }
 
     /// T2-100: the frame's events to the audio router, starting the
@@ -1059,14 +1159,16 @@ impl App {
             .recycle()
             .or_else(|| self.job_pool.pop())
             .unwrap_or_default();
-        match (&self.bench, self.state.is_battle()) {
+        match (&self.bench, &self.state) {
             // The bench draws the same 32k instances every frame.
             (Some(bench), _) => job.sprites = bench.scene.clone(),
-            (None, true) => {
+            (None, AppState::Battle(_)) => {
                 std::mem::swap(&mut job.sprites, &mut self.scene);
                 job.camera = self.camera;
             }
-            (None, false) => {}
+            // T3-060: the editor draws its terrain and lines, no sprites.
+            (None, AppState::Editor(session)) => job.camera = Some(session.camera),
+            (None, AppState::MainMenu(_)) => {}
         }
         std::mem::swap(&mut job.lines, &mut self.lines);
         job.ui = ui;
@@ -1131,6 +1233,11 @@ impl App {
             }
             self.build_battle_scene(screen, time);
             self.route_audio(screen);
+        } else if self.state.is_editor() {
+            // T3-060: the editor's frame.
+            self.apply_camera_input(dt as f32);
+            self.editor_frame(dt as f32, screen);
+            build_start = Instant::now();
         }
 
         let drag_preview = self.drag_preview();
@@ -1324,12 +1431,28 @@ impl App {
                         self.battle_ui.settings = Some(state);
                     }
                 }
-                AppState::MainMenu(_) => {}
+                AppState::MainMenu(_) | AppState::Editor(_) => {}
             }
+        }
+        // T3-060: the editor's panels (the session needs `&mut`, so the
+        // egui context is taken out for the call).
+        if self.state.is_editor()
+            && self.bench.is_none()
+            && let (Some(mut ui), Some(window)) = (self.ui.take(), self.window.clone())
+        {
+            let mut effects = Vec::new();
+            let out = ui.run(&window, |ctx| {
+                if let AppState::Editor(session) = &mut self.state {
+                    effects = session.ui(ctx);
+                }
+            });
+            ui_out = Some(out);
+            self.ui = Some(ui);
+            self.apply_editor_effects(effects);
         }
         // T2-091: the menu screens (they need the app mutably, so the
         // egui context is taken out for the call).
-        if !self.state.is_battle() && self.bench.is_none() {
+        if matches!(self.state, AppState::MainMenu(_)) && self.bench.is_none() {
             if self.capturing_chord() {
                 self.capture_chord();
             }
@@ -1375,15 +1498,19 @@ impl App {
         let regs = self.regs.clone();
         let regs_build = regs.clone();
         let regs_load = regs.clone();
+        let regs_editor = regs.clone();
         let threads = self.launch.threads;
         let ai = self.launch.ai.clone();
         let menu = self.menu();
+        let mod_roots = menu.mods.clone();
+        let target = self.editor_target();
         let state = std::mem::replace(&mut self.state, AppState::MainMenu(MenuState::default()));
         self.state = state.apply(
             transition,
             |path| start_battle(path, regs, threads, ai),
             |setup, stem, ai| start_from_setup(setup, stem, regs_build, threads, ai),
             |path| crate::replay_io::load_save(path, regs_load, threads),
+            |map, blank| open_editor(map, blank, regs_editor, mod_roots, target),
             || menu,
         );
         self.reset_battle_state();
@@ -1443,6 +1570,18 @@ impl App {
                 format!("Iron Legion — sprite bench — frame {}", bench.frames_done)
             }
             (None, AppState::MainMenu(_)) => self.regs.locale.get("il.app.title").to_string(),
+            (None, AppState::Editor(session)) => {
+                let l = &self.regs.locale;
+                l.fmt(
+                    "il.app.editor_title",
+                    &[
+                        ("title", &l.get("il.app.title") as &dyn Display),
+                        ("map", &session.title_suffix()),
+                        ("zoom", &format!("{:.1}", session.camera.zoom)),
+                        ("rot", &session.camera.rotation),
+                    ],
+                )
+            }
             (None, AppState::Battle(session)) => {
                 let per_tick_ms = if self.ticks_since_title > 0 {
                     self.step_seconds * 1000.0 / f64::from(self.ticks_since_title)

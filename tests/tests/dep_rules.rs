@@ -49,8 +49,8 @@ const PRESENTATION_ALLOWED: &[(&str, &[&str])] = &[
     ("il_render", &["il_core", "il_data", "il_sim_battle"]),
     ("il_ui", &["il_core", "il_data", "il_sim_battle"]),
     ("il_audio", &["il_core", "il_data", "il_sim_battle"]),
-    // T3-003: the map editor reads the sim for `NavGrid` and `LoadedMap`
-    // and draws through il_render and il_ui; never il_app.
+    // T3-003 rule, T3-060 crate: the map editor reads the sim for `NavGrid`
+    // and `LoadedMap` and draws through il_render and il_ui; never il_app.
     (
         "il_editor",
         &["il_core", "il_data", "il_sim_battle", "il_render", "il_ui"],
@@ -59,8 +59,8 @@ const PRESENTATION_ALLOWED: &[(&str, &[&str])] = &[
 
 /// Presentation crates whose manifest does not exist yet: listed so the
 /// rule applies the moment the crate lands, tolerated as missing until the
-/// named task creates it (T3-003).
-const ARRIVES_LATER: &[(&str, &str)] = &[("il_editor", "T3-060")];
+/// named task creates it (T3-003; `il_editor` arrived with T3-060).
+const ARRIVES_LATER: &[(&str, &str)] = &[];
 
 /// External crates a presentation crate must not pull in.
 const PRESENTATION_FORBIDDEN: &[(&str, &[&str])] = &[

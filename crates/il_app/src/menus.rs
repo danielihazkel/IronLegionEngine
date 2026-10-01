@@ -9,6 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Context;
 use il_data::{Registries, UnitCategory};
+use il_editor::{PickerAction, PickerState, picker_screen};
 use il_sim_battle::{BattleSetup, Scenario};
 use il_ui::{
     BindingRow, BuilderAction, BuilderCatalog, BuilderState, Chord, FactionChoice, Gesture,
@@ -246,6 +247,31 @@ pub fn write_scenario(path: &Path, setup: &BattleSetup) -> anyhow::Result<()> {
 }
 
 impl App {
+    /// The folder the editor saves into unless told otherwise (T3-060): the
+    /// last extra mod root, never `game/` by default.
+    pub(crate) fn editor_target(&self) -> Option<PathBuf> {
+        self.launch.mods.last().cloned()
+    }
+
+    /// The namespace a new map's id defaults to: the target mod's first
+    /// namespace, else its id, else the game's.
+    pub(crate) fn editor_namespace(&self) -> String {
+        if let Some(root) = self.editor_target()
+            && let Ok(m) = il_data::read_manifest(&root, false)
+        {
+            return m
+                .manifest
+                .namespaces
+                .first()
+                .cloned()
+                .unwrap_or(m.manifest.id);
+        }
+        self.regs
+            .mods
+            .first()
+            .map_or_else(|| "rome".to_string(), |m| m.id.clone())
+    }
+
     /// Applies a settings draft at once (decision 13): the zoom factor, vsync,
     /// fullscreen, the bindings, the thread count for the next battle.
     pub(crate) fn apply_settings(&mut self, draft: &SettingsDraft) {
@@ -355,6 +381,8 @@ impl App {
         let mut next_screen: Option<MenuScreen> = None;
         let mut settings_click: Option<SettingsAction> = None;
         let mut builder_click: Option<BuilderAction> = None;
+        let mut picker_click: Option<PickerAction> = None;
+        let namespace = self.editor_namespace();
         let AppState::MainMenu(menu) = &mut self.state else {
             unreachable!("menu_frame runs in the menu state");
         };
@@ -384,6 +412,12 @@ impl App {
                         draft_from(&self.launch.settings, &regs),
                     ))));
                 }
+                // T3-060: the map editor's picker.
+                Some(MenuChoice::Editor) => {
+                    next_screen = Some(MenuScreen::Editor(Box::new(PickerState::new(
+                        &regs, &namespace,
+                    ))));
+                }
                 Some(MenuChoice::Exit) => exit = true,
                 Some(MenuChoice::Start(_) | MenuChoice::Back) | None => {}
             },
@@ -405,7 +439,24 @@ impl App {
                 Some(LoadAction::Back) => next_screen = Some(MenuScreen::Root),
                 None => {}
             },
+            MenuScreen::Editor(state) => picker_click = picker_screen(ctx, state, l),
         });
+        match picker_click {
+            Some(PickerAction::Open(id)) => {
+                transition = Some(Transition::OpenEditor {
+                    map: Some(id),
+                    blank: None,
+                });
+            }
+            Some(PickerAction::New(blank)) => {
+                transition = Some(Transition::OpenEditor {
+                    map: None,
+                    blank: Some(blank),
+                });
+            }
+            Some(PickerAction::Back) => next_screen = Some(MenuScreen::Root),
+            None => {}
+        }
         // The clicks that need `self` beyond the menu.
         if let Some(action) = settings_click {
             let AppState::MainMenu(menu) = &mut self.state else {

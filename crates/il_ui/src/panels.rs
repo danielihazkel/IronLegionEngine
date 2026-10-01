@@ -22,7 +22,7 @@ pub struct MenuModel<'a> {
 }
 
 /// The root menu's buttons (T2-091: custom battle, scenario file, load,
-/// settings) and the scenario list's picks.
+/// settings; T3-060: the map editor) and the scenario list's picks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MenuChoice {
     CustomBattle,
@@ -30,6 +30,8 @@ pub enum MenuChoice {
     Scenarios,
     Load,
     Settings,
+    /// Open the map editor's picker (T3-060).
+    Editor,
     /// Start the scenario `scenarios[index]` (the list screen).
     Start(usize),
     /// Back to the root (the list screen).
@@ -55,6 +57,7 @@ pub fn main_menu(ctx: &egui::Context, model: &MenuModel<'_>) -> Option<MenuChoic
                     ("il.menu.custom_battle", MenuChoice::CustomBattle),
                     ("il.menu.scenarios", MenuChoice::Scenarios),
                     ("il.menu.load", MenuChoice::Load),
+                    ("il.menu.editor", MenuChoice::Editor),
                     ("il.menu.settings", MenuChoice::Settings),
                 ] {
                     if ui.button(l.get(key)).clicked() {

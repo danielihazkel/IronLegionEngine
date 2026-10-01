@@ -1,0 +1,12 @@
+// The map editor's test target (T3-060): `tests/tests/editor.rs` saves
+// `rome:test_field` here and validates the result together with `game/`.
+// Only this manifest is committed; `content/` and `assets/` are written by
+// the test and ignored by git. No namespaces of its own, so it may only
+// override ids the game defines.
+{
+  id: "editor_out",
+  name_key: "editor_out.mod.name",
+  version: "0.1.0",
+  engine_version: "*",
+  dependencies: [{ id: "rome", version: ">=0.1.0" }],
+}

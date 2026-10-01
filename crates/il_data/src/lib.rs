@@ -54,6 +54,7 @@ pub use locale::{FALLBACK_LANGUAGE, Locale};
 pub use manifest::{Dependency, Manifest, ManifestWithPath, read_manifest};
 pub use map_def::{
     DeploymentZone, HeightmapRef, MapDef, MapEdge, MapSize, ReinforcementEdge, River, ZonePolygon,
+    heightmap_path_for, write_map,
 };
 pub use merge::{KindAccumulator, MergedItem, Tombstone};
 pub use pipeline::{discover_set, load, load_report, load_roots};

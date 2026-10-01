@@ -24,3 +24,7 @@ Thumbs.db
 # Battle replays and the quick save written by il_app (T2-101)
 /replays/
 /saves/
+
+# The map editor's test output (T3-060): the mod folder keeps only its manifest
+/tests/mods/editor_out/content/
+/tests/mods/editor_out/assets/

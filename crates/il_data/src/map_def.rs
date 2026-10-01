@@ -146,6 +146,160 @@ impl MapDef {
     }
 }
 
+/// The `.hgt` path a map of `item` reads by convention (`maps/<item>.hgt`
+/// under the mod's assets root), the one `il_cli genmap` and the editor
+/// write.
+pub fn heightmap_path_for(item: &str) -> String {
+    format!("maps/{item}.hgt")
+}
+
+fn write_points(out: &mut String, points: &[V2]) {
+    let mut first = true;
+    for p in points {
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        out.push_str(&format!("[{}, {}]", p.x, p.y));
+    }
+}
+
+fn write_string_list(out: &mut String, items: &[String]) {
+    out.push('[');
+    let mut first = true;
+    for s in items {
+        if !first {
+            out.push_str(", ");
+        }
+        first = false;
+        out.push_str(&json_string(s));
+    }
+    out.push(']');
+}
+
+fn json_string(s: &str) -> String {
+    serde_json::to_string(s).expect("a string always serialises")
+}
+
+/// The JSON5 text of a map definition (T3-060, Modding SDK §6.1): the format
+/// `il_cli genmap` has written since T1-030, byte for byte, so a map opened
+/// in the editor and saved unchanged is identical to its source. `header`
+/// is the file's leading comment lines (written verbatim, one per line);
+/// the heightmap path is the def's own (`heightmap_path_for` by
+/// convention). The reserved `structures` and `siege_points` lists are
+/// written one compact JSON object per line.
+pub fn write_map(def: &MapDef, header: &[String]) -> String {
+    let mut s = String::new();
+    for line in header {
+        s.push_str(line);
+        s.push('\n');
+    }
+    s.push_str("{\n");
+    s.push_str(&format!("  id: {},\n", json_string(def.id.as_str())));
+    if let Some(d) = &def.deprecated {
+        s.push_str(&format!("  deprecated: {},\n", json_string(d)));
+    }
+    s.push_str(&format!("  name_key: {},\n", json_string(&def.name_key)));
+    s.push_str(&format!(
+        "  size: {{ w: {}, h: {} }},\n",
+        def.size.w, def.size.h
+    ));
+    s.push_str("  campaign_terrain_tags: ");
+    write_string_list(&mut s, &def.campaign_terrain_tags);
+    s.push_str(",\n  weather_allowed: ");
+    write_string_list(&mut s, &def.weather_allowed);
+    s.push_str(&format!(
+        ",\n  heightmap: {{ cell: {}, path: {}, scale: {} }},\n",
+        def.heightmap.cell,
+        json_string(&def.heightmap.path),
+        def.heightmap.scale
+    ));
+    s.push_str(&format!(
+        "  base_zone: {},\n",
+        json_string(def.base_zone.as_str())
+    ));
+    if def.zones.is_empty() {
+        s.push_str("  zones: [],\n");
+    } else {
+        s.push_str("  zones: [\n");
+        for z in &def.zones {
+            s.push_str(&format!(
+                "    {{ type: {}, polygon: [",
+                json_string(z.type_id.as_str())
+            ));
+            write_points(&mut s, &z.polygon);
+            s.push_str("] },\n");
+        }
+        s.push_str("  ],\n");
+    }
+    if def.rivers.is_empty() {
+        s.push_str("  rivers: [],\n");
+    } else {
+        s.push_str("  rivers: [\n");
+        for r in &def.rivers {
+            s.push_str(&format!("    {{ width: {}, points: [", r.width));
+            write_points(&mut s, &r.points);
+            s.push_str("] },\n");
+        }
+        s.push_str("  ],\n");
+    }
+    if def.deployment.is_empty() {
+        s.push_str("  deployment: [],\n");
+    } else {
+        s.push_str("  deployment: [\n");
+        for d in &def.deployment {
+            s.push_str(&format!("    {{ side: {}, polygon: [", d.side));
+            write_points(&mut s, &d.polygon);
+            s.push_str("] },\n");
+        }
+        s.push_str("  ],\n");
+    }
+    if def.reinforcement_edges.is_empty() {
+        s.push_str("  reinforcement_edges: [],\n");
+    } else {
+        s.push_str("  reinforcement_edges: [\n");
+        for e in &def.reinforcement_edges {
+            s.push_str(&format!(
+                "    {{ side: {}, edge: {} }},\n",
+                e.side,
+                json_string(e.edge.name())
+            ));
+        }
+        s.push_str("  ],\n");
+    }
+    s.push_str("  // Reserved for sieges (REQ-SIM-045).\n");
+    write_reserved(&mut s, "structures", &def.structures);
+    write_reserved(&mut s, "siege_points", &def.siege_points);
+    s.push_str("}\n");
+    s
+}
+
+fn write_reserved(out: &mut String, key: &str, items: &[serde_json::Value]) {
+    if items.is_empty() {
+        out.push_str(&format!("  {key}: [],\n"));
+        return;
+    }
+    out.push_str(&format!("  {key}: [\n"));
+    for v in items {
+        out.push_str("    ");
+        out.push_str(&serde_json::to_string(v).expect("a JSON value serialises"));
+        out.push_str(",\n");
+    }
+    out.push_str("  ],\n");
+}
+
+impl MapEdge {
+    /// The bindings-file and map-file name (`north`, `south`, ...).
+    pub fn name(self) -> &'static str {
+        match self {
+            MapEdge::North => "north",
+            MapEdge::South => "south",
+            MapEdge::East => "east",
+            MapEdge::West => "west",
+        }
+    }
+}
+
 impl ContentKind for MapDef {
     const DIR: &'static str = "maps";
     const TAG: KindTag = KindTag::Map;

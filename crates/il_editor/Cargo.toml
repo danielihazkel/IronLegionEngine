@@ -1,0 +1,27 @@
+[package]
+name = "il_editor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Iron Legion editors: the map editor (document, tools, panels, save)"
+
+[dependencies]
+il_core.workspace = true
+il_data.workspace = true
+il_sim_battle.workspace = true
+il_render.workspace = true
+il_ui.workspace = true
+egui.workspace = true
+glam.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# Not `workspace = true`: editing math is render-side f32 (brush falloffs,
+# screen picks), on the app side of the sim boundary (TDD §16). Unsafe stays
+# forbidden.
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+float_arithmetic = "allow"

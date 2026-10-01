@@ -66,6 +66,16 @@
     // T2-101: battle quick save and load.
     { action: "quick_save", keys: ["Ctrl+S"] },
     { action: "quick_load", keys: ["Ctrl+L"] },
+    // The map editor (T3-060): the primary gesture paints or places, the
+    // secondary finishes a polyline or deletes a vertex; Ctrl+S saves
+    // (quick_save), Escape opens the editor menu (pause_menu), F5 shows the
+    // nav preview (debug_nav_grid).
+    { action: "editor_paint", keys: ["LeftClick", "LeftDrag"] },
+    { action: "editor_alt", keys: ["RightClick"] },
+    { action: "editor_undo", keys: ["Ctrl+Z"] },
+    { action: "editor_redo", keys: ["Ctrl+Y", "Ctrl+Shift+Z"] },
+    { action: "editor_brush_grow", keys: ["BracketRight"] },
+    { action: "editor_brush_shrink", keys: ["BracketLeft"] },
     // Developer tooling (`dev` builds only).
     { action: "toggle_profiler", keys: ["F12"] },
     { action: "debug_nav_grid", keys: ["F5"] },

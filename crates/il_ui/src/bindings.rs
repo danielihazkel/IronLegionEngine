@@ -204,6 +204,16 @@ pub enum Action {
     /// Battle quick save and load (T2-101).
     QuickSave,
     QuickLoad,
+    /// The map editor (T3-060): the primary tool gesture (a click or a drag
+    /// paints, places a vertex, moves one), the secondary one (finishes a
+    /// polyline, deletes a vertex), undo, redo and the brush radius steps
+    /// (T3-061). Save is `quick_save`, the editor menu `pause_menu`.
+    EditorPaint,
+    EditorAlt,
+    EditorUndo,
+    EditorRedo,
+    EditorBrushGrow,
+    EditorBrushShrink,
 }
 
 const FIXED_ACTIONS: &[(&str, Action)] = &[
@@ -247,6 +257,12 @@ const FIXED_ACTIONS: &[(&str, Action)] = &[
     ("pause_menu", Action::PauseMenu),
     ("quick_save", Action::QuickSave),
     ("quick_load", Action::QuickLoad),
+    ("editor_paint", Action::EditorPaint),
+    ("editor_alt", Action::EditorAlt),
+    ("editor_undo", Action::EditorUndo),
+    ("editor_redo", Action::EditorRedo),
+    ("editor_brush_grow", Action::EditorBrushGrow),
+    ("editor_brush_shrink", Action::EditorBrushShrink),
 ];
 
 impl Action {

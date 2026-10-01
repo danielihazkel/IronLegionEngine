@@ -51,6 +51,7 @@ il_cli = { path = "crates/il_cli" }
 il_render = { path = "crates/il_render" }
 il_ui = { path = "crates/il_ui" }
 il_audio = { path = "crates/il_audio" }
+il_editor = { path = "crates/il_editor" }
 
 [workspace.lints.clippy]
 float_arithmetic = "deny"       # re-allowed only inside il_core::scalar
