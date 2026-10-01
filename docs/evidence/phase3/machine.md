@@ -70,7 +70,7 @@ the bench and 53 % idle (it should sit near or above 100 %), and every stage, to
 times slower for the same binary (20k tick 30 to 33 ms; Targeting 4.9 against 2.5 in the morning). A stray
 `python -` process from 2026-09-10 had also burned one core for 13 hours until it was killed. The numbers above
 are the morning's; the throttled sittings were discarded and the baseline was re-recorded only once the counter
-was healthy again (see the re-record note below).
+was healthy again; on 2026-10-01 the owner took that re-record as done and ticked T3-022 (docs/09).
 
 ## Exit checklist evidence
 
