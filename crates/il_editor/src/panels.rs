@@ -36,6 +36,10 @@ pub enum PanelAction {
     /// The metadata fields as typed; `MetaApply` commits them.
     MetaEdit(MetaDraft),
     MetaApply,
+    /// The nav preview checkbox (T3-063).
+    ShowNav(bool),
+    /// Centre on the feature a diagnostic's field names.
+    Focus(String),
 }
 
 const EDGES: &[(MapEdge, &str)] = &[
@@ -271,12 +275,69 @@ fn brush_controls(ui: &mut egui::Ui, s: &EditorSession, l: &Locale, out: &mut Ve
     }
 }
 
+/// The nav preview toggle and the document's problems, errors first;
+/// a click on one centres the camera on its feature (T3-063).
+fn diagnostics_panel(
+    ctx: &egui::Context,
+    s: &EditorSession,
+    l: &Locale,
+    out: &mut Vec<PanelAction>,
+) {
+    egui::Window::new(l.get("il.editor.diagnostics_title"))
+        .id(egui::Id::new("il_editor_diagnostics"))
+        .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-8.0, 72.0))
+        .resizable(false)
+        .default_width(320.0)
+        .show(ctx, |ui| {
+            let mut on = s.show_nav;
+            if ui.checkbox(&mut on, l.get("il.editor.show_nav")).changed() {
+                out.push(PanelAction::ShowNav(on));
+            }
+            if s.show_nav && s.nav.busy() {
+                ui.weak(l.get("il.editor.nav_updating"));
+            }
+            ui.separator();
+            if s.diagnostics.is_empty() {
+                ui.weak(l.get("il.editor.no_problems"));
+            }
+            egui::ScrollArea::vertical()
+                .max_height(240.0)
+                .show(ui, |ui| {
+                    for d in &s.diagnostics {
+                        let error = d.severity == il_data::Severity::Error;
+                        let (key, colour) = if error {
+                            (
+                                "il.editor.severity_error",
+                                egui::Color32::from_rgb(255, 120, 120),
+                            )
+                        } else {
+                            (
+                                "il.editor.severity_warning",
+                                egui::Color32::from_rgb(255, 200, 90),
+                            )
+                        };
+                        let text = format!("{} · {} · {}", l.get(key), d.field, d.message);
+                        if ui
+                            .add(
+                                egui::Label::new(egui::RichText::new(text).color(colour))
+                                    .sense(egui::Sense::click()),
+                            )
+                            .clicked()
+                        {
+                            out.push(PanelAction::Focus(d.field.clone()));
+                        }
+                    }
+                });
+        });
+}
+
 /// Draws every panel; returns the clicks in order.
 pub fn draw(ctx: &egui::Context, s: &EditorSession) -> Vec<PanelAction> {
     let l = s.locale();
     let mut out = Vec::new();
     top_bar(ctx, s, l, &mut out);
     tool_panel(ctx, s, l, &mut out);
+    diagnostics_panel(ctx, s, l, &mut out);
     if s.menu_open {
         menu(ctx, s, l, &mut out);
     }
@@ -344,10 +405,7 @@ fn top_bar(ctx: &egui::Context, s: &EditorSession, l: &Locale, out: &mut Vec<Pan
                     out.push(PanelAction::SetTarget("tests/mods/editor_out".to_string()));
                 }
                 if ui
-                    .add_enabled(
-                        !s.target.trim().is_empty(),
-                        egui::Button::new(l.get("il.editor.save")),
-                    )
+                    .add_enabled(s.can_save(), egui::Button::new(l.get("il.editor.save")))
                     .clicked()
                 {
                     out.push(PanelAction::Save);
@@ -416,10 +474,7 @@ fn menu(ctx: &egui::Context, s: &EditorSession, l: &Locale, out: &mut Vec<PanelA
                     out.push(PanelAction::CloseMenu);
                 }
                 if ui
-                    .add_enabled(
-                        !s.target.trim().is_empty(),
-                        egui::Button::new(l.get("il.editor.save")),
-                    )
+                    .add_enabled(s.can_save(), egui::Button::new(l.get("il.editor.save")))
                     .clicked()
                 {
                     out.push(PanelAction::Save);

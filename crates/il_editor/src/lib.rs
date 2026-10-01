@@ -11,9 +11,11 @@
 //! is the one presentation crate that writes files.
 
 pub mod brush;
+pub mod diagnostics;
 pub mod document;
 pub mod panels;
 pub mod picker;
+pub mod preview;
 pub mod raster;
 pub mod session;
 pub mod tools;

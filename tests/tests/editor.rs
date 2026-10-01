@@ -21,7 +21,7 @@ use il_editor::brush::HeightOp;
 use il_editor::{BlankMap, EditorSession, MapDocument, Tool};
 use il_sim_battle::components::{Anchor, FormationState, Order, OrderKind, Path};
 use il_sim_battle::resources::Ids;
-use il_sim_battle::{BattleWorld, Command, CommandKind, LoadedMap, SpeedMode};
+use il_sim_battle::{BattleWorld, Command, CommandKind, LoadedMap, Pathfinder, SpeedMode};
 
 /// A fresh mod folder under `target/` declaring the `edt` namespace.
 fn scratch_mod(name: &str) -> PathBuf {
@@ -332,6 +332,147 @@ fn a_map_made_in_the_editor_plays() {
         anchor.pos.y < il_core::S::from_i32(300),
         "south of the river"
     );
+}
+
+/// The river points along `out`'s segments, by the zone they lie in.
+fn river_crossings(map: &LoadedMap, regs: &Registries, out: &[il_core::V2]) -> Vec<String> {
+    let mut seen: Vec<String> = Vec::new();
+    for pair in out.windows(2) {
+        for k in 0..=64 {
+            let p = pair[0]
+                + (pair[1] - pair[0]) * (il_core::S::from_i32(k) / il_core::S::from_i32(64));
+            if map.river_at(p) {
+                let z = map
+                    .zone_at(p)
+                    .map(|h| regs.zones.get(h).id.as_str().to_string())
+                    .unwrap_or_default();
+                if seen.last() != Some(&z) {
+                    seen.push(z);
+                }
+            }
+        }
+    }
+    seen
+}
+
+/// T3-063 done-when: rock painted across the test field's bridge closes
+/// that corridor in the nav preview (the routes then use the ford), and
+/// rock over the ford too leaves the banks unconnected; the preview's
+/// worker gives the same grid as a synchronous build.
+#[test]
+fn painting_rock_across_the_bridge_closes_the_corridor() {
+    let game = il_tests::game_root();
+    let regs = Arc::new(
+        il_data::load_roots(std::slice::from_ref(&game)).unwrap_or_else(|d| panic!("{d}")),
+    );
+    let doc = MapDocument::from_registry(
+        &regs,
+        &ContentId::new("rome:test_field").unwrap(),
+        std::slice::from_ref(&game),
+    )
+    .unwrap();
+    let mut s = EditorSession::open(doc, regs.clone(), vec![game], None).unwrap();
+    assert!(s.diagnostics.is_empty(), "{:?}", s.diagnostics);
+    let v = il_core::V2::from_f32_data;
+    let bridge = v(400.0, 310.0);
+    let (north, south) = (v(300.0, 150.0), v(300.0, 450.0));
+    let route = |s: &EditorSession| {
+        let nav = s.nav.grid.as_ref().expect("a preview grid");
+        let mut out = Vec::new();
+        let r = il_sim_battle::AStar::new().find(nav, north, south, &mut out);
+        (r, river_crossings(&s.loaded, &s.regs, &out))
+    };
+    {
+        let nav = s.nav.grid.as_ref().expect("built when the session opens");
+        assert!(nav.corridor_width_at(bridge) >= il_core::S::from_i32(8));
+    }
+    assert_eq!(
+        route(&s),
+        (
+            il_sim_battle::PathResult::Found,
+            vec!["rome:bridge".to_string()]
+        )
+    );
+
+    s.tool = Tool::ZoneBrush;
+    s.brush.zone = ContentId::new("rome:rock").unwrap();
+    s.brush.zone_radius = 12.0;
+    s.begin_stroke(Vec2::new(400.0, 310.0));
+    s.dab(Vec2::new(400.0, 310.0), 0.0);
+    s.end_stroke();
+    // The worker path: quiet frames, then the thread, then the swap.
+    let regs_arc = s.regs.clone();
+    let mut frames = 0;
+    while s.nav.busy() {
+        s.nav.poll(&s.loaded, &regs_arc);
+        frames += 1;
+        assert!(frames < 100_000, "the preview never arrived");
+        std::thread::yield_now();
+    }
+    let worker = s.nav.grid.clone().unwrap();
+    {
+        let nav = s.nav.grid.as_ref().unwrap();
+        assert!(!nav.is_passable_at(bridge), "the bridge cell is rock now");
+        for y in [300.0, 310.0, 320.0] {
+            assert!(!nav.is_passable_at(v(400.0, y)), "bridge at y {y}");
+        }
+    }
+    assert_eq!(
+        route(&s),
+        (
+            il_sim_battle::PathResult::Found,
+            vec!["rome:ford".to_string()]
+        )
+    );
+    s.nav.rebuild_now(&s.loaded, &regs_arc);
+    assert_eq!(
+        *s.nav.grid.as_ref().unwrap().as_ref(),
+        *worker,
+        "the worker's grid is the synchronous one"
+    );
+
+    s.brush.zone_radius = 30.0;
+    s.begin_stroke(Vec2::new(650.0, 297.0));
+    s.dab(Vec2::new(650.0, 297.0), 0.0);
+    s.dab(Vec2::new(650.0, 310.0), 0.0);
+    s.end_stroke();
+    s.nav.rebuild_now(&s.loaded, &regs_arc);
+    let (r, _) = route(&s);
+    assert_ne!(r, il_sim_battle::PathResult::Found, "no crossing is left");
+}
+
+/// T3-063 done-when, second half: a bad map shows its diagnostic with the
+/// field name and Save is refused while the error stands.
+#[test]
+fn a_bad_map_names_its_field_and_cannot_be_saved() {
+    let game = il_tests::game_root();
+    let regs = Arc::new(
+        il_data::load_roots(std::slice::from_ref(&game)).unwrap_or_else(|d| panic!("{d}")),
+    );
+    let mut s = blank_session(&regs, "edt:bad", [400.0, 300.0]);
+    let out = scratch_mod("bad");
+    s.target = out.display().to_string();
+    s.refresh_diagnostics();
+    assert!(s.can_save(), "{:?}", s.diagnostics);
+    // Deleting both deployment polygons leaves none.
+    s.tool = Tool::Select;
+    s.selected = Some(il_editor::vector::Feature::Deployment(0));
+    s.delete_selected();
+    s.selected = Some(il_editor::vector::Feature::Deployment(0));
+    s.delete_selected();
+    let errors: Vec<&str> = s
+        .diagnostics
+        .iter()
+        .filter(|d| d.severity == il_data::Severity::Error)
+        .map(|d| d.field.as_str())
+        .collect();
+    assert_eq!(errors, ["deployment"], "{:?}", s.diagnostics);
+    assert!(!s.can_save());
+    assert!(s.save().is_none(), "Save is refused");
+    assert!(!out.join("content/maps/bad.json5").exists());
+    s.undo();
+    assert!(s.can_save(), "{:?}", s.diagnostics);
+    assert!(s.save().is_some());
 }
 
 /// The T3-061 budget: a dab and its patches stay under 2 ms on the

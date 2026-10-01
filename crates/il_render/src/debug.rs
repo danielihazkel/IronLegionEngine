@@ -5,7 +5,7 @@
 use glam::Vec2;
 use il_core::{PlayerId, Scalar, V2};
 use il_sim_battle::components::Anchor;
-use il_sim_battle::{BattleView, slot_world};
+use il_sim_battle::{BattleView, LoadedMap, NavGrid, slot_world};
 
 use crate::camera::Camera;
 use crate::lines::LineScene;
@@ -73,6 +73,59 @@ const MAX_CELLS: u32 = 40_000;
 
 fn v2(p: V2) -> Vec2 {
     Vec2::new(p.x.to_f32_render(), p.y.to_f32_render())
+}
+
+/// Corridors narrower than this are marked by [`nav_grid_lines`] when
+/// asked (the map editor's preview, T3-063): a regiment in line meets a
+/// column morph there.
+pub const NARROW_CORRIDOR_M: f32 = 12.0;
+
+/// The nav grid overlay (`F5`): impassable cells crossed out, costly cells
+/// outlined, and with `mark_narrow` a ring in every passable cell whose
+/// corridor (`NavGrid::corridor_width_at`) is under [`NARROW_CORRIDOR_M`].
+/// Only the visible cells, and none past `MAX_CELLS`.
+pub fn nav_grid_lines(
+    nav: &NavGrid,
+    map: &LoadedMap,
+    camera: &Camera,
+    screen: Vec2,
+    lines: &mut LineScene,
+    mark_narrow: bool,
+) {
+    let proj = |p: Vec2| project(map, camera, screen, p);
+    let (min, max) = camera.visible_bounds(screen, 0.0);
+    let cell = nav.cell().to_f32_render();
+    let (x0, y0) = nav.cell_of(V2::from_f32_data(min.x, min.y));
+    let (x1, y1) = nav.cell_of(V2::from_f32_data(max.x, max.y));
+    if (x1 - x0 + 1) * (y1 - y0 + 1) > MAX_CELLS {
+        return;
+    }
+    for cy in y0..=y1 {
+        for cx in x0..=x1 {
+            let cost = nav.cost(cx, cy);
+            let a = Vec2::new(cx as f32 * cell, cy as f32 * cell);
+            if cost != 0 && mark_narrow {
+                let run = nav.passable_run_x(cx, cy).min(nav.passable_run_y(cx, cy));
+                if f32::from(run) * cell < NARROW_CORRIDOR_M {
+                    let c = proj(a + Vec2::splat(cell * 0.5));
+                    lines.circle(c, (cell * camera.zoom * 0.3).max(2.0), 8, NARROW);
+                }
+            }
+            let colour = if cost == 0 {
+                IMPASSABLE
+            } else if cost > 100 {
+                COSTLY
+            } else {
+                continue;
+            };
+            let b = a + Vec2::splat(cell);
+            let corners = [a, Vec2::new(b.x, a.y), b, Vec2::new(a.x, b.y)].map(proj);
+            lines.polyline(&corners, colour, true);
+            if cost == 0 {
+                lines.segment(corners[0], corners[2], colour);
+            }
+        }
+    }
 }
 
 /// Appends every enabled overlay to `lines`; `flow_side` picks the side
@@ -186,31 +239,7 @@ pub fn build_debug_lines(
     }
 
     if flags.nav_grid {
-        let nav = view.nav_grid();
-        let cell = nav.cell().to_f32_render();
-        let (x0, y0) = nav.cell_of(V2::from_f32_data(min.x, min.y));
-        let (x1, y1) = nav.cell_of(V2::from_f32_data(max.x, max.y));
-        if (x1 - x0 + 1) * (y1 - y0 + 1) <= MAX_CELLS {
-            for cy in y0..=y1 {
-                for cx in x0..=x1 {
-                    let cost = nav.cost(cx, cy);
-                    let colour = if cost == 0 {
-                        IMPASSABLE
-                    } else if cost > 100 {
-                        COSTLY
-                    } else {
-                        continue;
-                    };
-                    let a = Vec2::new(cx as f32 * cell, cy as f32 * cell);
-                    let b = a + Vec2::splat(cell);
-                    let corners = [a, Vec2::new(b.x, a.y), b, Vec2::new(a.x, b.y)].map(proj);
-                    lines.polyline(&corners, colour, true);
-                    if cost == 0 {
-                        lines.segment(corners[0], corners[2], colour);
-                    }
-                }
-            }
-        }
+        nav_grid_lines(view.nav_grid(), map, camera, screen, lines, false);
     }
 
     if flags.spatial_cells {

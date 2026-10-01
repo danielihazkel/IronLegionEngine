@@ -9,15 +9,17 @@ use std::sync::Arc;
 
 use glam::Vec2;
 use il_core::{S, Scalar};
-use il_data::{ContentId, Locale, Registries};
+use il_data::{ContentId, Diagnostic, Locale, Registries, read_manifest};
 use il_render::terrain::{ground_height, project};
-use il_render::{Camera, LineScene, TerrainMesh, side_tint};
+use il_render::{Camera, LineScene, TerrainMesh, nav_grid_lines, side_tint};
 use il_sim_battle::{LoadedMap, MapError};
 use il_ui::{Action, Bindings, Gesture, InputState};
 
 use crate::brush::{Block, Falloff, HeightDab, HeightOp, height_dab, zone_dab};
+use crate::diagnostics::{check, has_errors};
 use crate::document::{History, MapDocument, Saved};
 use crate::panels::{self, PanelAction};
+use crate::preview::NavPreview;
 use crate::vector::{record_points, to_vec2};
 
 /// The active tool (T3-060 select, T3-061 the brushes, T3-062 the vector
@@ -173,8 +175,12 @@ pub struct EditorSession {
     pub menu_open: bool,
     /// Quit was asked once with unsaved changes; the next Quit goes.
     pub quit_armed: bool,
-    /// The nav preview overlay (drawn from T3-063).
+    /// The nav preview overlay (T3-063): `F5` or the panel's checkbox.
     pub show_nav: bool,
+    /// The nav grid of the document, rebuilt off-thread after edits.
+    pub nav: NavPreview,
+    /// The document's problems; an error blocks Save (T3-063).
+    pub diagnostics: Vec<Diagnostic>,
     pub brush: BrushSettings,
     pub vector: VectorSettings,
     /// The vector tool's points so far (T3-062).
@@ -201,6 +207,8 @@ impl EditorSession {
         doc.resolve_zones(&regs);
         let loaded = doc.to_loaded(&regs)?;
         let terrain = TerrainMesh::build(&loaded, &regs);
+        let mut nav = NavPreview::new();
+        nav.rebuild_now(&loaded, &regs);
         let mut zones: Vec<&ContentId> = regs.zones.all_ids().collect();
         zones.sort();
         let zone = zones
@@ -245,7 +253,7 @@ impl EditorSession {
             loaded.width.to_f32_render() * 0.5,
             loaded.height.to_f32_render() * 0.5,
         );
-        Ok(Self {
+        let mut s = Self {
             doc,
             history: History::new(),
             tool: Tool::Select,
@@ -261,6 +269,8 @@ impl EditorSession {
             menu_open: false,
             quit_armed: false,
             show_nav: false,
+            nav,
+            diagnostics: Vec::new(),
             brush,
             vector,
             draft: Vec::new(),
@@ -270,7 +280,25 @@ impl EditorSession {
             cursor_world: None,
             stroke: None,
             camera_framed: false,
-        })
+        };
+        s.refresh_diagnostics();
+        Ok(s)
+    }
+
+    /// Re-runs the document's checks (after every edit and on a target
+    /// change: the namespace warning reads the target's manifest).
+    pub fn refresh_diagnostics(&mut self) {
+        let target = self.target.trim();
+        let namespaces = (!target.is_empty())
+            .then(|| read_manifest(std::path::Path::new(target), false).ok())
+            .flatten()
+            .map(|m| m.manifest.namespaces);
+        self.diagnostics = check(&self.doc, &self.regs, namespaces.as_deref());
+    }
+
+    /// Whether Save is allowed: a target is set and no error stands.
+    pub fn can_save(&self) -> bool {
+        !self.target.trim().is_empty() && !has_errors(&self.diagnostics)
     }
 
     pub fn locale(&self) -> &Locale {
@@ -295,6 +323,8 @@ impl EditorSession {
             }
             Err(e) => self.set_note(e.to_string(), true),
         }
+        self.nav.mark();
+        self.refresh_diagnostics();
         self.meta = MetaDraft::of(&self.doc);
         if self
             .selected
@@ -354,6 +384,11 @@ impl EditorSession {
         let l = &l.locale;
         if self.target.trim().is_empty() {
             self.set_note(l.get("il.editor.no_target").to_string(), true);
+            return None;
+        }
+        self.refresh_diagnostics();
+        if has_errors(&self.diagnostics) {
+            self.set_note(l.get("il.editor.save_blocked").to_string(), true);
             return None;
         }
         let root = PathBuf::from(self.target.trim());
@@ -432,6 +467,7 @@ impl EditorSession {
         self.cursor_world = i.cursor().map(|c| self.ground_point(c, input.screen));
         self.brush_input(input);
         self.vector_input(input);
+        self.nav.poll(&self.loaded, &self.regs);
         if std::mem::take(&mut self.terrain_dirty) {
             effects.push(EditorEffect::TerrainChanged);
         }
@@ -496,6 +532,7 @@ impl EditorSession {
             self.loaded.refresh_mean_height();
             self.doc.dirty = true;
             self.quit_armed = false;
+            self.refresh_diagnostics();
         }
     }
 
@@ -581,6 +618,7 @@ impl EditorSession {
         self.terrain
             .patch_heights(&self.loaded, block.i0, block.j0, block.i1, block.j1);
         self.terrain_dirty = true;
+        self.nav.mark();
     }
 
     /// Copies the painted cells of `block` into the sim view and the
@@ -608,6 +646,7 @@ impl EditorSession {
             block.j1,
         );
         self.terrain_dirty = true;
+        self.nav.mark();
     }
 
     /// Draws the panels and applies their clicks.
@@ -626,7 +665,10 @@ impl EditorSession {
                 PanelAction::SetTarget(t) => {
                     self.target = t;
                     self.quit_armed = false;
+                    self.refresh_diagnostics();
                 }
+                PanelAction::ShowNav(on) => self.show_nav = on,
+                PanelAction::Focus(field) => self.focus_field(&field),
                 PanelAction::OpenMenu => {
                     self.menu_open = true;
                     self.quit_armed = false;
@@ -739,6 +781,11 @@ impl EditorSession {
             } else {
                 ground_polyline(map, cam, screen, &pts, false, INERT, lines);
             }
+        }
+        if self.show_nav
+            && let Some(grid) = &self.nav.grid
+        {
+            nav_grid_lines(grid, map, cam, screen, lines, true);
         }
         if !self.draft.is_empty() {
             let mut pts = self.draft.clone();

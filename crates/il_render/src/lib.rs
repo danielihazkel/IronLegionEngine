@@ -20,7 +20,7 @@ pub mod thread;
 
 pub use atlas::{Atlas, AtlasError, AtlasId, Rgba8Image, anim_column, atlas_path};
 pub use camera::Camera;
-pub use debug::{DebugFlags, build_debug_lines};
+pub use debug::{DebugFlags, NARROW_CORRIDOR_M, build_debug_lines, nav_grid_lines};
 pub use egui_pass::EguiPaint;
 pub use lines::{LineScene, LineVertex};
 pub use renderer::{ClearColour, FrameScene, RenderError, Renderer};

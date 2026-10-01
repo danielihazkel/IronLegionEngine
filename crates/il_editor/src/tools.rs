@@ -456,6 +456,45 @@ impl EditorSession {
         self.edited();
     }
 
+    /// The feature a diagnostic's field names (`zones[3].polygon`,
+    /// `rivers[0]`, `deployment[1]`, `reinforcement_edges[0]` for its
+    /// side's zone, `structures[2]`, `siege_points[0]`).
+    pub fn feature_of_field(&self, field: &str) -> Option<Feature> {
+        let (head, rest) = field.split_once('[')?;
+        let index: usize = rest.split(']').next()?.parse().ok()?;
+        Some(match head {
+            "zones" => Feature::Zone(index),
+            "rivers" => Feature::River(index),
+            "deployment" => Feature::Deployment(index),
+            "structures" => Feature::Structure(index),
+            "siege_points" => Feature::SiegePoint(index),
+            "reinforcement_edges" => {
+                let side = self.doc.def.reinforcement_edges.get(index)?.side;
+                Feature::Deployment(
+                    self.doc
+                        .def
+                        .deployment
+                        .iter()
+                        .position(|d| d.side == side)?,
+                )
+            }
+            _ => return None,
+        })
+    }
+
+    /// Centres the camera on the feature `field` names and selects it.
+    pub fn focus_field(&mut self, field: &str) {
+        let Some(f) = self.feature_of_field(field) else {
+            return;
+        };
+        let Some(pts) = self.feature_points(f).filter(|p| !p.is_empty()) else {
+            return;
+        };
+        let sum = pts.iter().fold(Vec2::ZERO, |a, p| a + *p);
+        self.camera.center = sum / pts.len() as f32;
+        self.selected = Some(f);
+    }
+
     /// Clips or pads the paint raster to the map's new zone grid.
     fn resize_raster(&mut self) {
         if self.doc.zone_raster.is_empty() {
