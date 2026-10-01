@@ -16,7 +16,11 @@ pub mod panels;
 pub mod picker;
 pub mod raster;
 pub mod session;
+pub mod tools;
+pub mod vector;
 
 pub use document::{BlankMap, EditorError, History, MapDocument, Saved};
 pub use picker::{PickerAction, PickerState, picker_screen};
-pub use session::{EditorEffect, EditorInput, EditorSession, Tool};
+pub use session::{
+    BrushSettings, EditorEffect, EditorInput, EditorSession, MetaDraft, Tool, VectorSettings,
+};

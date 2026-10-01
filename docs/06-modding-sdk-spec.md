@@ -851,10 +851,12 @@ Tools:
 | Terrain zone brush | `zones` polygons with a `type` from `open`, `forest`, `marsh`, `rock`, `road` or any mod zone type (REQ-SIM-041); a painted patch is saved as one polygon following the 2 m raster's cell edges exactly, a hole cut in by a zero-width slit, appended after the map's existing polygons |
 | Height brush (raise, lower, smooth, flatten) | `heightmap` |
 | River tool (polyline with width) plus ford and bridge polygons | `rivers[]`, `zones[]` of a `crossing: true` type such as `ford` or `bridge` (REQ-SIM-042) |
-| Road tool | zones of type `road` |
-| Settlement pieces (Phase 5 content, placeable but inert before then) | `structures[]` |
+| Road tool | zones of type `road`: the polyline widened to the road's width (flat ends, mitred joins), placed before the first crossing polygon so a bridge or a ford stays on top |
+| Settlement pieces (Phase 5 content, placeable but inert before then) | `structures[]`: `{ kind: "wall", polyline, hp, faction_side }` or `{ kind: "gate" \| "tower", at, hp, faction_side }` (the editor writes `hp: 1000`) |
+| Siege points (inert before Phase 5) | `siege_points[]`: `{ kind: "ladder" \| "ram" \| "tower", at, facing }`, facing in degrees |
+| Select | moves, inserts and deletes the vertices of every polygon, river, structure and siege point |
 | Deployment zones (one polygon per side, plus reinforcement edges) | `deployment[]`, `reinforcement_edges[]` |
-| Metadata panel | `id`, `name_key`, `size`, `campaign_terrain_tags`, `weather_allowed` |
+| Metadata panel | `id`, `name_key`, `size`, `campaign_terrain_tags`, `weather_allowed`, `base_zone` (a new size keeps the height cell and the samples that fit) |
 
 The editor saves through the same writer `il_cli genmap` uses (`il_data::map_def::write_map`, T3-060): `content/maps/<item>.json5` plus `assets/maps/<item>.hgt` in the chosen mod folder, the source file's leading `//` comment lines kept, so a map opened and saved unchanged is byte-identical. A folder without `mod.json5` is refused.
 

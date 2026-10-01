@@ -6,10 +6,12 @@
 
 use std::fmt::Display;
 
-use il_data::{ContentId, Locale};
+use il_data::{ContentId, Locale, MapEdge};
 
 use crate::brush::{Falloff, HeightOp};
-use crate::session::{BRUSH_MAX_M, BRUSH_MIN_M, BrushSettings, EditorSession, Tool};
+use crate::session::{
+    BRUSH_MAX_M, BRUSH_MIN_M, BrushSettings, EditorSession, MetaDraft, Tool, VectorSettings,
+};
 
 /// What a panel click asks for.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,6 +26,168 @@ pub enum PanelAction {
     Tool(Tool),
     /// The brush parameters changed (T3-061).
     Brush(BrushSettings),
+    /// The vector tools' parameters changed (T3-062).
+    Vector(VectorSettings),
+    /// Commit or drop the polyline or polygon in progress.
+    Finish,
+    Cancel,
+    DeleteSelected,
+    ToggleEdge(u8, MapEdge),
+    /// The metadata fields as typed; `MetaApply` commits them.
+    MetaEdit(MetaDraft),
+    MetaApply,
+}
+
+const EDGES: &[(MapEdge, &str)] = &[
+    (MapEdge::North, "il.editor.edge_north"),
+    (MapEdge::South, "il.editor.edge_south"),
+    (MapEdge::West, "il.editor.edge_west"),
+    (MapEdge::East, "il.editor.edge_east"),
+];
+
+const WEATHERS: &[&str] = &["clear", "rain", "fog"];
+
+/// A zone type picker over every loaded zone type.
+fn zone_combo(ui: &mut egui::Ui, salt: &str, s: &EditorSession, value: &mut ContentId) {
+    let mut ids: Vec<&ContentId> = s.regs.zones.all_ids().collect();
+    ids.sort();
+    egui::ComboBox::from_id_salt(salt)
+        .selected_text(value.as_str())
+        .show_ui(ui, |ui| {
+            for id in ids {
+                ui.selectable_value(value, id.clone(), id.as_str());
+            }
+        });
+}
+
+/// The vector tools' controls, the draft's Finish and Cancel, the select
+/// tool's selection (T3-062).
+fn vector_controls(ui: &mut egui::Ui, s: &EditorSession, l: &Locale, out: &mut Vec<PanelAction>) {
+    let mut v = s.vector.clone();
+    match s.tool {
+        Tool::River => {
+            ui.add(
+                egui::Slider::new(&mut v.river_width, 2.0..=80.0).text(l.get("il.editor.width")),
+            );
+        }
+        Tool::Road => {
+            zone_combo(ui, "il_editor_road_zone", s, &mut v.road_zone);
+            ui.add(egui::Slider::new(&mut v.road_width, 2.0..=40.0).text(l.get("il.editor.width")));
+        }
+        Tool::Polygon => {
+            zone_combo(ui, "il_editor_polygon_zone", s, &mut v.polygon_zone);
+            ui.weak(l.get("il.editor.polygon_hint"));
+        }
+        Tool::Deployment => {
+            ui.add(egui::Slider::new(&mut v.side, 0..=7).text(l.get("il.editor.side")));
+            ui.label(l.get("il.editor.edges"));
+            ui.horizontal_wrapped(|ui| {
+                for (edge, key) in EDGES {
+                    let on = s
+                        .doc
+                        .def
+                        .reinforcement_edges
+                        .iter()
+                        .any(|e| e.side == v.side && e.edge == *edge);
+                    if ui.selectable_label(on, l.get(key)).clicked() {
+                        out.push(PanelAction::ToggleEdge(v.side, *edge));
+                    }
+                }
+            });
+        }
+        Tool::Structure => {
+            ui.horizontal(|ui| {
+                for kind in ["wall", "gate", "tower"] {
+                    ui.selectable_value(&mut v.structure, kind, kind);
+                }
+            });
+            ui.add(egui::Slider::new(&mut v.side, 0..=7).text(l.get("il.editor.side")));
+            ui.weak(l.get("il.editor.inert_hint"));
+        }
+        Tool::SiegePoint => {
+            ui.horizontal(|ui| {
+                for kind in ["ladder", "ram", "tower"] {
+                    ui.selectable_value(&mut v.siege, kind, kind);
+                }
+            });
+            ui.weak(l.get("il.editor.siege_hint"));
+        }
+        Tool::Select => {
+            ui.weak(l.get("il.editor.select_hint"));
+            if let Some(f) = s.selected {
+                ui.label(format!("{f:?}"));
+                if ui.button(l.get("il.editor.delete")).clicked() {
+                    out.push(PanelAction::DeleteSelected);
+                }
+            }
+        }
+        Tool::HeightBrush | Tool::ZoneBrush => {}
+    }
+    if !s.draft.is_empty() {
+        ui.label(l.fmt("il.editor.draft_line", &[("n", &s.draft.len())]));
+        ui.horizontal(|ui| {
+            if ui.button(l.get("il.editor.finish")).clicked() {
+                out.push(PanelAction::Finish);
+            }
+            if ui.button(l.get("il.editor.cancel")).clicked() {
+                out.push(PanelAction::Cancel);
+            }
+        });
+    }
+    if v != s.vector {
+        out.push(PanelAction::Vector(v));
+    }
+}
+
+/// The metadata fields over the session's draft; Apply commits them.
+fn metadata(ui: &mut egui::Ui, s: &EditorSession, l: &Locale, out: &mut Vec<PanelAction>) {
+    let mut m = s.meta.clone();
+    egui::Grid::new("il_editor_meta")
+        .num_columns(2)
+        .show(ui, |ui| {
+            ui.label(l.get("il.editor.new_id"));
+            ui.text_edit_singleline(&mut m.id);
+            ui.end_row();
+            ui.label(l.get("il.editor.name_key"));
+            ui.text_edit_singleline(&mut m.name_key);
+            ui.end_row();
+            ui.label(l.get("il.editor.new_size"));
+            ui.horizontal(|ui| {
+                ui.add(egui::DragValue::new(&mut m.size[0]).range(1.0..=8192.0));
+                ui.add(egui::DragValue::new(&mut m.size[1]).range(1.0..=8192.0));
+            });
+            ui.end_row();
+            ui.label(l.get("il.editor.tags_label"));
+            ui.text_edit_singleline(&mut m.tags);
+            ui.end_row();
+            ui.label(l.get("il.editor.weather_label"));
+            ui.horizontal(|ui| {
+                for w in WEATHERS {
+                    let mut on = m.weather.iter().any(|x| x == w);
+                    if ui.checkbox(&mut on, *w).changed() {
+                        if on {
+                            m.weather.push((*w).to_string());
+                        } else {
+                            m.weather.retain(|x| x != w);
+                        }
+                    }
+                }
+            });
+            ui.end_row();
+            ui.label(l.get("il.editor.new_base_zone"));
+            zone_combo(ui, "il_editor_base_zone", s, &mut m.base_zone);
+            ui.end_row();
+        });
+    if m != s.meta {
+        out.push(PanelAction::MetaEdit(m.clone()));
+    }
+    let changed = m != MetaDraft::of(&s.doc);
+    if ui
+        .add_enabled(changed, egui::Button::new(l.get("il.editor.apply")))
+        .clicked()
+    {
+        out.push(PanelAction::MetaApply);
+    }
 }
 
 /// Where the tool window sits, below the top bar (logical points).
@@ -34,6 +198,12 @@ const TOOLS: &[(Tool, &str)] = &[
     (Tool::Select, "il.editor.tool_select"),
     (Tool::HeightBrush, "il.editor.tool_height"),
     (Tool::ZoneBrush, "il.editor.tool_zone"),
+    (Tool::River, "il.editor.tool_river"),
+    (Tool::Road, "il.editor.tool_road"),
+    (Tool::Polygon, "il.editor.tool_polygon"),
+    (Tool::Deployment, "il.editor.tool_deployment"),
+    (Tool::Structure, "il.editor.tool_structure"),
+    (Tool::SiegePoint, "il.editor.tool_siege"),
 ];
 
 const OPS: &[(HeightOp, &str)] = &[
@@ -94,7 +264,7 @@ fn brush_controls(ui: &mut egui::Ui, s: &EditorSession, l: &Locale, out: &mut Ve
             );
             ui.weak(l.get("il.editor.zone_hint"));
         }
-        Tool::Select => {}
+        _ => {}
     }
     if b != s.brush {
         out.push(PanelAction::Brush(b));
@@ -211,26 +381,11 @@ fn tool_panel(ctx: &egui::Context, s: &EditorSession, l: &Locale, out: &mut Vec<
                 }
             }
             brush_controls(ui, s, l, out);
+            vector_controls(ui, s, l, out);
             ui.separator();
             ui.heading(l.get("il.editor.map_title"));
+            metadata(ui, s, l, out);
             let def = &s.doc.def;
-            ui.label(l.fmt(
-                "il.editor.size_line",
-                &[
-                    ("w", &def.size.w as &dyn Display),
-                    ("h", &def.size.h),
-                    ("cell", &def.heightmap.cell),
-                ],
-            ));
-            ui.label(l.fmt(
-                "il.editor.tags",
-                &[("list", &def.campaign_terrain_tags.join(", "))],
-            ));
-            ui.label(l.fmt(
-                "il.editor.weather",
-                &[("list", &def.weather_allowed.join(", "))],
-            ));
-            ui.label(l.fmt("il.editor.base_zone", &[("zone", &def.base_zone.as_str())]));
             ui.label(l.fmt(
                 "il.editor.counts",
                 &[

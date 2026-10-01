@@ -2,7 +2,7 @@
 //! field saved into `tests/mods/editor_out/` is byte for byte the committed
 //! map and sidecar, and the two mods validate clean together (T3-060); a
 //! hill and a forest painted on a blank map reload with the same samples
-//! (T3-061).
+//! (T3-061); a map made only with the vector tools plays (T3-062).
 
 // The editor's brush positions and radii are render-side f32 (TDD §16,
 // il_editor's own lint table); nothing here feeds the sim.
@@ -14,10 +14,14 @@ use std::sync::Arc;
 use glam::Vec2;
 use il_cli::validate::{ValidateOptions, validate};
 use il_core::Scalar;
+use il_core::{PlayerId, RegimentId, Tick};
+use il_data::Layout;
 use il_data::{ContentId, Registries};
 use il_editor::brush::HeightOp;
 use il_editor::{BlankMap, EditorSession, MapDocument, Tool};
-use il_sim_battle::LoadedMap;
+use il_sim_battle::components::{Anchor, FormationState, Order, OrderKind, Path};
+use il_sim_battle::resources::Ids;
+use il_sim_battle::{BattleWorld, Command, CommandKind, LoadedMap, SpeedMode};
 
 /// A fresh mod folder under `target/` declaring the `edt` namespace.
 fn scratch_mod(name: &str) -> PathBuf {
@@ -165,6 +169,169 @@ fn a_painted_hill_and_forest_reload_with_the_same_samples() {
     )
     .expect("validate runs");
     assert_eq!(report.errors, 0, "{}", String::from_utf8_lossy(&text));
+}
+
+/// T3-062 done-when: a map with a river, an 8 m bridge, a ford, a road,
+/// two deployment zones and one reinforcement edge, made only through the
+/// editor's tools, validates, and a regiment on it crosses the bridge in
+/// Column with its path touching the river only on the bridge.
+#[test]
+fn a_map_made_in_the_editor_plays() {
+    let game = il_tests::game_root();
+    let regs = Arc::new(
+        il_data::load_roots(std::slice::from_ref(&game)).unwrap_or_else(|d| panic!("{d}")),
+    );
+    let mut s = blank_session(&regs, "edt:made_here", [800.0, 600.0]);
+    let id = |z: &str| ContentId::new(z).unwrap();
+    let click_all = |s: &mut EditorSession, pts: &[(f32, f32)]| {
+        for (x, y) in pts {
+            s.tool_click(Vec2::new(*x, *y));
+        }
+        s.tool_finish();
+    };
+    s.tool = Tool::River;
+    s.vector.river_width = 12.0;
+    click_all(&mut s, &[(0.0, 300.0), (800.0, 300.0)]);
+    s.tool = Tool::Road;
+    s.vector.road_zone = id("rome:road");
+    s.vector.road_width = 8.0;
+    click_all(&mut s, &[(400.0, 0.0), (400.0, 600.0)]);
+    s.tool = Tool::Polygon;
+    s.vector.polygon_zone = id("rome:bridge");
+    click_all(
+        &mut s,
+        &[
+            (396.0, 288.0),
+            (404.0, 288.0),
+            (404.0, 312.0),
+            (396.0, 312.0),
+        ],
+    );
+    s.vector.polygon_zone = id("rome:ford");
+    click_all(
+        &mut s,
+        &[
+            (620.0, 285.0),
+            (650.0, 285.0),
+            (650.0, 315.0),
+            (620.0, 315.0),
+        ],
+    );
+    s.tool = Tool::Deployment;
+    s.vector.side = 0;
+    click_all(
+        &mut s,
+        &[(40.0, 380.0), (760.0, 380.0), (760.0, 560.0), (40.0, 560.0)],
+    );
+    s.vector.side = 1;
+    click_all(
+        &mut s,
+        &[(40.0, 40.0), (760.0, 40.0), (760.0, 220.0), (40.0, 220.0)],
+    );
+    // The blank map's edges were south for side 0 and north for side 1;
+    // leave one: side 0 at the north edge behind its zone.
+    s.toggle_edge(0, il_data::MapEdge::South);
+    s.toggle_edge(1, il_data::MapEdge::North);
+    s.toggle_edge(0, il_data::MapEdge::North);
+    let d = &s.doc.def;
+    assert_eq!(d.rivers.len(), 1);
+    let kinds: Vec<&str> = d.zones.iter().map(|z| z.type_id.as_str()).collect();
+    assert_eq!(kinds, ["rome:road", "rome:bridge", "rome:ford"]);
+    assert_eq!(d.deployment.len(), 2);
+    assert_eq!(d.reinforcement_edges.len(), 1);
+
+    let out = scratch_mod("made_here");
+    s.target = out.display().to_string();
+    assert!(s.save().is_some(), "{:?}", s.note);
+    let mut text = Vec::new();
+    let report = validate(
+        &ValidateOptions {
+            roots: vec![game.clone(), out.clone()],
+            deny_warnings: false,
+            verbose: true,
+        },
+        &mut text,
+    )
+    .expect("validate runs");
+    assert_eq!(report.errors, 0, "{}", String::from_utf8_lossy(&text));
+
+    let regs2 = il_data::load_roots(&[game, out]).unwrap_or_else(|d| panic!("{d}"));
+    let scenario = il_cli::parse_scenario(
+        r#"{
+  map_id: "edt:made_here",
+  seed: 7,
+  sides: [
+    { faction: "rome:rome", player: 0, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [{ id: 1, unit_type: "rome:hastati", count: 120, position: [300, 450], facing_deg: 270 }] },
+    { faction: "rome:rome", player: 1, deployment_zone: 1,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder" },
+      regiments: [{ id: 2, unit_type: "rome:hastati", count: 20, position: [700, 100], facing_deg: 90 }] },
+  ],
+}"#,
+    )
+    .unwrap();
+    let mut w = BattleWorld::new(&scenario.setup, Arc::new(regs2)).unwrap();
+    let rid = RegimentId(0);
+    let entity = w.ecs().resource::<Ids>().regiment_entity(rid).unwrap();
+    let layout = |w: &BattleWorld| {
+        let st = w.ecs().get::<FormationState>(entity).unwrap();
+        w.registries().formations.get(st.template).layout
+    };
+    assert_eq!(layout(&w), Layout::Line);
+    let target = il_core::V2::from_f32_data(300.0, 150.0);
+    let order = Command {
+        tick: Tick(1),
+        player: PlayerId(0),
+        seq: 0,
+        kind: CommandKind::Move {
+            regiments: vec![rid],
+            target,
+            facing: None,
+            speed: SpeedMode::Run,
+        },
+    };
+    assert!(w.step(&[order]).rejected.is_empty());
+    // The path the world served touches the river only on the bridge.
+    let path = w.ecs().get::<Path>(entity).unwrap().clone();
+    let mut crossed = Vec::new();
+    for pair in path.waypoints.windows(2) {
+        let (a, b) = (pair[0].p, pair[1].p);
+        for k in 0..=64 {
+            let p = a + (b - a) * (il_core::S::from_i32(k) / il_core::S::from_i32(64));
+            assert!(
+                w.nav_grid().is_passable_at(p),
+                "path point {p:?} impassable"
+            );
+            if w.map().river_at(p) {
+                let z = w
+                    .map()
+                    .zone_at(p)
+                    .map(|h| w.registries().zones.get(h).id.clone());
+                crossed.push(z.map(|z| z.as_str().to_string()).unwrap_or_default());
+            }
+        }
+    }
+    assert!(!crossed.is_empty(), "the path crosses the river");
+    assert!(crossed.iter().all(|z| z == "rome:bridge"), "{crossed:?}");
+    let mut column = false;
+    let mut arrived = false;
+    for _ in 0..12_000 {
+        w.step(&[]);
+        column |= layout(&w) == Layout::Column;
+        let order = w.ecs().get::<Order>(entity).unwrap().kind;
+        if order == OrderKind::Idle {
+            arrived = true;
+            break;
+        }
+    }
+    assert!(arrived, "never arrived");
+    assert!(column, "never morphed to a column for the bridge");
+    let anchor = w.ecs().get::<Anchor>(entity).unwrap();
+    assert!(
+        anchor.pos.y < il_core::S::from_i32(300),
+        "south of the river"
+    );
 }
 
 /// The T3-061 budget: a dab and its patches stay under 2 ms on the

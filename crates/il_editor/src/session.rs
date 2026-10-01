@@ -11,21 +11,78 @@ use glam::Vec2;
 use il_core::{S, Scalar};
 use il_data::{ContentId, Locale, Registries};
 use il_render::terrain::{ground_height, project};
-use il_render::{Camera, LineScene, TerrainMesh, deployment_outlines, side_tint};
+use il_render::{Camera, LineScene, TerrainMesh, side_tint};
 use il_sim_battle::{LoadedMap, MapError};
 use il_ui::{Action, Bindings, Gesture, InputState};
 
 use crate::brush::{Block, Falloff, HeightDab, HeightOp, height_dab, zone_dab};
 use crate::document::{History, MapDocument, Saved};
 use crate::panels::{self, PanelAction};
+use crate::vector::{record_points, to_vec2};
 
-/// The active tool (T3-060 select, T3-061 the brushes; the vector tools
-/// arrive with T3-062). The brushes' parameters live in [`BrushSettings`].
+/// The active tool (T3-060 select, T3-061 the brushes, T3-062 the vector
+/// tools). The parameters live in [`BrushSettings`] and
+/// [`VectorSettings`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Tool {
+    /// Pick, drag, insert and delete vertices of every feature.
     Select,
     HeightBrush,
     ZoneBrush,
+    /// A polyline appended to `rivers` with the panel's width.
+    River,
+    /// A polyline widened into a road zone polygon.
+    Road,
+    /// A zone polygon of the panel's type (fords and bridges included).
+    Polygon,
+    /// The deployment polygon of the panel's side (replacing the old one).
+    Deployment,
+    /// A wall polyline, or a gate or tower point (inert until Phase 5).
+    Structure,
+    /// A ladder, ram or tower point and its facing (inert until Phase 5).
+    SiegePoint,
+}
+
+/// The vector tools' parameters, set in the tool panel (T3-062).
+#[derive(Clone, Debug, PartialEq)]
+pub struct VectorSettings {
+    pub river_width: f32,
+    pub road_width: f32,
+    pub road_zone: ContentId,
+    pub polygon_zone: ContentId,
+    /// The side the deployment tool, the edge toggles and the structures'
+    /// `faction_side` use.
+    pub side: u8,
+    /// `wall`, `gate` or `tower`.
+    pub structure: &'static str,
+    /// `ladder`, `ram` or `tower`.
+    pub siege: &'static str,
+}
+
+/// The metadata panel's fields as typed, applied as one history step.
+#[derive(Clone, Debug, PartialEq)]
+pub struct MetaDraft {
+    pub id: String,
+    pub name_key: String,
+    pub size: [f32; 2],
+    /// Comma-separated.
+    pub tags: String,
+    pub weather: Vec<String>,
+    pub base_zone: ContentId,
+}
+
+impl MetaDraft {
+    pub fn of(doc: &MapDocument) -> Self {
+        let d = &doc.def;
+        Self {
+            id: d.id.as_str().to_string(),
+            name_key: d.name_key.clone(),
+            size: [d.size.w.to_f32_render(), d.size.h.to_f32_render()],
+            tags: d.campaign_terrain_tags.join(", "),
+            weather: d.weather_allowed.clone(),
+            base_zone: d.base_zone.clone(),
+        }
+    }
 }
 
 /// The brushes' parameters, set in the tool panel (T3-061).
@@ -50,6 +107,10 @@ const BRUSH_STEP: f32 = 1.25;
 /// The time a single click's dab counts for, seconds.
 const CLICK_DT: f32 = 0.1;
 const CURSOR: [u8; 4] = [255, 255, 255, 200];
+/// A polyline in progress and the selected feature's vertex handles.
+const DRAFT: [u8; 4] = [255, 220, 80, 230];
+/// Structures and siege points (inert until Phase 5).
+const INERT: [u8; 4] = [170, 170, 170, 220];
 
 /// A stroke in progress: Flatten's target height.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -115,10 +176,18 @@ pub struct EditorSession {
     /// The nav preview overlay (drawn from T3-063).
     pub show_nav: bool,
     pub brush: BrushSettings,
+    pub vector: VectorSettings,
+    /// The vector tool's points so far (T3-062).
+    pub draft: Vec<Vec2>,
+    /// The select tool's feature.
+    pub selected: Option<crate::vector::Feature>,
+    /// The vertex a select drag moves.
+    pub dragging: Option<(crate::vector::Feature, usize)>,
+    pub meta: MetaDraft,
     /// The ground point under the cursor this frame.
     pub cursor_world: Option<Vec2>,
     stroke: Option<Stroke>,
-    camera_framed: bool,
+    pub(crate) camera_framed: bool,
 }
 
 impl EditorSession {
@@ -147,6 +216,31 @@ impl EditorSession {
             zone,
             zone_radius: 16.0,
         };
+        let pick = |suffix: &str, crossing: Option<bool>| -> ContentId {
+            zones
+                .iter()
+                .find(|z| z.as_str().ends_with(suffix))
+                .or_else(|| {
+                    zones.iter().find(|z| {
+                        crossing.is_none_or(|c| {
+                            regs.zones
+                                .lookup(z)
+                                .is_some_and(|h| regs.zones.get(h).crossing == c)
+                        })
+                    })
+                })
+                .map_or_else(|| doc.def.base_zone.clone(), |z| (*z).clone())
+        };
+        let vector = VectorSettings {
+            river_width: 12.0,
+            road_width: 8.0,
+            road_zone: pick(":road", Some(false)),
+            polygon_zone: pick(":bridge", Some(true)),
+            side: 0,
+            structure: "wall",
+            siege: "ladder",
+        };
+        let meta = MetaDraft::of(&doc);
         let centre = Vec2::new(
             loaded.width.to_f32_render() * 0.5,
             loaded.height.to_f32_render() * 0.5,
@@ -168,6 +262,11 @@ impl EditorSession {
             quit_armed: false,
             show_nav: false,
             brush,
+            vector,
+            draft: Vec::new(),
+            selected: None,
+            dragging: None,
+            meta,
             cursor_world: None,
             stroke: None,
             camera_framed: false,
@@ -196,6 +295,13 @@ impl EditorSession {
             }
             Err(e) => self.set_note(e.to_string(), true),
         }
+        self.meta = MetaDraft::of(&self.doc);
+        if self
+            .selected
+            .is_some_and(|f| self.feature_points(f).is_none())
+        {
+            self.selected = None;
+        }
     }
 
     /// Frames the whole map the first time the window size is known.
@@ -210,7 +316,7 @@ impl EditorSession {
         self.camera.zoom = fit.clamp(Camera::MIN_ZOOM, Camera::DEFAULT_ZOOM);
     }
 
-    fn set_note(&mut self, text: String, error: bool) {
+    pub(crate) fn set_note(&mut self, text: String, error: bool) {
         self.note = Some(text);
         self.note_is_error = error;
     }
@@ -291,8 +397,13 @@ impl EditorSession {
             return effects;
         }
         if i.pressed(b, Action::PauseMenu) {
-            self.menu_open = !self.menu_open;
-            self.quit_armed = false;
+            if self.draft.is_empty() {
+                self.menu_open = !self.menu_open;
+                self.quit_armed = false;
+            } else {
+                // Escape drops a polyline or polygon in progress first.
+                self.draft.clear();
+            }
         }
         if i.pressed(b, Action::QuickSave)
             && let Some(e) = self.save()
@@ -320,6 +431,7 @@ impl EditorSession {
         }
         self.cursor_world = i.cursor().map(|c| self.ground_point(c, input.screen));
         self.brush_input(input);
+        self.vector_input(input);
         if std::mem::take(&mut self.terrain_dirty) {
             effects.push(EditorEffect::TerrainChanged);
         }
@@ -446,7 +558,7 @@ impl EditorSession {
                 );
                 self.patch_zones(block);
             }
-            Tool::Select => {}
+            _ => {}
         }
     }
 
@@ -532,9 +644,17 @@ impl EditorSession {
                 }
                 PanelAction::Tool(tool) => {
                     self.end_stroke();
+                    self.draft.clear();
                     self.tool = tool;
                 }
                 PanelAction::Brush(settings) => self.brush = settings,
+                PanelAction::Vector(settings) => self.vector = settings,
+                PanelAction::Finish => self.tool_finish(),
+                PanelAction::Cancel => self.draft.clear(),
+                PanelAction::DeleteSelected => self.delete_selected(),
+                PanelAction::ToggleEdge(side, edge) => self.toggle_edge(side, edge),
+                PanelAction::MetaEdit(draft) => self.meta = draft,
+                PanelAction::MetaApply => self.apply_meta(),
             }
         }
         if std::mem::take(&mut self.terrain_dirty) {
@@ -598,11 +718,45 @@ impl EditorSession {
                 }
             }
         }
-        deployment_outlines(map, cam, screen, lines);
+        // From the document, so a dragged vertex moves its outline at once.
+        for d in &self.doc.def.deployment {
+            let pts: Vec<Vec2> = d.polygon.iter().map(|p| to_vec2(*p)).collect();
+            ground_polyline(map, cam, screen, &pts, true, side_tint(d.side), lines);
+        }
+        for rec in self
+            .doc
+            .def
+            .structures
+            .iter()
+            .chain(&self.doc.def.siege_points)
+        {
+            let pts = record_points(rec);
+            if pts.len() == 1 {
+                let p = pts[0];
+                for d in [Vec2::new(3.0, 3.0), Vec2::new(3.0, -3.0)] {
+                    ground_polyline(map, cam, screen, &[p - d, p + d], false, INERT, lines);
+                }
+            } else {
+                ground_polyline(map, cam, screen, &pts, false, INERT, lines);
+            }
+        }
+        if !self.draft.is_empty() {
+            let mut pts = self.draft.clone();
+            pts.extend(self.cursor_world);
+            ground_polyline(map, cam, screen, &pts, false, DRAFT, lines);
+        }
+        if let Some(f) = self.selected
+            && let Some(pts) = self.feature_points(f)
+        {
+            for p in pts {
+                let s = project(map, cam, screen, p);
+                lines.circle(s, 4.0, 8, DRAFT);
+            }
+        }
         let radius = match self.tool {
             Tool::HeightBrush => Some(self.brush.radius),
             Tool::ZoneBrush => Some(self.brush.zone_radius),
-            Tool::Select => None,
+            _ => None,
         };
         if let (Some(r), Some(c)) = (radius, self.cursor_world) {
             let ring: Vec<Vec2> = (0..48)
