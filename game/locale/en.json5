@@ -44,6 +44,7 @@
     },
     maps: {
       test_field: { name: "Test field" },
+      valley_crossing: { name: "Valley Crossing" },
     },
   },
   greece: {

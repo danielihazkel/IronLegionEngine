@@ -226,6 +226,8 @@ cargo run --release -p il_app -- --mod path/to/mymod --threads 8
 10. Checks must list no errors. Target folder: your mod folder (or `game`), **Save**. The top bar names the two files written (`content/maps/river_valley.json5`, `assets/maps/river_valley.hgt`).
 11. `cargo run -p il_cli -- validate game/ path/to/mymod` reports no errors. Restart the app with the same `--mod`, **Custom battle** → the map picker lists `mymod:river_valley`; start a battle on it and fight it to a result.
 
+The game ships one map made this way, `rome:valley_crossing` (**Valley Crossing** in the custom battle picker, T3-064): `tests/tests/editor.rs::valley_crossing_session` runs steps 1 to 8 through the editor's own session API (the same calls the tool panel makes) and `cargo test -p il_tests --test editor -- --ignored build_valley_crossing` saves it into `game/`; the push-time test fails if the committed files drift from it. To check it by hand: Main menu → **Map editor** → pick `rome:valley_crossing` (Checks lists nothing; `F5` shows the bridge corridor), then **Custom battle** → map Valley Crossing → start, deploy, and fight to the result screen.
+
 Things that would be wrong: Save enabled with an error listed, a painted forest whose edge moved after Save, a bridge that a regiment walks around instead of crossing (narrower than 8 m, or not covering the river's width), or a road drawn over a bridge hiding the bridge's colour.
 
 ## 5. Headless tools (`il_cli`)

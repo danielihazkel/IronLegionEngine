@@ -1,0 +1,33 @@
+// T3-064: ai_skirmish_300's two armies on the handcrafted map
+// rome:valley_crossing (made in the editor), south band against north
+// band with the river, its bridge and its ford between them. Both sides
+// belong to the engine (player 255) and fight to a conclusion with no
+// scripted command; the determinism and result corpora run it.
+//
+// RegimentIds: side 0 = 0 (hastati), 1 (velites), 2 (cavalry); side 1 =
+// 3 (hoplites), 4 (archers), 5 (cavalry).
+{
+  map_id: "rome:valley_crossing",
+  seed: 64,
+  sides: [
+    {
+      faction: "rome:rome", player: 255, deployment_zone: 0,
+      general: { unit_type: "rome:general", rank: 1, name_key: "rome.generals.placeholder", bodyguard: 1 },
+      regiments: [
+        { id: 1, unit_type: "rome:hastati", count: 80, formation: "rome:line", position: [580, 110], facing_deg: 90 },
+        { id: 2, unit_type: "rome:velites", count: 40, formation: "rome:loose", position: [620, 140], facing_deg: 90 },
+        { id: 3, unit_type: "persia:cavalry", count: 30, formation: "rome:wedge", position: [700, 90], facing_deg: 90 },
+      ],
+    },
+    {
+      faction: "greece:greece", player: 255, deployment_zone: 1,
+      general: { unit_type: "greece:general", rank: 1, name_key: "rome.generals.placeholder", bodyguard: 4 },
+      regiments: [
+        { id: 4, unit_type: "greece:hoplite", count: 80, formation: "rome:phalanx", position: [620, 790], facing_deg: 270 },
+        { id: 5, unit_type: "persia:archer", count: 40, formation: "rome:loose", position: [580, 760], facing_deg: 270 },
+        { id: 6, unit_type: "persia:cavalry", count: 30, formation: "rome:wedge", position: [500, 810], facing_deg: 270 },
+      ],
+    },
+  ],
+  determinism: { ticks: 3000, snapshot_at: 1500 },
+}

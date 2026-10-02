@@ -2,7 +2,9 @@
 //! field saved into `tests/mods/editor_out/` is byte for byte the committed
 //! map and sidecar, and the two mods validate clean together (T3-060); a
 //! hill and a forest painted on a blank map reload with the same samples
-//! (T3-061); a map made only with the vector tools plays (T3-062).
+//! (T3-061); a map made only with the vector tools plays (T3-062); the
+//! handcrafted `rome:valley_crossing` is the builder's map, clean, and a
+//! battle on it ends (T3-064).
 
 // The editor's brush positions and radii are render-side f32 (TDD §16,
 // il_editor's own lint table); nothing here feeds the sim.
@@ -560,4 +562,230 @@ fn test_field_saves_byte_identically_and_validates() {
         text.contains("0 errors, 0 warnings in 2 mods (order: rome, editor_out)"),
         "{text}"
     );
+}
+
+/// T3-064: `rome:valley_crossing`, made through the editor's own tools in
+/// the order of the docs/08 §4i walkthrough. 1200 × 900 m: a ridge in the
+/// north-west with forest on its crest, two low rises, a west-east river
+/// with an 8 m bridge under a south-north road and a 30 m ford in the
+/// east, a marsh in the south-east, one deployment band per side along
+/// the south and north edges.
+fn valley_crossing_session(regs: &Arc<Registries>) -> EditorSession {
+    let mut s = blank_session(regs, "rome:valley_crossing", [1200.0, 900.0]);
+    let id = |z: &str| ContentId::new(z).unwrap();
+    let v = Vec2::new;
+    let stroke = |s: &mut EditorSession, from: Vec2, to: Vec2, dabs: u32, dt: f32| {
+        s.begin_stroke(from);
+        for k in 0..=dabs {
+            s.dab(from + (to - from) * (k as f32 / dabs as f32), dt);
+        }
+        s.end_stroke();
+    };
+    let click_all = |s: &mut EditorSession, pts: &[(f32, f32)]| {
+        for (x, y) in pts {
+            s.tool_click(Vec2::new(*x, *y));
+        }
+        s.tool_finish();
+    };
+
+    // Height: the ridge, two rises, a smoothing pass, the valley floor.
+    s.tool = Tool::HeightBrush;
+    s.brush.op = HeightOp::Raise;
+    s.brush.radius = 120.0;
+    s.brush.strength = 7.0;
+    stroke(&mut s, v(60.0, 600.0), v(480.0, 640.0), 40, 0.1);
+    stroke(&mut s, v(120.0, 610.0), v(400.0, 630.0), 30, 0.1);
+    s.brush.radius = 150.0;
+    s.brush.strength = 4.0;
+    stroke(&mut s, v(220.0, 230.0), v(260.0, 250.0), 20, 0.1);
+    stroke(&mut s, v(880.0, 640.0), v(940.0, 660.0), 20, 0.1);
+    s.brush.op = HeightOp::Smooth;
+    s.brush.radius = 140.0;
+    s.brush.strength = 1.0;
+    stroke(&mut s, v(60.0, 620.0), v(480.0, 640.0), 30, 0.1);
+    s.brush.op = HeightOp::Flatten;
+    s.brush.radius = 60.0;
+    s.brush.strength = 4.0;
+    stroke(&mut s, v(0.0, 440.0), v(1200.0, 440.0), 120, 0.2);
+
+    // Zones painted: forest on the ridge's crest, a marsh in the south-east.
+    s.tool = Tool::ZoneBrush;
+    s.brush.zone = id("rome:forest");
+    s.brush.zone_radius = 40.0;
+    stroke(&mut s, v(80.0, 605.0), v(460.0, 640.0), 40, 0.05);
+    s.brush.zone = id("rome:marsh");
+    s.brush.zone_radius = 35.0;
+    stroke(&mut s, v(980.0, 260.0), v(1060.0, 280.0), 8, 0.05);
+
+    // The river, west to east with two bends.
+    s.tool = Tool::River;
+    s.vector.river_width = 12.0;
+    click_all(
+        &mut s,
+        &[
+            (0.0, 430.0),
+            (300.0, 470.0),
+            (600.0, 450.0),
+            (900.0, 420.0),
+            (1200.0, 450.0),
+        ],
+    );
+    // The bridge where the road will cross, the ford in the east.
+    s.tool = Tool::Polygon;
+    s.vector.polygon_zone = id("rome:bridge");
+    click_all(
+        &mut s,
+        &[
+            (596.0, 432.0),
+            (604.0, 432.0),
+            (604.0, 468.0),
+            (596.0, 468.0),
+        ],
+    );
+    s.vector.polygon_zone = id("rome:ford");
+    click_all(
+        &mut s,
+        &[
+            (935.0, 400.0),
+            (965.0, 400.0),
+            (965.0, 450.0),
+            (935.0, 450.0),
+        ],
+    );
+    // The road, south edge to north edge over the bridge.
+    s.tool = Tool::Road;
+    s.vector.road_zone = id("rome:road");
+    s.vector.road_width = 8.0;
+    click_all(&mut s, &[(600.0, 0.0), (600.0, 900.0)]);
+
+    // Deployment: side 0 along the south edge, side 1 along the north; the
+    // blank map's reinforcement edges (South, North) stay.
+    s.tool = Tool::Deployment;
+    s.vector.side = 0;
+    click_all(
+        &mut s,
+        &[(60.0, 30.0), (1140.0, 30.0), (1140.0, 180.0), (60.0, 180.0)],
+    );
+    s.vector.side = 1;
+    click_all(
+        &mut s,
+        &[
+            (60.0, 720.0),
+            (1140.0, 720.0),
+            (1140.0, 870.0),
+            (60.0, 870.0),
+        ],
+    );
+
+    s.meta.tags = "river, hills, forest".into();
+    s.apply_meta();
+    s.doc.header = [
+        "// Made in the Iron Legion map editor through its own tools by",
+        "// tests/tests/editor.rs::build_valley_crossing (T3-064); rebuild it there.",
+        "// 1200 x 900 m: a forested ridge in the north-west, a west-east river with",
+        "// an 8 m bridge under a south-north road and a 30 m ford, a marsh.",
+    ]
+    .map(str::to_string)
+    .to_vec();
+    s
+}
+
+/// Rebuilds the committed map into `game/` (T3-064). By hand:
+/// `cargo test -p il_tests --test editor -- --ignored build_valley_crossing`.
+#[test]
+#[ignore = "writes game/content/maps/valley_crossing.json5; run by hand"]
+fn build_valley_crossing() {
+    let game = il_tests::game_root();
+    let regs = Arc::new(
+        il_data::load_roots(std::slice::from_ref(&game)).unwrap_or_else(|d| panic!("{d}")),
+    );
+    let mut s = valley_crossing_session(&regs);
+    s.refresh_diagnostics();
+    assert!(s.diagnostics.is_empty(), "{:?}", s.diagnostics);
+    s.target = game.display().to_string();
+    assert!(s.save().is_some(), "{:?}", s.note);
+}
+
+/// T3-064 done-when, the headless half: the committed map is what the
+/// builder makes, byte for byte; it opens in the editor with no
+/// diagnostic, validates clean with warnings denied, carries the `river`
+/// tag, and routes from the south band to the north band cross the river
+/// only on the bridge or the ford.
+#[test]
+fn valley_crossing_is_the_builders_map_and_clean() {
+    let game = il_tests::game_root();
+    let regs = Arc::new(
+        il_data::load_roots(std::slice::from_ref(&game)).unwrap_or_else(|d| panic!("{d}")),
+    );
+    let mut built = valley_crossing_session(&regs);
+    let out = scratch_mod("valley_crossing");
+    built.target = out.display().to_string();
+    assert!(built.save().is_some(), "{:?}", built.note);
+    let original = std::fs::read_to_string(game.join("content/maps/valley_crossing.json5"))
+        .unwrap()
+        .replace("\r\n", "\n");
+    assert_eq!(
+        std::fs::read_to_string(out.join("content/maps/valley_crossing.json5")).unwrap(),
+        original,
+        "rerun build_valley_crossing"
+    );
+    assert_eq!(
+        std::fs::read(out.join("assets/maps/valley_crossing.hgt")).unwrap(),
+        std::fs::read(game.join("assets/maps/valley_crossing.hgt")).unwrap(),
+        "rerun build_valley_crossing"
+    );
+
+    let id = ContentId::new("rome:valley_crossing").unwrap();
+    let doc = MapDocument::from_registry(&regs, &id, std::slice::from_ref(&game)).unwrap();
+    assert!(doc.def.campaign_terrain_tags.iter().any(|t| t == "river"));
+    let s = EditorSession::open(doc, regs.clone(), vec![game.clone()], None).unwrap();
+    assert!(s.diagnostics.is_empty(), "{:?}", s.diagnostics);
+    let nav = s.nav.grid.as_ref().expect("built when the session opens");
+    let v = il_core::V2::from_f32_data;
+    for (from, to) in [
+        (v(600.0, 100.0), v(600.0, 800.0)),
+        (v(1000.0, 100.0), v(1000.0, 800.0)),
+        (v(150.0, 100.0), v(150.0, 800.0)),
+    ] {
+        let mut path = Vec::new();
+        let r = il_sim_battle::AStar::new().find(nav, from, to, &mut path);
+        assert_eq!(r, il_sim_battle::PathResult::Found);
+        let crossed = river_crossings(&s.loaded, &s.regs, &path);
+        assert!(!crossed.is_empty(), "the route crosses the river");
+        assert!(
+            crossed
+                .iter()
+                .all(|z| z == "rome:bridge" || z == "rome:ford"),
+            "{crossed:?}"
+        );
+    }
+
+    let mut text = Vec::new();
+    let report = validate(
+        &ValidateOptions {
+            roots: vec![game],
+            deny_warnings: true,
+            verbose: true,
+        },
+        &mut text,
+    )
+    .expect("validate runs");
+    let text = String::from_utf8(text).unwrap();
+    assert_eq!(report.errors, 0, "{text}");
+    assert_eq!(report.warnings, 0, "{text}");
+}
+
+/// T3-064 done-when: a battle on the handcrafted map is fought to a
+/// result (`valley_crossing_skirmish.json5`, both armies the engine's).
+#[test]
+fn a_battle_on_valley_crossing_ends_with_a_winner() {
+    let path = il_tests::scenario_dir().join("valley_crossing_skirmish.json5");
+    let scenario = il_tests::load_scenario(&path);
+    assert_eq!(scenario.setup.map_id.as_str(), "rome:valley_crossing");
+    let mut w = BattleWorld::new(&scenario.setup, il_tests::game_regs()).unwrap();
+    while w.phase() != il_sim_battle::BattlePhase::Ended && w.tick().0 < 20_000 {
+        w.step(&[]);
+    }
+    assert_eq!(w.phase(), il_sim_battle::BattlePhase::Ended);
+    assert!(w.result().winner.is_some(), "{:?}", w.result());
 }
