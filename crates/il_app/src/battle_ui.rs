@@ -1,5 +1,5 @@
 //! The battle screen's panels (T2-090, REQ-UI-001, REQ-UI-003): builds the
-//! `il_ui` models from the session, the camera and the selection, and turns
+//! `il_ui` models from the battle's newest frame, the camera and the selection, and turns
 //! the panels' clicks back into the same intents the keys give
 //! (REQ-INP-006). `app.rs` owns the frame; this module owns what the frame
 //! shows in a battle.
@@ -13,13 +13,13 @@ use il_data::Registries;
 use il_render::{Camera, side_tint};
 use il_sim_battle::components::{MoraleState, OrderKind};
 use il_sim_battle::morale::{FatigueState, fatigue_state};
-use il_sim_battle::{BattlePhase, BattleResult, BattleView, GeneralFate};
+use il_sim_battle::{BattleFrame, BattlePhase, BattleResult, GeneralFate};
 use il_ui::{
     AbilitySlot, CommandCardModel, MiniBlock, Minimap, RegimentCard, ResultRow, ResultSide,
     SelectedRegiment, Selection, SettingsState, SideTally,
 };
 
-use crate::session::BattleSession;
+use crate::sim_thread::BattleHandle;
 
 /// A cursor armed by a command that needs a target click (plan I4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,7 +54,7 @@ impl Default for BattleUi {
 /// A regiment's label (T3-041, SIM-FORM-012): the unit's name, or for a
 /// mixed regiment every group's name with its living count, joined by
 /// `il.cards.sep` ("Hastati 100 · Velites 40").
-pub fn composition_label(view: &BattleView, regs: &Registries, id: RegimentId) -> String {
+pub fn composition_label(view: &BattleFrame, regs: &Registries, id: RegimentId) -> String {
     let l = &regs.locale;
     let units = view.regiment_units(id);
     if units.len() <= 1 {
@@ -85,10 +85,10 @@ pub fn composition_label(view: &BattleView, regs: &Registries, id: RegimentId) -
 
 /// Living soldiers of the regiment's ranged groups (T3-041): the divisor of
 /// the card's mean volleys.
-fn ranged_living(view: &BattleView, regs: &Registries, id: RegimentId) -> u32 {
+fn ranged_living(view: &BattleFrame, regs: &Registries, id: RegimentId) -> u32 {
     view.regiment_units(id)
         .iter()
-        .zip(view.regiment_living_by_group(id))
+        .zip(view.regiment_living_by_group(id).iter().copied())
         .filter(|(g, _)| regs.units.get(g.unit).ranged.is_some())
         .map(|(_, n)| u32::from(n))
         .sum()
@@ -97,8 +97,8 @@ fn ranged_living(view: &BattleView, regs: &Registries, id: RegimentId) -> u32 {
 /// The result screen's rows (T2-091, decision 15): per side the faction's
 /// name, the general's fate, the loot and a row per regiment, named through
 /// the setup's rosters (`RegimentResult.id` is the setup id).
-pub fn result_sides(session: &BattleSession, result: &BattleResult) -> Vec<ResultSide> {
-    let view = session.world.view();
+pub fn result_sides(session: &BattleHandle, result: &BattleResult) -> Vec<ResultSide> {
+    let view = session.view();
     let regs = view.regs();
     let l = &regs.locale;
     let setup = session.setup();
@@ -223,8 +223,8 @@ pub fn order_key(order: OrderKind) -> &'static str {
 }
 
 /// The command card's rows for the selection (T1-070's selection card).
-pub fn selection_rows(session: &BattleSession, selection: &Selection) -> Vec<SelectedRegiment> {
-    let view = session.world.view();
+pub fn selection_rows(session: &BattleHandle, selection: &Selection) -> Vec<SelectedRegiment> {
+    let view = session.view();
     let regs = view.regs();
     let l = &regs.locale;
     selection
@@ -233,7 +233,7 @@ pub fn selection_rows(session: &BattleSession, selection: &Selection) -> Vec<Sel
         .filter_map(|id| view.regiment(*id))
         .map(|r| SelectedRegiment {
             id: r.id,
-            unit: composition_label(&view, regs, r.id),
+            unit: composition_label(view, regs, r.id),
             soldiers: r.soldier_count,
             formation: l
                 .get(&regs.formations.get(r.formation).name_key)
@@ -253,7 +253,7 @@ pub fn selection_rows(session: &BattleSession, selection: &Selection) -> Vec<Sel
                     &regs.rules.fatigue,
                 )))
                 .to_string(),
-            abilities: ability_slots(&view, r.id)
+            abilities: ability_slots(view, r.id)
                 .into_iter()
                 .map(|a| {
                     l.fmt(
@@ -288,7 +288,7 @@ pub fn selection_rows(session: &BattleSession, selection: &Selection) -> Vec<Sel
 }
 
 /// The regiment's ability slots as the card shows them (T2-050 lines).
-pub fn ability_slots(view: &BattleView, id: RegimentId) -> Vec<AbilitySlot> {
+pub fn ability_slots(view: &BattleFrame, id: RegimentId) -> Vec<AbilitySlot> {
     let regs = view.regs();
     let l = &regs.locale;
     view.abilities(id)
@@ -314,8 +314,8 @@ pub fn ability_slots(view: &BattleView, id: RegimentId) -> Vec<AbilitySlot> {
 }
 
 /// One card per own regiment, ascending id (decision 8).
-pub fn card_models(session: &BattleSession, selection: &Selection) -> Vec<RegimentCard> {
-    let view = session.world.view();
+pub fn card_models(session: &BattleHandle, selection: &Selection) -> Vec<RegimentCard> {
+    let view = session.view();
     let regs = view.regs();
     let l = &regs.locale;
     let player = session.local_player();
@@ -328,7 +328,7 @@ pub fn card_models(session: &BattleSession, selection: &Selection) -> Vec<Regime
         })
         .map(|r| RegimentCard {
             id: r.id,
-            unit: composition_label(&view, regs, r.id),
+            unit: composition_label(view, regs, r.id),
             soldiers: r.soldier_count,
             initial: u32::from(r.initial),
             morale_state: r.morale_state,
@@ -341,7 +341,7 @@ pub fn card_models(session: &BattleSession, selection: &Selection) -> Vec<Regime
             // `ammo` is the soldiers' sum; a volley spends one per ranged
             // soldier (T3-041: the ranged groups' living count).
             volleys: r.fire.map(|_| {
-                let n = ranged_living(&view, regs, r.id).max(1);
+                let n = ranged_living(view, regs, r.id).max(1);
                 (u32::from(view.ammo(r.id)) / n) as u16
             }),
             engaged: r.engaged,
@@ -358,14 +358,14 @@ pub fn card_models(session: &BattleSession, selection: &Selection) -> Vec<Regime
 
 /// The command card's model for the selection (decision 9).
 pub fn command_model<'a>(
-    session: &BattleSession,
+    session: &BattleHandle,
     selection: &Selection,
     rows: &'a [SelectedRegiment],
     regs: &'a Registries,
     run: bool,
     armed: Option<Armed>,
 ) -> CommandCardModel<'a> {
-    let view = session.world.view();
+    let view = session.view();
     let l = &regs.locale;
     let first = selection.regiments.iter().find_map(|id| view.regiment(*id));
     let fire = selection
@@ -386,7 +386,7 @@ pub fn command_model<'a>(
             })
             .collect()
     });
-    let abilities = first.map_or_else(Vec::new, |r| ability_slots(&view, r.id));
+    let abilities = first.map_or_else(Vec::new, |r| ability_slots(view, r.id));
     let presets = regs
         .group_formations
         .iter()
@@ -410,8 +410,8 @@ pub fn command_model<'a>(
 /// left of the initial strength (as `result::compute` counts it). Read
 /// from the rows rather than tallied from events so a loaded battle
 /// (T2-101) shows the same numbers.
-pub fn tallies(session: &BattleSession) -> Vec<SideTally> {
-    let view = session.world.view();
+pub fn tallies(session: &BattleHandle) -> Vec<SideTally> {
+    let view = session.view();
     let regs = view.regs();
     let l = &regs.locale;
     let mut totals = vec![(0u32, 0u32, 0u32); view.sides().len()];
@@ -448,12 +448,12 @@ pub fn tallies(session: &BattleSession) -> Vec<SideTally> {
 /// The minimap's data: the observer side's discs and what it sees
 /// (decisions 4 and 11).
 pub fn minimap_data(
-    session: &BattleSession,
+    session: &BattleHandle,
     selection: &BTreeSet<RegimentId>,
     camera: &Camera,
     screen: Vec2,
 ) -> MinimapData {
-    let view = session.world.view();
+    let view = session.view();
     let regs = view.regs();
     let map = view.map();
     let zone_colours = map

@@ -1,4 +1,4 @@
-//! T1-054: each overlay draws from an immutable `BattleView` and adds
+//! T1-054: each overlay draws from an immutable `BattleFrame` and adds
 //! segments only when its flag is on.
 
 use std::path::Path;
@@ -46,7 +46,14 @@ fn world() -> BattleWorld {
 
 fn segments(world: &BattleWorld, flags: DebugFlags, camera: &Camera) -> usize {
     let mut lines = LineScene::default();
-    build_debug_lines(&world.view(), flags, 0, camera, SCREEN, &mut lines);
+    build_debug_lines(
+        &il_sim_battle::BattleFrame::capture(world, il_sim_battle::FrameDetail::ALL),
+        flags,
+        0,
+        camera,
+        SCREEN,
+        &mut lines,
+    );
     lines.segment_count()
 }
 

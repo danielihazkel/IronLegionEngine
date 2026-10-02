@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 use glam::Vec2;
 use il_core::{RegimentId, Scalar, SoldierId, Tick};
 use il_data::Registries;
-use il_sim_battle::BattleView;
+use il_sim_battle::BattleFrame;
 use il_sim_battle::components::SoldierState;
 use il_sim_battle::formation::layout::spacing;
 
@@ -245,7 +245,7 @@ fn outside(p: Vec2, min: Vec2, max: Vec2) -> bool {
 
 /// Clears and refills `out` from `view`: picks the tier, lerps positions,
 /// snaps facings, culls to the camera bounds.
-pub fn build_snapshot(view: &BattleView, input: &SnapshotInput, out: &mut RenderSnapshot) {
+pub fn build_snapshot(view: &BattleFrame, input: &SnapshotInput, out: &mut RenderSnapshot) {
     out.tick = view.tick();
     out.alpha = input.alpha;
     out.camera = input.camera;

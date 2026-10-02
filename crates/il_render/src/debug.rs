@@ -1,11 +1,11 @@
 //! Debug overlays (T1-054, TDD §10.1 debug, REQ-RNDR-008): nav grid, slots,
 //! paths, anchors and facings, spatial cells, drawn as lines from a
-//! `BattleView` (never `&mut`) into the frame's `LineScene`.
+//! `BattleFrame` (an owned copy, T3-032) into the frame's `LineScene`.
 
 use glam::Vec2;
 use il_core::{PlayerId, Scalar, V2};
 use il_sim_battle::components::Anchor;
-use il_sim_battle::{BattleView, LoadedMap, NavGrid, slot_world};
+use il_sim_battle::{BattleFrame, LoadedMap, NavGrid, slot_world};
 
 use crate::camera::Camera;
 use crate::lines::LineScene;
@@ -131,7 +131,7 @@ pub fn nav_grid_lines(
 /// Appends every enabled overlay to `lines`; `flow_side` picks the side
 /// whose escape field the `flow` overlay draws.
 pub fn build_debug_lines(
-    view: &BattleView,
+    view: &BattleFrame,
     flags: DebugFlags,
     flow_side: u8,
     camera: &Camera,
@@ -242,8 +242,9 @@ pub fn build_debug_lines(
         nav_grid_lines(view.nav_grid(), map, camera, screen, lines, false);
     }
 
-    if flags.spatial_cells {
-        let grid = view.spatial_grid();
+    if flags.spatial_cells
+        && let Some(grid) = view.spatial_grid()
+    {
         let cell = grid.cell().to_f32_render();
         let (x0, y0) = grid.cell_of(V2::from_f32_data(min.x, min.y));
         let (x1, y1) = grid.cell_of(V2::from_f32_data(max.x, max.y));
@@ -305,7 +306,7 @@ pub fn build_debug_lines(
             && let Some(s) = view.sides().get(usize::from(r.side))
             && !s.general_dead
             && s.general_regiment == Some(r.id)
-            && let Some(row) = s.general.and_then(|id| view.soldier(id))
+            && let Some(row) = view.general(r.side)
         {
             // SIM-GEN-002 (T2-043): the living general's aura around it.
             let g = &view.regs().rules.general;

@@ -4,7 +4,7 @@
 //! bindings, input state, selection and hit testing (T1-061); orders and
 //! the drag-formation gesture (T1-062); the main menu, battle HUD and event
 //! panel (T1-070). The UI only ever reads the
-//! sim through `BattleView` and emits Commands (SAD §5.2); it never sees the
+//! sim through `BattleFrame` (T3-032) and emits Commands (SAD §5.2); it never sees the
 //! renderer, so hit testing takes a projection closure from the app.
 
 pub mod bindings;

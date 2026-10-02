@@ -24,7 +24,7 @@ fn world() -> BattleWorld {
     world
 }
 
-fn all(view: &il_sim_battle::BattleView) -> BTreeSet<RegimentId> {
+fn all(view: &il_sim_battle::BattleFrame) -> BTreeSet<RegimentId> {
     view.regiments().map(|r| r.id).collect()
 }
 
@@ -48,7 +48,7 @@ fn f(v: S) -> f32 {
 #[test]
 fn click_move_halt_run_and_formation_hotkeys_become_commands() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let two: BTreeSet<RegimentId> = [RegimentId(0), RegimentId(6)].into_iter().collect();
     let ctx = OrderContext {
         view: &view,
@@ -101,7 +101,7 @@ fn click_move_halt_run_and_formation_hotkeys_become_commands() {
 #[test]
 fn a_single_regiment_drag_sets_ranks_for_the_width_then_moves() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let one: BTreeSet<RegimentId> = [RegimentId(0)].into_iter().collect();
     let ctx = OrderContext {
         view: &view,
@@ -152,7 +152,7 @@ fn a_single_regiment_drag_sets_ranks_for_the_width_then_moves() {
 fn ten_regiments_dragged_into_a_battle_line_face_the_drag_direction() {
     let mut world = world();
     let (selection, kinds) = {
-        let view = world.view();
+        let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
         let selection = all(&view);
         assert_eq!(selection.len(), 10);
         let ctx = OrderContext {
@@ -183,7 +183,7 @@ fn ten_regiments_dragged_into_a_battle_line_face_the_drag_direction() {
     for _ in 0..1800 {
         world.step(&[]);
     }
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let north = Angle::new(S::from_f32_data(core::f32::consts::FRAC_PI_2));
     let mut xs: Vec<(f32, RegimentId)> = Vec::new();
     for id in &selection {
@@ -231,7 +231,7 @@ fn ten_regiments_dragged_into_a_battle_line_face_the_drag_direction() {
 #[test]
 fn attack_move_attack_regiment_withdraw_and_presets_become_commands() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let two: BTreeSet<RegimentId> = [RegimentId(0), RegimentId(6)].into_iter().collect();
     let ctx = OrderContext {
         view: &view,
@@ -336,7 +336,7 @@ fn a_deployment_preset_re_lays_the_side_and_combat_intents_wait() {
     )
     .expect("setup parses");
     let world = BattleWorld::new(&setup, regs).expect("world builds");
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     assert_eq!(view.phase(), il_sim_battle::BattlePhase::Deployment);
     let one: BTreeSet<RegimentId> = [RegimentId(0)].into_iter().collect();
     let ctx = OrderContext {

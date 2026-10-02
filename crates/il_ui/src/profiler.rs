@@ -45,6 +45,10 @@ pub struct ProfilerStats {
     /// the regiment blocks it drew.
     pub tier: String,
     pub blocks: u32,
+    /// T3-032: the sim steps on its own thread (else on the main thread),
+    /// and how old the shown tick's frame is.
+    pub sim_thread: bool,
+    pub frame_age_ms: f32,
 }
 
 /// Draws the overlay window. Returns nothing; the caller decides visibility.
@@ -81,6 +85,20 @@ pub fn profiler_overlay(ctx: &egui::Context, locale: &Locale, stats: &ProfilerSt
                     ("render", &format!("{:.2}", stats.render_ms)),
                     ("fps", &format!("{:.0}", stats.render_fps)),
                     ("dropped", &stats.frames_dropped),
+                ],
+            ));
+            ui.label(locale.fmt(
+                "il.profiler.sim",
+                &[
+                    (
+                        "where",
+                        &locale.get(if stats.sim_thread {
+                            "il.profiler.sim_thread"
+                        } else {
+                            "il.profiler.sim_main"
+                        }) as &dyn Display,
+                    ),
+                    ("age", &format!("{:.1}", stats.frame_age_ms)),
                 ],
             ));
             ui.label(locale.fmt(

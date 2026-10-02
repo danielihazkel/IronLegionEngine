@@ -10,7 +10,7 @@ use il_audio::{AudioEngine, AudioSink, EventRouter, FrameInput, NullSink, Regime
 use il_core::Scalar;
 use il_data::{ContentId, Registries};
 use il_render::Camera;
-use il_sim_battle::{BattleEvent, BattleView, StepOutput};
+use il_sim_battle::{BattleEvent, BattleFrame};
 
 use crate::settings::Volume;
 
@@ -66,11 +66,9 @@ impl AppAudio {
         self.router.is_some()
     }
 
-    /// Keeps this frame's events for [`Self::frame`].
-    pub fn collect(&mut self, outputs: &[StepOutput]) {
-        for o in outputs {
-            self.events.extend(o.events.iter().cloned());
-        }
+    /// Keeps the events of the frame's new ticks for [`Self::frame`].
+    pub fn collect(&mut self, events: &[BattleEvent]) {
+        self.events.extend(events.iter().cloned());
     }
 
     /// Picks the observer's faction's sound set (plan I1), loads its
@@ -119,7 +117,7 @@ impl AppAudio {
     /// Routes the frame's events with the camera as the listener.
     pub fn frame(
         &mut self,
-        view: &BattleView,
+        view: &BattleFrame,
         camera: &Camera,
         screen: Vec2,
         now_ms: u64,

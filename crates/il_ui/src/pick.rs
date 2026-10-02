@@ -1,5 +1,5 @@
 //! Hit testing (T1-061, REQ-INP-002): which of the local player's regiments
-//! is under the cursor or inside a box, decided on `BattleView` soldier
+//! is under the cursor or inside a box, decided on `BattleFrame` soldier
 //! positions projected through a closure the app builds from its camera.
 //! Only the local player's regiments are ever returned (TDD §11 "own
 //! side only"), which a side always sees (SIM-VIS-004, T2-060), so
@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use glam::Vec2;
 use il_core::{PlayerId, RegimentId, Scalar, V2};
 use il_data::{Handle, UnitType};
-use il_sim_battle::BattleView;
+use il_sim_battle::BattleFrame;
 
 /// World point (metres, at ground height) to screen pixels.
 pub type Project<'a> = dyn Fn(V2) -> Vec2 + 'a;
@@ -28,7 +28,7 @@ struct Candidate {
 }
 
 /// The local player's regiments, ascending by id.
-fn candidates(view: &BattleView, player: PlayerId) -> Vec<Candidate> {
+fn candidates(view: &BattleFrame, player: PlayerId) -> Vec<Candidate> {
     let sides = view.sides();
     view.regiments()
         .filter(|r| {
@@ -51,7 +51,7 @@ fn candidate(cands: &[Candidate], id: RegimentId) -> Option<Candidate> {
 }
 
 /// Whether `id` belongs to `player`.
-pub fn owned(view: &BattleView, id: RegimentId, player: PlayerId) -> bool {
+pub fn owned(view: &BattleFrame, id: RegimentId, player: PlayerId) -> bool {
     view.regiment(id).is_some_and(|r| {
         view.sides()
             .get(usize::from(r.side))
@@ -60,7 +60,7 @@ pub fn owned(view: &BattleView, id: RegimentId, player: PlayerId) -> bool {
 }
 
 /// Every regiment `player` commands.
-pub fn own_regiments(view: &BattleView, player: PlayerId) -> BTreeSet<RegimentId> {
+pub fn own_regiments(view: &BattleFrame, player: PlayerId) -> BTreeSet<RegimentId> {
     candidates(view, player).iter().map(|c| c.id).collect()
 }
 
@@ -77,7 +77,7 @@ fn hit_circle(p: Vec2, radius_m: f32, pixels_per_metre: f32) -> (Vec2, f32) {
 /// The own regiment whose soldier is nearest to `cursor` within its hit
 /// circle.
 pub fn pick_regiment(
-    view: &BattleView,
+    view: &BattleFrame,
     project: &Project<'_>,
     pixels_per_metre: f32,
     player: PlayerId,
@@ -108,7 +108,7 @@ pub fn pick_regiment(
 /// currently sees (T2-090, plan I5): a right-click on it attacks. Ghost
 /// markers are not soldiers, so a remembered regiment is never returned.
 pub fn pick_enemy_regiment(
-    view: &BattleView,
+    view: &BattleFrame,
     project: &Project<'_>,
     pixels_per_metre: f32,
     observer_side: u8,
@@ -144,7 +144,7 @@ pub fn pick_enemy_regiment(
 /// Own regiments with at least one soldier whose ground point projects
 /// inside the rectangle spanned by `a` and `b` (any corner order).
 pub fn regiments_in_box(
-    view: &BattleView,
+    view: &BattleFrame,
     project: &Project<'_>,
     player: PlayerId,
     a: Vec2,
@@ -171,7 +171,7 @@ pub fn regiments_in_box(
 /// Own regiments of the same unit type as `like` with any soldier on a
 /// `screen`-sized viewport (double-click by type).
 pub fn regiments_of_type_on_screen(
-    view: &BattleView,
+    view: &BattleFrame,
     project: &Project<'_>,
     player: PlayerId,
     like: RegimentId,

@@ -5,9 +5,11 @@
 //! Every key and mouse gesture goes through `il_ui::InputState` and the
 //! `Bindings` loaded from `content/input/bindings.json5`; nothing here names
 //! a key code (REQ-INP-005). The frame: poll input → intents → commands
-//! queued on the session → `advance` (accumulator, capped catch-up) →
-//! snapshot with `alpha` → scene → egui → one `FrameJob` to the render
-//! host (the render thread of T3-030, or the renderer inline with
+//! sent to the battle's handle → take the newest frame from the sim
+//! thread (T3-032; with `--single-thread-sim` the handle steps the session
+//! inline: accumulator, capped catch-up) → snapshot with `alpha` from the
+//! frame's clock → scene → egui → one `FrameJob` to the render host (the
+//! render thread of T3-030, or the renderer inline with
 //! `--single-thread-render`) → apply the state transition. The main thread
 //! then waits until the job was picked up, at most one display period.
 
@@ -28,7 +30,7 @@ use il_render::{
     scene_from_snapshot,
 };
 use il_sim_battle::{
-    BattlePhase, BattleSetup, BattleView, BattleWorld, ScriptedCommands, SpeedMode,
+    BattleFrame, BattlePhase, BattleSetup, BattleWorld, FrameDetail, ScriptedCommands, SpeedMode,
 };
 use il_ui::{
     Action, Bindings, CardAction, CardStripModel, CommandAction, DragFormation, Gesture, HudAction,
@@ -48,9 +50,10 @@ use crate::audio::AppAudio;
 use crate::battle_ui::{self, Armed, BattleUi};
 use crate::bench::SpriteBench;
 use crate::menus::draft_from;
-use crate::profiler::Profiler;
+use crate::profiler::FrameTimer;
 use crate::session::BattleSession;
 use crate::settings::{self, Settings};
+use crate::sim_thread::BattleHandle;
 use crate::state::{AppState, MenuState, Transition};
 
 /// Frames between title refreshes (the title shows the tick and sim cost).
@@ -105,6 +108,8 @@ pub struct Launch {
     pub mute: bool,
     /// `--single-thread-render`: the renderer on the main thread (T3-030).
     pub single_thread_render: bool,
+    /// `--single-thread-sim`: the sim steps on the main thread (T3-032).
+    pub single_thread_sim: bool,
 }
 
 pub struct App {
@@ -139,7 +144,8 @@ pub struct App {
     pub(crate) selection: Selection,
     /// The run toggle: new movement orders run instead of walk.
     pub(crate) run: bool,
-    pub(crate) profiler: Profiler,
+    /// The main thread's frame time (the stage rows come with each frame).
+    pub(crate) frame_timer: FrameTimer,
     pub(crate) show_profiler: bool,
     /// Debug overlays (T1-054), `dev` builds only.
     pub(crate) debug: DebugFlags,
@@ -170,7 +176,7 @@ pub struct App {
     pub(crate) started: Instant,
     pub(crate) last_frame: Option<Instant>,
     pub(crate) frames: u32,
-    /// Wall time spent inside `BattleWorld::step` since the last title refresh.
+    /// Wall time the sim spent stepping since the last title refresh.
     pub(crate) step_seconds: f64,
     pub(crate) ticks_since_title: u32,
 }
@@ -274,7 +280,7 @@ impl App {
             bindings,
             selection: Selection::new(),
             run: false,
-            profiler: Profiler::default(),
+            frame_timer: FrameTimer::default(),
             show_profiler: DEV,
             debug: DebugFlags::default(),
             atlases: Vec::new(),
@@ -325,7 +331,7 @@ impl App {
     /// Builds the battle's terrain mesh (T1-053); the next job uploads it.
     fn load_terrain(&mut self) {
         let mesh = match &self.state {
-            AppState::Battle(session) => TerrainMesh::build(session.world.map(), &self.regs),
+            AppState::Battle(session) => TerrainMesh::build(session.view().map(), &self.regs),
             // T3-060: the editor's document, rebuilt by the session on edits.
             AppState::Editor(session) => session.terrain.clone(),
             AppState::MainMenu(_) => {
@@ -343,7 +349,7 @@ impl App {
         self.camera = None;
         self.selection = Selection::new();
         self.run = false;
-        self.profiler = Profiler::default();
+        self.frame_timer = FrameTimer::default();
         self.snapshot = RenderSnapshot::default();
         self.scene = SpriteScene::default();
         self.lines.clear();
@@ -358,22 +364,25 @@ impl App {
     /// on quit, on a load over it and on the window closing. A playback
     /// records nothing.
     fn write_replay_now(&mut self) {
-        let Some(session) = self.state.session() else {
+        let Some(session) = self.state.session_mut() else {
             return;
         };
-        if self.replay_written || session.is_replay() || session.hashes().is_empty() {
+        if self.replay_written || session.is_replay() {
             return;
         }
-        self.replay_written = true;
-        let Some(replay) = session.replay() else {
+        // The recording lives with the session (on the sim thread).
+        let Some(replay) = session
+            .call(|s| (!s.hashes().is_empty()).then(|| s.replay()))
+            .flatten()
+        else {
             return;
         };
-        match crate::replay_io::write_replay(
-            &self.launch.replays_dir,
-            session.scenario_stem(),
-            &self.regs,
-            &replay,
-        ) {
+        let stem = session.scenario_stem().to_string();
+        self.replay_written = true;
+        let Some(replay) = replay else {
+            return;
+        };
+        match crate::replay_io::write_replay(&self.launch.replays_dir, &stem, &self.regs, &replay) {
             Ok(path) => {
                 eprintln!("replay written to {}", path.display());
                 self.last_replay = Some(path);
@@ -391,13 +400,16 @@ impl App {
             return;
         };
         let l = &regs.locale;
-        if session.is_replay() || session.world.phase() == BattlePhase::Ended {
-            let text = l.get("il.replay.not_now").to_string();
-            session.note(text);
-            return;
-        }
-        let Some(save) = session.save() else {
-            return;
+        let save = session
+            .call(|s| (!s.is_replay() && s.world.phase() != BattlePhase::Ended).then(|| s.save()));
+        let save = match save {
+            Some(Some(Some(save))) => save,
+            Some(None) => {
+                let text = l.get("il.replay.not_now").to_string();
+                session.note(text);
+                return;
+            }
+            _ => return,
         };
         let text = match crate::replay_io::write_save(&path, &regs, &save) {
             Ok(()) => l.fmt("il.replay.saved", &[("path", &path.display())]),
@@ -437,9 +449,8 @@ impl App {
         };
         let mut kinds = Vec::new();
         {
-            let view = session.world.view();
             let ctx = OrderContext {
-                view: &view,
+                view: session.view(),
                 regiments: &self.selection.regiments,
                 speed: speed_mode(run),
             };
@@ -465,7 +476,7 @@ impl App {
             let screen = self.screen();
             let mut camera = match self.state.session() {
                 Some(session) => {
-                    let view = session.world.view();
+                    let view = session.view();
                     let mut min = Vec2::splat(f32::INFINITY);
                     let mut max = Vec2::splat(f32::NEG_INFINITY);
                     for r in view.regiments() {
@@ -691,7 +702,7 @@ impl App {
                     let anchor = self
                         .state
                         .session()
-                        .and_then(|s| s.world.view().regiment(id))
+                        .and_then(|s| s.view().regiment(id))
                         .map(|r| {
                             Vec2::new(
                                 r.anchor_pos.x.to_f32_render(),
@@ -738,12 +749,12 @@ impl App {
                 let deploying = self
                     .state
                     .session()
-                    .is_some_and(|s| s.world.phase() == BattlePhase::Deployment);
+                    .is_some_and(|s| s.view().phase() == BattlePhase::Deployment);
                 if deploying {
                     if let Some(session) = self.state.session_mut()
                         && let Some(side) = session.observer_side()
                     {
-                        let kinds = preset_deploy_commands(&session.world.view(), side, &template);
+                        let kinds = preset_deploy_commands(session.view(), side, &template);
                         for kind in kinds {
                             session.queue(kind);
                         }
@@ -780,11 +791,11 @@ impl App {
             return;
         };
         let player = session.local_player();
-        let view = session.world.view();
+        let view = session.view();
         let b = &self.bindings;
         let input = &self.input;
         let picker = Picker {
-            view: &view,
+            view,
             camera,
             screen,
             player,
@@ -795,7 +806,7 @@ impl App {
         if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::SelectType) {
             let hit = picker.pick(pos);
             if let Some(id) = hit {
-                let ids = regiments_of_type_on_screen(&view, &picker.project(), player, id, screen);
+                let ids = regiments_of_type_on_screen(view, &picker.project(), player, id, screen);
                 self.selection.set(ids);
             } else {
                 self.selection.click(None, false);
@@ -812,7 +823,7 @@ impl App {
             self.selection.box_select(picker.in_box(from, to), false);
         }
         if input.pressed(b, Action::SelectAll) {
-            self.selection.set(own_regiments(&view, player));
+            self.selection.set(own_regiments(view, player));
         }
         for n in 0..il_ui::GROUPS {
             let group = n as u8;
@@ -824,7 +835,7 @@ impl App {
             }
         }
         // Regiments that died or changed hands leave every set.
-        let own = own_regiments(&view, player);
+        let own = own_regiments(view, player);
         self.selection.retain(|id| own.contains(&id));
     }
 
@@ -872,22 +883,22 @@ impl App {
         } else if let Some(Gesture::DragEnd { from, to, .. }) =
             input.gesture(b, Action::OrderDragFormation)
         {
-            let centroid = selection_centroid(&session.world.view(), &self.selection.regiments)
+            let centroid = selection_centroid(session.view(), &self.selection.regiments)
                 .unwrap_or(unproject(from));
             let flip = input.held(b, Action::OrderFlipFacing);
             if let Some(drag) = drag_formation(unproject(from), unproject(to), centroid, flip) {
                 intents.push(UiIntent::DragFormation(drag));
             }
         } else if let Some(Gesture::Click { pos, .. }) = input.gesture(b, Action::OrderMove) {
-            let view = session.world.view();
+            let view = session.view();
             let enemy = session.observer_side().and_then(|side| {
                 let picker = Picker {
-                    view: &view,
+                    view,
                     camera,
                     screen,
                     player: session.local_player(),
                 };
-                pick_enemy_regiment(&view, &picker.project(), camera.zoom, side, pos)
+                pick_enemy_regiment(view, &picker.project(), camera.zoom, side, pos)
             });
             intents.push(match enemy {
                 Some(target) => UiIntent::AttackRegiment { target },
@@ -939,7 +950,7 @@ impl App {
         let from = camera.screen_to_world(drag.from, screen);
         let to = camera.screen_to_world(drag.to, screen);
         let centroid =
-            selection_centroid(&session.world.view(), &self.selection.regiments).unwrap_or(from);
+            selection_centroid(session.view(), &self.selection.regiments).unwrap_or(from);
         let flip = self.input.held(&self.bindings, Action::OrderFlipFacing);
         let DragFormation {
             anchor,
@@ -978,22 +989,27 @@ impl App {
         }
     }
 
-    /// Steps the sim for this frame's wall time (hot reload first).
+    /// Takes the battle's newest frame (hot reload and the overlays' needs
+    /// sent first; with `--single-thread-sim` this steps the sim).
     fn advance_battle(&mut self, dt: f64) {
         let reloaded = self.poll_hot_reload();
+        let detail = frame_detail(self.debug);
         let Some(session) = self.state.session_mut() else {
             return;
         };
         if let Some(regs) = reloaded {
-            session.world.replace_registries(regs);
+            session.replace_registries(regs);
         }
-        let before = Instant::now();
-        let outputs = session.advance_with(dt, &mut self.profiler);
-        self.step_seconds += before.elapsed().as_secs_f64();
-        let stepped = outputs.len() as u32;
-        self.audio.collect(&outputs);
-        self.ticks_since_title += stepped;
-        self.profiler.frame(dt, stepped);
+        session.set_detail(detail);
+        let mut ticks = 0;
+        if session.update(Instant::now()) {
+            let f = session.frame();
+            ticks = f.ticks;
+            self.step_seconds += f.step_seconds;
+            self.audio.collect(&f.events);
+        }
+        self.ticks_since_title += ticks;
+        self.frame_timer.frame(dt, ticks);
     }
 
     /// The editor's frame (T3-060): hot reload, the frame's keys and
@@ -1053,7 +1069,7 @@ impl App {
         };
         let observer_side = session.observer_side();
         if !self.audio.has_battle() {
-            let view = session.world.view();
+            let view = session.view();
             let faction = observer_side
                 .and_then(|s| view.sides().get(usize::from(s)))
                 .map(|s| s.faction.clone());
@@ -1062,13 +1078,8 @@ impl App {
                 .start_battle(&self.regs, faction.as_ref(), &assets_root);
         }
         let now_ms = self.started.elapsed().as_millis() as u64;
-        self.audio.frame(
-            &session.world.view(),
-            &camera,
-            screen,
-            now_ms,
-            observer_side,
-        );
+        self.audio
+            .frame(session.view(), &camera, screen, now_ms, observer_side);
     }
 
     /// Colour of a projectile segment (pale wood on any ground).
@@ -1081,7 +1092,7 @@ impl App {
             return;
         };
         let input = SnapshotInput {
-            alpha: session.alpha(),
+            alpha: session.alpha(Instant::now()),
             camera,
             screen,
             selected: &self.selection.regiments,
@@ -1093,11 +1104,12 @@ impl App {
             detail_z2: self.launch.settings.detail_z2,
             block_set: self.block_set,
         };
-        build_snapshot(&session.world.view(), &input, &mut self.snapshot);
+        let view = session.view();
+        build_snapshot(view, &input, &mut self.snapshot);
         self.lines.clear();
-        deployment_outlines(session.world.map(), &camera, screen, &mut self.lines);
+        deployment_outlines(view.map(), &camera, screen, &mut self.lines);
         il_render::ghost_markers(
-            session.world.map(),
+            view.map(),
             &self.snapshot.ghosts,
             &camera,
             screen,
@@ -1111,7 +1123,6 @@ impl App {
         }
         if DEV {
             // The flow overlay shows the selected regiment's side (else 0).
-            let view = session.world.view();
             let flow_side = self
                 .selection
                 .regiments
@@ -1119,7 +1130,7 @@ impl App {
                 .and_then(|id| view.regiment(*id))
                 .map_or(0, |r| r.side);
             build_debug_lines(
-                &view,
+                view,
                 self.debug,
                 flow_side,
                 &camera,
@@ -1256,7 +1267,13 @@ impl App {
         {
             match &self.state {
                 AppState::Battle(session) => {
-                    let mut stats = self.profiler.stats();
+                    let mut stats = session.frame().stats.clone();
+                    self.frame_timer.fill(&mut stats);
+                    stats.sim_thread = session.is_threaded();
+                    stats.frame_age_ms = now
+                        .saturating_duration_since(session.frame().clock.at)
+                        .as_secs_f32()
+                        * 1000.0;
                     stats.build_ms = self.build_ms;
                     if let Some(host) = self.renderer.as_ref() {
                         let rs = host.stats();
@@ -1278,16 +1295,16 @@ impl App {
                             il_render::DetailTier::Aggregation => "il.lod.aggregation",
                         })
                         .to_string();
-                    stats.accumulator_alpha = session.alpha();
+                    stats.accumulator_alpha = session.alpha(now);
                     let show_profiler = self.show_profiler;
                     let box_drag = self
                         .input
                         .drag(&self.bindings, Action::BoxSelect)
                         .or_else(|| self.input.drag(&self.bindings, Action::BoxSelectAdd))
                         .map(|d| (d.from, d.to));
-                    let phase = session.world.phase();
+                    let phase = session.view().phase();
                     let hud = HudModel {
-                        tick: session.world.tick(),
+                        tick: session.view().tick(),
                         phase: self
                             .regs
                             .locale
@@ -1302,7 +1319,7 @@ impl App {
                         paused: session.paused(),
                         speed: session.speed(),
                         run: self.run,
-                        commands: session.command_log().len() + session.ai_log().len(),
+                        commands: session.frame().fed_commands + session.frame().ai_commands,
                         locale: &self.regs.locale,
                     };
                     let locale = &self.regs.locale;
@@ -1330,7 +1347,7 @@ impl App {
                         &camera,
                         screen,
                     );
-                    let map = session.world.map();
+                    let map = session.view().map();
                     let minimap_input = MinimapInput {
                         map,
                         zone_colours: &mini.zone_colours,
@@ -1500,6 +1517,7 @@ impl App {
         let regs_load = regs.clone();
         let regs_editor = regs.clone();
         let threads = self.launch.threads;
+        let threaded = !self.launch.single_thread_sim;
         let ai = self.launch.ai.clone();
         let menu = self.menu();
         let mod_roots = menu.mods.clone();
@@ -1507,9 +1525,15 @@ impl App {
         let state = std::mem::replace(&mut self.state, AppState::MainMenu(MenuState::default()));
         self.state = state.apply(
             transition,
-            |path| start_battle(path, regs, threads, ai),
-            |setup, stem, ai| start_from_setup(setup, stem, regs_build, threads, ai),
-            |path| crate::replay_io::load_save(path, regs_load, threads),
+            |path| start_battle(path, regs, threads, ai).map(|s| BattleHandle::new(s, threaded)),
+            |setup, stem, ai| {
+                start_from_setup(setup, stem, regs_build, threads, ai)
+                    .map(|s| BattleHandle::new(s, threaded))
+            },
+            |path| {
+                crate::replay_io::load_save(path, regs_load, threads)
+                    .map(|s| BattleHandle::new(s, threaded))
+            },
             |map, blank| open_editor(map, blank, regs_editor, mod_roots, target),
             || menu,
         );
@@ -1541,24 +1565,23 @@ impl App {
         let Some(session) = self.state.session() else {
             return String::new();
         };
-        let l = &self.regs.locale;
-        match session.mode() {
-            crate::session::SessionMode::Live => String::new(),
-            crate::session::SessionMode::Replay { expected, .. } => {
-                let text = match session.replay_mismatch() {
-                    Some(tick) => l.fmt("il.replay.title_mismatch", &[("tick", &tick.0)]),
-                    None if session.replay_finished() => l.get("il.replay.title_ok").to_string(),
-                    None => l.fmt(
-                        "il.replay.title_playing",
-                        &[
-                            ("tick", &session.world.tick().0 as &dyn Display),
-                            ("ticks", &expected.len()),
-                        ],
-                    ),
-                };
-                format!(" — {text}")
-            }
+        if !session.is_replay() {
+            return String::new();
         }
+        let l = &self.regs.locale;
+        let f = session.frame();
+        let text = match f.replay_mismatch {
+            Some(tick) => l.fmt("il.replay.title_mismatch", &[("tick", &tick.0)]),
+            None if f.replay_finished => l.get("il.replay.title_ok").to_string(),
+            None => l.fmt(
+                "il.replay.title_playing",
+                &[
+                    ("tick", &session.view().tick().0 as &dyn Display),
+                    ("ticks", &session.replay_ticks()),
+                ],
+            ),
+        };
+        format!(" — {text}")
     }
 
     fn refresh_title(&mut self) {
@@ -1604,20 +1627,20 @@ impl App {
                     "il.app.battle_title",
                     &[
                         ("title", &l.get("il.app.title") as &dyn Display),
-                        ("tick", &session.world.tick().0),
+                        ("tick", &session.view().tick().0),
                         ("drawn", &self.snapshot.counts.visible_soldiers),
                         ("total", &self.snapshot.counts.soldiers),
                         ("ms", &format!("{per_tick_ms:.2}")),
                         ("speed", &format!("{:.2}", session.speed())),
                         ("selected", &self.selection.len()),
                         ("run", &run),
-                        ("commands", &session.command_log().len()),
+                        ("commands", &session.frame().fed_commands),
                         ("zoom", &format!("{:.1}", cam.zoom)),
                         ("rot", &cam.rotation),
                         ("paused", &paused),
                     ],
                 ) + &debug_suffix(self.debug)
-                    + &ai_suffix(&session.world.view(), self.debug)
+                    + &ai_suffix(session.view(), self.debug)
                     + &self.replay_suffix()
             }
         };
@@ -1629,14 +1652,14 @@ impl App {
 
 /// Hit testing through the frame's camera (`il_ui` never sees `Camera`, so
 /// it gets a projection closure).
-struct Picker<'a, 'w> {
-    view: &'a BattleView<'w>,
+struct Picker<'a> {
+    view: &'a BattleFrame,
     camera: Camera,
     screen: Vec2,
     player: PlayerId,
 }
 
-impl Picker<'_, '_> {
+impl Picker<'_> {
     fn project(&self) -> impl Fn(V2) -> Vec2 + '_ {
         let map = self.view.map();
         move |w: V2| {
@@ -1663,7 +1686,7 @@ impl Picker<'_, '_> {
 
 /// ` — dbg: nav slots` for the enabled overlays, empty when none.
 /// With the AI overlay on, each engine-owned side's stance (T2-081).
-fn ai_suffix(view: &il_sim_battle::BattleView, flags: DebugFlags) -> String {
+fn ai_suffix(view: &BattleFrame, flags: DebugFlags) -> String {
     if !flags.ai {
         return String::new();
     }
@@ -1683,6 +1706,16 @@ fn ai_suffix(view: &il_sim_battle::BattleView, flags: DebugFlags) -> String {
         String::new()
     } else {
         format!(" — ai: {}", stances.join(", "))
+    }
+}
+
+/// What the enabled overlays need captured in each frame (T3-032).
+fn frame_detail(flags: DebugFlags) -> FrameDetail {
+    FrameDetail {
+        formation: flags.slots || flags.paths,
+        paths: flags.paths,
+        spatial: flags.spatial_cells,
+        ai: flags.ai,
     }
 }
 

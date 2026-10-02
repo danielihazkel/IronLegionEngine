@@ -4,7 +4,7 @@
 //! (T1-051), isometric camera and interpolation (T1-052), terrain (T1-053),
 //! debug overlays (T1-054), and the egui paint pass (T1-060). Phase 3: the
 //! render thread (T3-030) and the level-of-detail tiers (T3-031). The
-//! renderer only ever reads simulation state through `BattleView` (SAD §5.2).
+//! renderer only ever reads simulation state through `BattleFrame`, an owned copy (SAD §5.2, T3-032).
 
 pub mod atlas;
 pub mod camera;

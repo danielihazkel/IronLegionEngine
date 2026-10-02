@@ -12,11 +12,13 @@ use il_editor::{BlankMap, EditorSession, PickerState};
 use il_sim_battle::BattleSetup;
 use il_ui::{BuilderState, SaveEntry, SettingsState};
 
-use crate::session::BattleSession;
+use crate::sim_thread::BattleHandle;
 
 pub enum AppState {
     MainMenu(MenuState),
-    Battle(Box<BattleSession>),
+    /// A battle: the handle on its session, stepped on the sim thread or
+    /// inline (T3-032).
+    Battle(Box<BattleHandle>),
     /// The map editor (T3-060, TDD §16).
     Editor(Box<EditorSession>),
 }
@@ -99,14 +101,14 @@ impl AppState {
         matches!(self, AppState::Editor(_))
     }
 
-    pub fn session(&self) -> Option<&BattleSession> {
+    pub fn session(&self) -> Option<&BattleHandle> {
         match self {
             AppState::Battle(s) => Some(s),
             _ => None,
         }
     }
 
-    pub fn session_mut(&mut self) -> Option<&mut BattleSession> {
+    pub fn session_mut(&mut self) -> Option<&mut BattleHandle> {
         match self {
             AppState::Battle(s) => Some(s),
             _ => None,
@@ -135,9 +137,9 @@ impl AppState {
     pub fn apply(
         self,
         transition: Transition,
-        start: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
-        build: impl FnOnce(BattleSetup, String, Vec<PlayerId>) -> anyhow::Result<BattleSession>,
-        load: impl FnOnce(&Path) -> anyhow::Result<BattleSession>,
+        start: impl FnOnce(&Path) -> anyhow::Result<BattleHandle>,
+        build: impl FnOnce(BattleSetup, String, Vec<PlayerId>) -> anyhow::Result<BattleHandle>,
+        load: impl FnOnce(&Path) -> anyhow::Result<BattleHandle>,
         open_editor: impl FnOnce(Option<ContentId>, Option<BlankMap>) -> anyhow::Result<EditorSession>,
         menu: impl FnOnce() -> MenuState,
     ) -> Self {
@@ -206,17 +208,20 @@ mod tests {
     use il_sim_battle::{BattlePhase, BattleWorld, ScriptedCommands};
     use std::sync::Arc;
 
-    fn session(_: &Path) -> anyhow::Result<BattleSession> {
+    fn session(_: &Path) -> anyhow::Result<BattleHandle> {
         let world = BattleWorld::empty(1, Arc::new(Registries::default()), BattlePhase::Battle);
-        Ok(BattleSession::new(
-            world,
-            PlayerId(0),
-            ScriptedCommands::default(),
-            Vec::new(),
+        Ok(BattleHandle::new(
+            crate::session::BattleSession::new(
+                world,
+                PlayerId(0),
+                ScriptedCommands::default(),
+                Vec::new(),
+            ),
+            false,
         ))
     }
 
-    fn no_build(_: BattleSetup, stem: String, _: Vec<PlayerId>) -> anyhow::Result<BattleSession> {
+    fn no_build(_: BattleSetup, stem: String, _: Vec<PlayerId>) -> anyhow::Result<BattleHandle> {
         anyhow::bail!("no builder for {stem}")
     }
 
@@ -224,7 +229,7 @@ mod tests {
         anyhow::bail!("no editor")
     }
 
-    fn failing(p: &Path) -> anyhow::Result<BattleSession> {
+    fn failing(p: &Path) -> anyhow::Result<BattleHandle> {
         anyhow::bail!("no such scenario {}", p.display())
     }
 
@@ -303,7 +308,7 @@ mod tests {
         );
         assert!(!state.is_battle());
         let battle = AppState::Battle(Box::new(session(Path::new("x")).unwrap()));
-        let tick = battle.session().unwrap().world.tick();
+        let tick = battle.session().unwrap().view().tick();
         let battle = battle.apply(
             Transition::StartBattle(PathBuf::from("b.json5")),
             failing,
@@ -313,7 +318,7 @@ mod tests {
             menu,
         );
         assert!(battle.is_battle());
-        assert_eq!(battle.session().unwrap().world.tick(), tick);
+        assert_eq!(battle.session().unwrap().view().tick(), tick);
     }
 
     /// T2-101: a load replaces the battle or leaves the menu; a failed load

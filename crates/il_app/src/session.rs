@@ -66,6 +66,9 @@ pub struct BattleSession {
     hashes: Vec<StateHash>,
     /// The last `EVENT_RING` events and rejections, oldest first.
     events: VecDeque<EventLine>,
+    /// Lines ever pushed to `events` (the sim thread sends the new ones,
+    /// T3-032).
+    lines_pushed: u64,
     /// Fallen soldiers kept for `combat.corpse_ticks` (T2-022, SIM-CORE-008).
     corpses: Vec<Corpse>,
     /// The result carried by `Ended` (T2-070); the sim stops stepping then.
@@ -117,6 +120,7 @@ impl BattleSession {
             ai_log: Vec::new(),
             hashes: Vec::new(),
             events: VecDeque::with_capacity(EVENT_RING),
+            lines_pushed: 0,
             corpses: Vec::new(),
             result: None,
             ai_players,
@@ -247,12 +251,6 @@ impl BattleSession {
     /// The battle's result once the phase is Ended (T2-070).
     pub fn result(&self) -> Option<&il_sim_battle::BattleResult> {
         self.result.as_ref()
-    }
-
-    /// `Surrender` for every side the local player owns (T2-090, pause
-    /// menu; SIM-FLOW-017).
-    pub fn surrender(&mut self) {
-        self.queue(CommandKind::Surrender);
     }
 
     /// A line for the developer panel (quick save and load notes, T2-101).
@@ -432,6 +430,13 @@ impl BattleSession {
             self.events.pop_front();
         }
         self.events.push_back(EventLine { tick, text });
+        self.lines_pushed += 1;
+    }
+
+    /// Lines ever routed to the ring (T3-032): the last
+    /// `lines_pushed - sent` lines of `events` are new since `sent`.
+    pub fn lines_pushed(&self) -> u64 {
+        self.lines_pushed
     }
 
     /// Routed events, oldest first.
@@ -449,6 +454,21 @@ impl BattleSession {
     #[allow(dead_code, reason = "consumed by build_snapshot from T1-052")]
     pub fn alpha(&self) -> f32 {
         (self.accumulator / TICK).clamp(0.0, 0.999_999) as f32
+    }
+
+    /// Wall seconds banked toward the next tick (T3-032: the frame clock).
+    pub fn accumulator(&self) -> f64 {
+        self.accumulator
+    }
+
+    /// How fast wall time feeds the accumulator now: the speed, or 0 while
+    /// paused, after the end and at a playback's end (T3-032).
+    pub fn multiplier(&self) -> f64 {
+        if self.paused || self.world.phase() == BattlePhase::Ended || self.replay_finished() {
+            0.0
+        } else {
+            f64::from(self.speed)
+        }
     }
 
     /// The commands fed to the sim so far.

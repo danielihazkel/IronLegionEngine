@@ -198,25 +198,28 @@ Per frame in the Battle state:
 ```mermaid
 sequenceDiagram
     participant W as winit
-    participant A as il_app
+    participant A as il_app (main)
     participant U as il_ui
+    participant T as sim thread
     participant S as il_sim_battle
     participant R as il_render
     participant Au as il_audio
 
     W->>A: events (input, resize)
-    A->>U: events
+    A->>U: events (and the newest BattleFrame)
     U->>U: update selection, gestures
-    U-->>A: Commands (player id, target tick = now + input_delay)
-    A->>A: accumulator += dt * speed
-    loop while accumulator >= TICK
-        A->>S: step(commands for this tick)
-        S-->>A: Events, StateHash
-        A->>A: accumulator -= TICK
+    U-->>A: command kinds
+    A->>T: SimRequest::Queue (stamped there: sim tick + 1 + input_delay)
+    loop on the sim thread, at its own pace
+        T->>T: accumulator += wall dt * speed
+        T->>S: step(commands for this tick) while accumulator >= TICK
+        S-->>T: Events, StateHash
+        T->>T: capture BattleFrame, publish SimFrame (one-slot mailbox)
     end
-    A->>R: render(&world, alpha = accumulator / TICK)
-    A->>U: draw egui (&world)
-    A->>Au: dispatch Events
+    A->>A: take the newest SimFrame (events, lines, result)
+    A->>R: render(&frame, alpha from the frame's clock)
+    A->>U: draw egui (&frame)
+    A->>Au: dispatch the frame's Events
 ```
 
 Rules:
@@ -224,7 +227,8 @@ Rules:
 - `TICK` is exactly 50 ms of sim time. Speed multipliers scale the accumulator, not the tick length (REQ-SIM-031). Pause sets the multiplier to 0 but is also recorded as a Command so replays and peers see it.
 - Commands are stamped with the tick at which they execute. In single-player, `input_delay` is 0 or 1; in lockstep it is tuned (REQ-NET-002). A replay stores the commands with their stamped ticks, so the delay is implicit in the recording (T2-101).
 - If the sim falls behind (accumulator grows beyond N ticks), the app caps catch-up ticks per frame and lets the sim speed drop rather than spiralling. This is visible in the profiler.
-- The renderer reads the last two tick states (double-buffered position and facing components) and interpolates by `alpha`.
+- The renderer reads the last two tick states (double-buffered position and facing components, copied into the frame) and interpolates by `alpha`.
+- Since T3-032 the battle steps on its own thread (§8): the main thread never waits for a tick. A published frame carries the accumulator left after its tick and the instant it was published; `alpha = (acc + (now − published) × speed) / TICK`, held below 1, so the soldiers keep moving between published ticks and each tick's motion plays over one tick period. Commands are stamped on the sim thread at its own tick (the sim rejects any other tick, SIM-CMD-001); speed, pause, quick save and the replay are requests to it. `--single-thread-sim` steps the same session inline on the main thread once per frame and reads the same frames.
 
 ### 6.2 Simulation step
 
@@ -298,7 +302,8 @@ Two threads by default, more inside the sim step:
 
 | Thread | Owns | Notes |
 |---|---|---|
-| Main | winit loop, `il_app` state machine, accumulator, sim stepping, egui | Sim stepping stays on main until Phase 3; the render thread reads a double-buffered copy. |
+| Main | winit loop, `il_app` state machine, input, the frame build from the newest `BattleFrame`, egui, audio routing | Never steps the sim since T3-032 (with `--single-thread-sim` it does, inline, as before). Reads only owned frames: a `BattleFrame` from the sim thread, and hands an owned `FrameJob` to the render thread. |
+| Sim (Phase 3, T3-032) | the `BattleSession`: accumulator, pending queue, the world and its schedule, logs, hashes, replay check, event ring, corpses, the stage profiler | Sleeps until a request or the next tick is due (the last 2 ms yielding, against timer overshoot), applies the requests (`Queue`, speed, pause, notes, hot-reloaded registries, the overlays' `FrameDetail`, calls for the quick save and the replay), steps what is due, then captures a `BattleFrame` (TDD §4.2) into a `SimFrame` and puts it in a one-slot mailbox; a frame the main thread never read hands its events and lines to the next. The map, nav grid and escape fields are shared by `Arc`, not copied. |
 | Render (Phase 3, REQ-RNDR-007; T3-003 spec, T3-030 build) | wgpu device, surface, instance buffer build, present | Receives one owned `FrameJob` (sprite and line scenes, tessellated UI, camera, resize and vsync changes, terrain and sheet uploads; TDD §10.1) per frame through a one-slot mailbox that replaces a job still waiting rather than blocking (counted as a dropped frame); the main thread waits for the pick-up at most one display period, so its accumulator never waits on the GPU beyond that. Never touches the ECS. `--single-thread-render` keeps the renderer on the main thread through the same code path. |
 | Sim worker pool | `bevy_ecs` schedule parallelism inside a stage | Bounded to physical cores minus one. |
 
@@ -392,4 +397,4 @@ Determinism rules for parallelism inside the sim (REQ-SIM-007, 008):
 | T-13 | Hot reload reads manifests at startup only (`ReloadEvent::ManifestIgnored`) and debounces by poll count (`QUIET_POLLS` = 6) rather than time | Debt | il_data | Acceptable for a dev feature; a manifest change needs a restart. |
 | T-14 | `TransferControl` from a player who does not own `from` is rejected as `WrongPhase` rather than a dedicated reason (noted in T2-050) | Debt | il_sim_battle | Give it a `NotOwner`-style reason when the multiplayer drop-to-AI path (Phase 7) needs to tell the two apart. |
 | T-15 | Two engine armies of 50 regiments never meet on the 1,600 m `rome:wide_field` (T3-024): each plan strikes the enemy line's edge away from the enemy cavalry (SIM-AI-011, T3-010), so with the cavalry on opposite wings the two lines slide to opposite ends of the field; with both cavalry wings on the same end the lines converge but never dress, because the plan's line width (`0.6 ×` the enemy frontage, about 300 m) gives 16 regiments of 200 no room to stand in their own formations and the forward lag never falls under `2 × line_tolerance`. On the 800 m test field the room caps the width and the double line folds it, which hid both. | Debt | il_sim_battle (`ai::army`) | The 20k fight bench uses a scripted attacker against the engine (the perf_10k shape). Candidates for a later AI task: size the line from the own regiments' formation widths (or set their ranks to fit the slots) and take the strike side from the enemy centroid when the lines are narrower than the field; both are rule changes to SIM-AI-011 and go through the bands. |
-| T-16 | The sim steps on the main thread, so the frame rate at 20k is bounded by the tick, not by rendering (T3-024/T3-031, 2026-09-14): with the render thread at 1.2 ms per frame the 20k fight presents 26 to 38 frames per second at far zoom in the melee, the 41 ms tick (51.7 max) leaving nine milliseconds of every fifty to the frame and a tick over 50 ms making the accumulator step two in one frame. | Debt | il_app | The lever is a sim thread: the sim steps on its own thread against the accumulator and hands the main thread an owned per-tick snapshot (the positions ×2, facings, regiment rows and events the UI and the audio router read today through `BattleView`), the main thread interpolating and building frames between ticks; the alternative is a cheaper tick (sim LOD, PRD OQ-4). The owner decides at the Phase 3 audit (T3-080); the exit checklist's 20k box records the shortfall. |
+| T-16 | The sim stepped on the main thread, so the frame rate at 20k was bounded by the tick, not by rendering (T3-024/T3-031, 2026-09-14): with the render thread at 1.2 ms per frame the 20k fight presented 26 to 38 frames per second at far zoom in the melee, the 41 ms tick (51.7 max) leaving nine milliseconds of every fifty to the frame and a tick over 50 ms making the accumulator step two in one frame. | Built (T3-032); closes on the owner's sweep | il_app | The owner chose the sim thread (2026-10-01) over sim LOD: the session steps on its own thread and hands the main thread an owned `BattleFrame` per published tick (§6.1, §8), the main thread interpolating between them. The numbers of the re-run sweep (`docs/evidence/phase3/lod_20k.md`) close this row at the Phase 3 audit (T3-080). |

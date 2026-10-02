@@ -88,7 +88,11 @@ fn far_zoom_aggregates_regiments_into_blocks_and_keeps_stragglers() {
     let mut far = RenderSnapshot::default();
     let mut inp = input(camera, 0.0, &selected);
     inp.block_set = Some(blocks);
-    build_snapshot(&world.view(), &inp, &mut far);
+    build_snapshot(
+        &il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL),
+        &inp,
+        &mut far,
+    );
     assert_eq!(far.tier, DetailTier::Aggregation);
     assert!(far.soldiers.is_empty(), "nobody draws as a sprite");
     assert_eq!(far.blocks.len(), 2);
@@ -107,7 +111,11 @@ fn far_zoom_aggregates_regiments_into_blocks_and_keeps_stragglers() {
 
     // Without a block sheet the far tier falls back to reduced sprites.
     inp.block_set = None;
-    build_snapshot(&world.view(), &inp, &mut far);
+    build_snapshot(
+        &il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL),
+        &inp,
+        &mut far,
+    );
     assert_eq!(far.tier, DetailTier::Aggregation);
     assert_eq!(far.soldiers.len(), 14);
     assert!(far.blocks.is_empty());
@@ -122,7 +130,11 @@ fn far_zoom_aggregates_regiments_into_blocks_and_keeps_stragglers() {
     };
     world.recompute_hash();
     inp.block_set = Some(blocks);
-    build_snapshot(&world.view(), &inp, &mut far);
+    build_snapshot(
+        &il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL),
+        &inp,
+        &mut far,
+    );
     assert_eq!(far.soldiers.len(), 1, "the router draws as a sprite");
     let regiments = &far.regiments;
     let i = regiments.iter().position(|r| r.id == routed).unwrap();
@@ -144,7 +156,7 @@ fn far_zoom_aggregates_regiments_into_blocks_and_keeps_stragglers() {
 fn corpses_thin_with_the_tier() {
     let world = world();
     let blocks = block_set(&world);
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let selected = BTreeSet::new();
     let corpses = corpses(8);
     let mut snap = RenderSnapshot::default();
@@ -185,7 +197,7 @@ fn snapshot_interpolates_between_prev_and_current_positions() {
     world.debug_translate_all(delta, None);
     let selected = BTreeSet::new();
     let camera = Camera::new(Vec2::new(320.0, 150.0));
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let ids: Vec<_> = view.soldiers_unordered().map(|s| s.id).collect();
 
     let mut at0 = RenderSnapshot::default();
@@ -216,7 +228,7 @@ fn snapshot_interpolates_between_prev_and_current_positions() {
 #[test]
 fn snapshot_culls_to_the_camera_and_marks_selection() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let mut selected = BTreeSet::new();
     selected.insert(view.regiments().next().unwrap().id);
 
@@ -254,7 +266,7 @@ fn fog_hides_a_regiments_soldiers_and_leaves_a_ghost() {
         ecs.resource_mut::<il_sim_battle::Visibility>().masks[0][1] = false;
     }
     world.recompute_hash();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let selected = BTreeSet::new();
     let camera = Camera::new(Vec2::new(320.0, 150.0));
     let mut all = RenderSnapshot::default();

@@ -13,6 +13,7 @@ mod profiler;
 mod replay_io;
 mod session;
 mod settings;
+mod sim_thread;
 mod state;
 
 use std::path::{Path, PathBuf};
@@ -24,6 +25,7 @@ use il_data::Registries;
 use winit::event_loop::EventLoop;
 
 use crate::app::{App, Launch, start_battle};
+use crate::sim_thread::BattleHandle;
 use crate::state::{AppState, MenuState};
 
 #[derive(Parser, Debug)]
@@ -79,6 +81,10 @@ struct Args {
     /// (T3-030): for debugging, or a machine whose surface must stay there.
     #[arg(long)]
     single_thread_render: bool,
+    /// Step the sim on the main thread instead of the sim thread (T3-032):
+    /// for debugging and timing comparisons.
+    #[arg(long)]
+    single_thread_sim: bool,
 }
 
 /// With the `dev` feature the app watches the mod folders and swaps
@@ -145,19 +151,18 @@ fn main() -> anyhow::Result<()> {
         settings_path,
         mute: args.mute,
         single_thread_render: args.single_thread_render,
+        single_thread_sim: args.single_thread_sim,
     };
+    let threaded = !args.single_thread_sim;
     let state = match (&args.replay, &args.scenario) {
-        (Some(replay), _) => AppState::Battle(Box::new(replay_io::load_replay(
-            replay,
-            regs.clone(),
-            threads,
-        )?)),
-        (None, Some(path)) => AppState::Battle(Box::new(start_battle(
-            path,
-            regs.clone(),
-            threads,
-            launch.ai.clone(),
-        )?)),
+        (Some(replay), _) => AppState::Battle(Box::new(BattleHandle::new(
+            replay_io::load_replay(replay, regs.clone(), threads)?,
+            threaded,
+        ))),
+        (None, Some(path)) => AppState::Battle(Box::new(BattleHandle::new(
+            start_battle(path, regs.clone(), threads, launch.ai.clone())?,
+            threaded,
+        ))),
         (None, None) => {
             let mut mods = vec![args.content_root.clone()];
             mods.extend(args.mods.iter().cloned());

@@ -18,7 +18,7 @@ use il_data::{ContentId, GroupKind, Targeting};
 use il_sim_battle::flow_battle::{facing_toward, zone_centre};
 use il_sim_battle::formation::{RegimentInfo, arrange_group};
 use il_sim_battle::{
-    AbilityTarget, BattlePhase, BattleView, CommandKind, FireMode, RegimentRow, SpeedMode,
+    AbilityTarget, BattleFrame, BattlePhase, CommandKind, FireMode, RegimentRow, SpeedMode,
     ranks_for_width,
 };
 
@@ -114,8 +114,8 @@ pub enum UiIntent {
 }
 
 /// What conversion needs besides the intent.
-pub struct OrderContext<'a, 'w> {
-    pub view: &'a BattleView<'w>,
+pub struct OrderContext<'a> {
+    pub view: &'a BattleFrame,
     /// The selection, ascending (a `BTreeSet` keeps the order stable).
     pub regiments: &'a BTreeSet<RegimentId>,
     /// The speed mode new movement orders carry (the run toggle).
@@ -127,7 +127,7 @@ fn v2(p: Vec2) -> V2 {
 }
 
 /// Centroid of the selection's anchors, for the gesture's facing rule.
-pub fn selection_centroid(view: &BattleView, regiments: &BTreeSet<RegimentId>) -> Option<Vec2> {
+pub fn selection_centroid(view: &BattleFrame, regiments: &BTreeSet<RegimentId>) -> Option<Vec2> {
     let mut sum = Vec2::ZERO;
     let mut n = 0.0;
     for id in regiments {
@@ -143,7 +143,7 @@ pub fn selection_centroid(view: &BattleView, regiments: &BTreeSet<RegimentId>) -
 }
 
 /// The first `battle_line` group template in the registries.
-pub fn battle_line_template(view: &BattleView) -> Option<ContentId> {
+pub fn battle_line_template(view: &BattleFrame) -> Option<ContentId> {
     view.regs()
         .group_formations
         .iter()
@@ -154,7 +154,7 @@ pub fn battle_line_template(view: &BattleView) -> Option<ContentId> {
 /// `UiIntent → CommandKind`s, in the order they must be queued. Empty when
 /// nothing is selected or the intent cannot apply (no battle-line template
 /// in the content, a drag on a regiment that vanished).
-pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<CommandKind> {
+pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_>) -> Vec<CommandKind> {
     let regiments: Vec<RegimentId> = ctx.regiments.iter().copied().collect();
     if regiments.is_empty() {
         return Vec::new();
@@ -252,7 +252,7 @@ pub fn commands_for(intent: &UiIntent, ctx: &OrderContext<'_, '_>) -> Vec<Comman
 /// One `Deploy` per selected regiment, side by side along the facing's
 /// right axis `spacing` metres apart, centred on `centre` (T2-070).
 fn deploy_commands(
-    ctx: &OrderContext<'_, '_>,
+    ctx: &OrderContext<'_>,
     regiments: &[RegimentId],
     centre: Vec2,
     facing: il_core::Angle<il_core::S>,
@@ -314,7 +314,7 @@ const DEPLOY_PRESET_WIDTH_FRACTION: f32 = 0.8;
 /// Battle phase preset (plan I3): `GroupFormation` at the selection's
 /// centroid, mean facing and current lateral width, at the run/walk speed.
 fn preset_commands(
-    ctx: &OrderContext<'_, '_>,
+    ctx: &OrderContext<'_>,
     regiments: Vec<RegimentId>,
     template: &ContentId,
 ) -> Vec<CommandKind> {
@@ -351,7 +351,7 @@ fn preset_commands(
 /// `Deploy` per regiment. Empty when the side has no zone polygon or the
 /// template is unknown.
 pub fn preset_deploy_commands(
-    view: &BattleView,
+    view: &BattleFrame,
     side: u8,
     template: &ContentId,
 ) -> Vec<CommandKind> {
@@ -414,7 +414,7 @@ pub fn preset_deploy_commands(
 /// One `UseAbility` per selected regiment that has the slot (plan decision
 /// 11); regiments without the slot or without a fitting target are skipped.
 fn ability_commands(
-    ctx: &OrderContext<'_, '_>,
+    ctx: &OrderContext<'_>,
     regiments: &[RegimentId],
     slot: u8,
     cursor: Vec2,
@@ -456,7 +456,7 @@ fn ability_commands(
 
 /// The nearest other regiment with soldiers on the same (`ally`) or the
 /// other side of `me`, ties to the lower id.
-fn nearest_regiment(view: &BattleView, me: &RegimentRow, ally: bool) -> Option<RegimentId> {
+fn nearest_regiment(view: &BattleFrame, me: &RegimentRow, ally: bool) -> Option<RegimentId> {
     let d = |r: &RegimentRow| {
         let dx = (r.anchor_pos.x - me.anchor_pos.x).to_f32_render();
         let dy = (r.anchor_pos.y - me.anchor_pos.y).to_f32_render();
@@ -473,11 +473,7 @@ fn nearest_regiment(view: &BattleView, me: &RegimentRow, ally: bool) -> Option<R
         .map(|r| r.id)
 }
 
-fn formation_commands(
-    ctx: &OrderContext<'_, '_>,
-    regiments: &[RegimentId],
-    n: u8,
-) -> Vec<CommandKind> {
+fn formation_commands(ctx: &OrderContext<'_>, regiments: &[RegimentId], n: u8) -> Vec<CommandKind> {
     let Some(index) = usize::from(n).checked_sub(1) else {
         return Vec::new();
     };
@@ -504,7 +500,7 @@ fn formation_commands(
 }
 
 fn drag_commands(
-    ctx: &OrderContext<'_, '_>,
+    ctx: &OrderContext<'_>,
     regiments: Vec<RegimentId>,
     drag: &DragFormation,
 ) -> Vec<CommandKind> {

@@ -1,5 +1,7 @@
 //! Per-stage tick timings (T1-060, REQ-TOOL-003). Implements the sim's
-//! `StageObserver` with the wall clock, which only the app may read.
+//! `StageObserver` with the wall clock, which only the app may read. Since
+//! T3-032 the observer lives with the session on the sim thread and ships
+//! its numbers in each frame; the main thread's frame time is `FrameTimer`.
 
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
@@ -18,8 +20,6 @@ pub struct Profiler {
     /// Per-tick stage durations, newest last.
     ring: VecDeque<[f32; Stage::COUNT]>,
     tick_totals: VecDeque<f32>,
-    frame_ms: f32,
-    ticks_last_frame: u32,
 }
 
 impl Default for Profiler {
@@ -30,24 +30,44 @@ impl Default for Profiler {
             current: [Duration::ZERO; Stage::COUNT],
             ring: VecDeque::with_capacity(WINDOW_TICKS),
             tick_totals: VecDeque::with_capacity(WINDOW_TICKS),
-            frame_ms: 0.0,
-            ticks_last_frame: 0,
         }
     }
 }
 
-impl Profiler {
+/// The main thread's smoothed frame time and the ticks its last frame
+/// brought (T3-032: split from the stage observer).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FrameTimer {
+    frame_ms: f32,
+    ticks_last_frame: u32,
+}
+
+impl FrameTimer {
     /// Call once per frame with the frame's wall time.
-    pub fn frame(&mut self, frame_seconds: f64, ticks_stepped: u32) {
+    pub fn frame(&mut self, frame_seconds: f64, ticks: u32) {
         let ms = frame_seconds as f32 * 1000.0;
         self.frame_ms = if self.frame_ms == 0.0 {
             ms
         } else {
             self.frame_ms * 0.9 + ms * 0.1
         };
-        self.ticks_last_frame = ticks_stepped;
+        self.ticks_last_frame = ticks;
     }
 
+    /// Writes the frame rows into the sim's stats.
+    pub fn fill(&self, stats: &mut ProfilerStats) {
+        stats.frame_ms = self.frame_ms;
+        stats.fps = if self.frame_ms > 0.0 {
+            1000.0 / self.frame_ms
+        } else {
+            0.0
+        };
+        stats.ticks_last_frame = self.ticks_last_frame;
+    }
+}
+
+impl Profiler {
+    /// The stage rows and tick totals over the window.
     pub fn stats(&self) -> ProfilerStats {
         let n = self.ring.len().max(1) as f32;
         let stages = Stage::ALL
@@ -71,13 +91,6 @@ impl Profiler {
             tick_mean_ms: self.tick_totals.iter().sum::<f32>() / n,
             tick_max_ms: self.tick_totals.iter().copied().fold(0.0, f32::max),
             ticks_sampled: self.ring.len() as u32,
-            frame_ms: self.frame_ms,
-            fps: if self.frame_ms > 0.0 {
-                1000.0 / self.frame_ms
-            } else {
-                0.0
-            },
-            ticks_last_frame: self.ticks_last_frame,
             ..ProfilerStats::default()
         }
     }
@@ -133,11 +146,13 @@ mod tests {
         assert_eq!(stats.stages[0].name, "ApplyCommands");
         assert_eq!(stats.stages[17].name, "EventsAndHash");
         assert!(stats.tick_mean_ms >= 0.0);
-        p.frame(0.016, 1);
-        assert!((p.stats().frame_ms - 16.0).abs() < 0.01);
-        assert_eq!(p.stats().ticks_last_frame, 1);
+        let mut t = FrameTimer::default();
+        t.frame(0.016, 1);
+        let mut s = p.stats();
+        t.fill(&mut s);
+        assert!((s.frame_ms - 16.0).abs() < 0.01);
+        assert_eq!(s.ticks_last_frame, 1);
         // T3-030: the render rows are the app's to fill from the host.
-        let s = p.stats();
         assert!(!s.render_thread && s.build_ms == 0.0 && s.frames_dropped == 0);
     }
 }

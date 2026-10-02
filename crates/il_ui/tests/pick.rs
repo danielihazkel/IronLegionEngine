@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use glam::Vec2;
 use il_core::{PlayerId, RegimentId, Scalar, V2};
-use il_sim_battle::{BattleSetup, BattleView, BattleWorld};
+use il_sim_battle::{BattleFrame, BattleSetup, BattleWorld};
 use il_ui::{own_regiments, owned, pick_regiment, regiments_in_box, regiments_of_type_on_screen};
 
 const SCREEN: Vec2 = Vec2::new(1280.0, 800.0);
@@ -57,10 +57,11 @@ fn ids(set: &BTreeSet<RegimentId>) -> Vec<u32> {
 }
 
 /// Screen position of the first soldier of `regiment`.
-fn a_soldier_of(view: &BattleView, regiment: u32) -> Vec2 {
+fn a_soldier_of(view: &BattleFrame, regiment: u32) -> Vec2 {
     let s = view
-        .soldiers()
-        .find(|s| s.regiment == RegimentId(regiment))
+        .soldiers_unordered()
+        .filter(|s| s.regiment == RegimentId(regiment))
+        .min_by_key(|s| s.id)
         .expect("regiment has soldiers");
     project(s.pos)
 }
@@ -68,7 +69,7 @@ fn a_soldier_of(view: &BattleView, regiment: u32) -> Vec2 {
 #[test]
 fn only_the_local_players_regiments_are_pickable() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     assert_eq!(ids(&own_regiments(&view, PlayerId(0))), [0, 1, 2]);
     assert_eq!(ids(&own_regiments(&view, PlayerId(1))), [3]);
     assert!(owned(&view, RegimentId(3), PlayerId(1)));
@@ -88,7 +89,7 @@ fn only_the_local_players_regiments_are_pickable() {
 #[test]
 fn click_hits_the_nearest_soldier_within_its_circle_and_misses_open_ground() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let p = a_soldier_of(&view, 1);
     assert_eq!(
         pick_regiment(&view, &project, PPM, PlayerId(0), p),
@@ -109,7 +110,7 @@ fn click_hits_the_nearest_soldier_within_its_circle_and_misses_open_ground() {
 #[test]
 fn box_select_takes_every_regiment_with_a_soldier_inside() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     // Regiments 0 and 1 stand at x = 20 m and 60 m; a box over 0..80 m and
     // 0..40 m spans both but not the velites at 100 m nor the enemy at y = 60 m.
     let a = project(V2::new(S(0.0), S(40.0)));
@@ -138,7 +139,7 @@ fn box_select_takes_every_regiment_with_a_soldier_inside() {
 #[test]
 fn double_click_selects_the_type_on_screen() {
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let hastati = regiments_of_type_on_screen(&view, &project, PlayerId(0), RegimentId(0), SCREEN);
     assert_eq!(ids(&hastati), [0, 1]);
     let velites = regiments_of_type_on_screen(&view, &project, PlayerId(0), RegimentId(2), SCREEN);
@@ -164,7 +165,7 @@ fn S(v: f32) -> il_core::S {
 fn enemy_picking_takes_visible_enemies_only() {
     use il_ui::pick_enemy_regiment;
     let world = world();
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     let on_enemy = a_soldier_of(&view, 3);
     // Side 0 sees regiment 3 forty metres away.
     assert!(view.visible(0, RegimentId(3)));
@@ -215,7 +216,7 @@ fn a_hidden_enemy_is_not_pickable() {
     )
     .expect("setup parses");
     let world = BattleWorld::new(&setup, regs).expect("world builds");
-    let view = world.view();
+    let view = il_sim_battle::BattleFrame::capture(&world, il_sim_battle::FrameDetail::ALL);
     assert!(
         !view.visible(0, RegimentId(1)),
         "900 m away is out of sight"
